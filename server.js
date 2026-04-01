@@ -253,6 +253,7 @@ function handleLogin(ws, msg, setUserId) {
   user.lastSeen = Date.now();
   users.set(uuid, user);
   setUserId(uuid);
+  saveUsers();
 
   console.log(`✅ Login successful: ${user.nickname} (${users.size} total online)`);
 
