@@ -2,8 +2,9 @@
 /**
  * Cipher P2P Messenger Server
  * Минималистичный сервер мессенджера (как Telegram/WhatsApp)
- * 
+ *
  * Функции:
+ * - Раздача index.html (фронтенд)
  * - Маршрутизация сообщений между пользователями
  * - Хранение сообщений для офлайн пользователей
  * - Синхронизация статуса онлайн/офлайн
@@ -11,37 +12,34 @@
 
 const WebSocket = require('ws');
 const http = require('http');
-const https = require('https');
 const fs = require('fs');
+const path = require('path');
 
-const PORT = process.env.PORT || 9000;
-const USE_HTTPS = process.env.HTTPS === '1' || process.env.USE_WSS === '1';
+const PORT = process.env.PORT || 5000;
 
 // ==================== STORAGE ====================
 const users = new Map(); // username -> {ws, nick, avatar, lastSeen}
 const messageQueue = new Map(); // username -> [{from, to, content, ts}, ...]
 
 // ==================== SERVER ====================
-let app;
-
-if (USE_HTTPS && fs.existsSync('cert.pem') && fs.existsSync('key.pem')) {
-  // HTTPS режим (для WSS)
-  app = https.createServer({
-    cert: fs.readFileSync('cert.pem'),
-    key: fs.readFileSync('key.pem')
-  }, (req, res) => {
-    res.writeHead(200, {'Content-Type': 'text/plain'});
+const app = http.createServer((req, res) => {
+  if (req.url === '/' || req.url === '/index.html') {
+    fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
+      if (err) {
+        res.writeHead(500);
+        res.end('Error loading index.html');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(data);
+    });
+  } else {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end(`Cipher Messenger Server\n${users.size} users connected`);
-  });
-} else {
-  // HTTP режим (локально)
-  app = http.createServer((req, res) => {
-    res.writeHead(200, {'Content-Type': 'text/plain'});
-    res.end(`Cipher Messenger Server\n${users.size} users connected`);
-  });
-}
+  }
+});
 
-const wss = new WebSocket.Server({server: app});
+const wss = new WebSocket.Server({ server: app });
 
 wss.on('connection', (ws) => {
   let username = null;
@@ -65,7 +63,7 @@ wss.on('connection', (ws) => {
       const user = users.get(username);
       if (user && user.ws === ws) {
         users.delete(username);
-        broadcast({type: 'user-offline', data: username});
+        broadcast({ type: 'user-offline', data: username });
         console.log(`✗ ${username} disconnected`);
       }
     }
@@ -87,9 +85,9 @@ setInterval(() => {
 
 // ==================== MESSAGE HANDLERS ====================
 async function handleMessage(ws, msg, setUsername) {
-  const {type, data, username} = msg;
+  const { type, data, username } = msg;
 
-  switch(type) {
+  switch (type) {
     case 'auth':
       handleAuth(ws, data, setUsername);
       break;
@@ -103,14 +101,13 @@ async function handleMessage(ws, msg, setUsername) {
 }
 
 function handleAuth(ws, data, setUsername) {
-  const {username, nick, avatar} = data;
-  
+  const { username, nick, avatar } = data;
+
   if (!username || username.length < 3) {
-    ws.send(JSON.stringify({type: 'error', error: 'Invalid username'}));
+    ws.send(JSON.stringify({ type: 'error', error: 'Invalid username' }));
     return;
   }
 
-  // Удаляем старое соединение
   if (users.has(username)) {
     const old = users.get(username);
     if (old.ws && old.ws.readyState === WebSocket.OPEN) {
@@ -131,40 +128,34 @@ function handleAuth(ws, data, setUsername) {
 
   console.log(`✓ ${username} connected (${users.size} total)`);
 
-  // Отправляем список онлайн пользователей
   const onlineUsers = Array.from(users.values()).map(u => ({
     username: u.username,
     nick: u.nick,
     avatar: u.avatar
   }));
 
-  // Отправляем сохранённые сообщения
   if (messageQueue.has(username)) {
     const pending = messageQueue.get(username);
     pending.forEach(msg => {
-      ws.send(JSON.stringify({type: 'message', data: msg}));
+      ws.send(JSON.stringify({ type: 'message', data: msg }));
     });
     messageQueue.delete(username);
     console.log(`  📨 Доставлено ${pending.length} сообщений для ${username}`);
   }
 
-  ws.send(JSON.stringify({type: 'auth-ok', users: onlineUsers}));
-
-  // Уведомляем всех о новом пользователе
-  broadcast({type: 'user-online', data: {username, nick: user.nick, avatar: user.avatar}});
+  ws.send(JSON.stringify({ type: 'auth-ok', users: onlineUsers }));
+  broadcast({ type: 'user-online', data: { username, nick: user.nick, avatar: user.avatar } });
 }
 
 function handleSendMessage(from, data) {
-  const {to, content, ts} = data;
-  const message = {from, to, content, ts};
+  const { to, content, ts } = data;
+  const message = { from, to, content, ts };
 
   const toUser = users.get(to);
-  
+
   if (toUser && toUser.ws.readyState === WebSocket.OPEN) {
-    // Пользователь онлайн - отправляем сразу
-    toUser.ws.send(JSON.stringify({type: 'message', data: message}));
+    toUser.ws.send(JSON.stringify({ type: 'message', data: message }));
   } else {
-    // Пользователь офлайн - сохраняем в очередь
     if (!messageQueue.has(to)) {
       messageQueue.set(to, []);
     }
@@ -180,10 +171,9 @@ function handleProfileUpdate(username, data) {
   if (data.nick) user.nick = data.nick;
   if (data.avatar) user.avatar = data.avatar;
 
-  // Уведомляем всех об обновлении профиля
   broadcast({
     type: 'user-profile',
-    data: {username, nick: user.nick, avatar: user.avatar}
+    data: { username, nick: user.nick, avatar: user.avatar }
   });
 }
 
@@ -214,37 +204,15 @@ process.on('SIGINT', () => {
 });
 
 // ==================== START ====================
-app.listen(PORT, () => {
-  const proto = USE_HTTPS ? 'wss' : 'ws';
-  const localIP = getLocalIP();
-  
-  const showHttpsWarning = USE_HTTPS && !(fs.existsSync('cert.pem') && fs.existsSync('key.pem'));
-  
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`
 ╔═══════════════════════════════════════════════════╗
 ║       Cipher Messenger Server v2.0                ║
-║═══════════════════════════════════════════════════║
-║ 🚀 Запущен на порту: ${PORT}${' '.repeat(26 - String(PORT).length)}║
-║ 🌐 Локально: ${proto}://localhost:${PORT}${' '.repeat(22 - String(PORT).length)}║
-║ 📱 В сети:   ${proto}://${localIP}:${PORT}${' '.repeat(22 - String(localIP).length - String(PORT).length)}║
-║ 🌍 GitHub:   ${proto}://YOUR-SERVER-DOMAIN${' '.repeat(10)}║
-║                                                   ║
-║ Готово к подключению...${' '.repeat(18)}║
+╠═══════════════════════════════════════════════════╣
+║ 🚀 Порт: ${PORT}                                     ║
+║ 🌐 http://0.0.0.0:${PORT}                            ║
+║ 🔌 ws://0.0.0.0:${PORT}                              ║
+║ Готово к подключению...                           ║
 ╚═══════════════════════════════════════════════════╝
-${showHttpsWarning ? '\n⚠️  WSS требует HTTPS сертификатов (cert.pem, key.pem)\n' : ''}
   `);
 });
-
-function getLocalIP() {
-  const {networkInterfaces} = require('os');
-  const interfaces = networkInterfaces();
-  
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return 'localhost';
-}
