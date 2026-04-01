@@ -248,6 +248,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
     <input type="file" id="regAvatarFile" accept="image/*" style="display:none">
     <input class="reg-input" id="regNick" type="text" placeholder="Username (минимум 3 символа)" maxlength="32">
     <input class="reg-input" id="regPass" type="password" placeholder="Пароль" maxlength="64">
+    <input class="reg-input" id="regServer" type="text" placeholder="Сервер (оставьте пустым для авто)" maxlength="200">
     <div class="reg-hint" id="regHint">Введите username и пароль</div>
     <button class="btn-primary" id="regBtn">Войти / Зарегистрироваться</button>
   </div>
@@ -423,7 +424,9 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 // ==================== WebSocket Connection ====================
 let ws = null;
 let articoConnected = false;
-let serverAddress = 'wss://9299ae1e-32f0-44ae-85f2-5db0df8dc09c-00-2j6vh7655b6hp.pike.replit.dev';
+// Auto-detect: same host if on Replit, empty if on GitHub Pages or other external host
+const _onExternalHost = !['localhost','127.0.0.1'].includes(window.location.hostname) && !window.location.hostname.includes('replit');
+let serverAddress = _onExternalHost ? '' : (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 2000;
@@ -435,6 +438,12 @@ function connectWebSocket() {
     try {
       connectionState = 'connecting';
       let addr = serverAddress;
+
+      if (!addr) {
+        reject(new Error('Укажите адрес сервера в поле Сервер'));
+        setHint('Укажите адрес сервера (например: wss://your-app.replit.app)');
+        return;
+      }
 
       // Автоматически добавляем протокол если его нет
       if (!addr.startsWith('ws://') && !addr.startsWith('wss://')) {
@@ -794,7 +803,8 @@ async function init(){
   const saved = localStorage.getItem('cipherAuth');
   if(saved){
     try{
-      const {uuid, password} = JSON.parse(saved);
+      const {uuid, password, server} = JSON.parse(saved);
+      if (server) serverAddress = server;
       setHint('Восстановление сессии...');
 
       try {
@@ -882,9 +892,13 @@ function setupReg(){
   regBtn.onclick=async()=>{
     const nickname=regNick.value.trim();
     const password=regPass.value;
+    const regServerEl=document.getElementById('regServer');
+    const customServer=regServerEl ? regServerEl.value.trim() : '';
+    if(customServer) serverAddress=customServer;
 
     if(!nickname || nickname.length<1){showToast('Никнейм обязателен');return;}
     if(!password || password.length<4){showToast('Пароль минимум 4 символа');return;}
+    if(!serverAddress){showToast('Укажите адрес сервера');setHint('Введите адрес сервера (wss://...)');return;}
 
     regBtn.disabled=true;
     regBtn.textContent='Регистрация...';
@@ -961,8 +975,8 @@ function setupReg(){
         throw new Error('Не получен UUID от сервера');
       }
 
-      // Сохраняем UUID + пароль в localStorage
-      const auth = {uuid: receivedUuid, password};
+      // Сохраняем UUID + пароль + сервер в localStorage
+      const auth = {uuid: receivedUuid, password, server: serverAddress};
       localStorage.setItem('cipherAuth', JSON.stringify(auth));
 
       myProfile = {uuid: receivedUuid, nickname: nickname, avatar: regAvatar};

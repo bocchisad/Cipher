@@ -23,9 +23,20 @@ const users = new Map(); // uuid -> {ws, uuid, nickname, avatar, lastSeen, passw
 const messageQueue = new Map(); // uuid -> [{from, to, content, ts}, ...]
 
 // ==================== SERVER ====================
+const fs = require('fs');
+const path = require('path');
+
 const app = http.createServer((req, res) => {
-  res.writeHead(200, {'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*'});
-  res.end(`Cipher Messenger Server\n${users.size} users connected\nUptime: ${process.uptime().toFixed(0)}s`);
+  const filePath = path.join(__dirname, 'index.html');
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.writeHead(200, {'Content-Type': 'text/plain'});
+      res.end(`Cipher Messenger Server\n${users.size} users connected\nUptime: ${process.uptime().toFixed(0)}s`);
+      return;
+    }
+    res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache'});
+    res.end(data);
+  });
 });
 
 const wss = new WebSocket.Server({server: app, perMessageDeflate: false});
