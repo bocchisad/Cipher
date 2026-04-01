@@ -40,12 +40,8 @@ const app = http.createServer((req, res) => {
 
 const wss = new WebSocket.Server({ server: app, perMessageDeflate: false });
 
-app.on('upgrade', (req, socket, head) => {
-  console.log(`🔌 WS upgrade attempt from origin: ${req.headers.origin || 'unknown'} path: ${req.url}`);
-});
-
 wss.on('connection', (ws, req) => {
-  console.log(`🟢 New WS connection from origin: ${req.headers.origin || 'unknown'}`);
+  console.log(`🟢 New WS connection from: ${req.headers.origin || req.socket.remoteAddress}`);
   let username = null;
   let isAlive = true;
 
