@@ -190,6 +190,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .msg .mavatar{width:28px;height:28px;border-radius:50%;background:var(--bg4);flex-shrink:0;overflow:hidden}
 .msg .mavatar img{width:100%;height:100%;object-fit:cover}
 .msg-img{max-width:240px;border-radius:8px;cursor:pointer;display:block;margin-bottom:4px}
+.msg-video{max-width:240px;border-radius:8px;display:block;margin-bottom:4px;background:var(--bg4)}
 .msg-voice{
   display:flex;align-items:center;gap:10px;padding:4px 0;
 }
@@ -921,7 +922,7 @@ function setupPeer(){
   });
   peer.on('error',e=>{
     console.warn('Peer error:',e.type,e);
-    if(e.type==='network'||e.type==='server-error'||e.type==='socket-error'||e.type==='socket-closed'){
+    if(e.type==='network'||e.type==='server-error'||e.type==='socket-error'||e.type==='socket-closed'||e.type==='unavailable-id'){
       schedulePeerReconnect();
     }
   });
@@ -932,13 +933,22 @@ function schedulePeerReconnect(){
   peerReconnectTimer=setTimeout(()=>{
     peerReconnectTimer=null;
     console.log('Recreating peer...');
+    // Properly destroy old peer
+    if(peer && !peer.destroyed){
+      try{peer.destroy();}catch(e){console.warn('error destroying peer:',e);}
+    }
     connections={};
+    aesKeys={};
+    peer=null;
     setupPeer();
-  },3000);
+  },2000);
 }
 
 function connectToPeer(peerId){
-  if(!peer||peer.destroyed||peer.disconnected) return;
+  if(!peer||peer.destroyed||peer.disconnected){
+    console.warn('Cannot connect: peer not ready');
+    return;
+  }
   // If existing conn is still open, skip
   if(connections[peerId]&&connections[peerId].open) return;
   // Clean up stale
@@ -946,8 +956,15 @@ function connectToPeer(peerId){
   let conn;
   try{
     conn=peer.connect(peerId,{reliable:true});
-  }catch(e){console.warn('connect failed',e);return;}
-  if(!conn) return;
+  }catch(e){
+    console.warn('connect failed:',e);
+    schedulePeerReconnect();
+    return;
+  }
+  if(!conn){
+    schedulePeerReconnect();
+    return;
+  }
   conn.on('open',()=>onConnOpen(conn));
   conn.on('data',d=>onConnData(conn,d));
   conn.on('close',()=>onConnClose(conn));
@@ -1158,7 +1175,7 @@ async function openChat(id){
   // connect if not connected
   if(!connections[id]) connectToPeer(id);
   // render info panel AFTER messages loaded so media tab is populated
-  renderInfoPanel(id);
+  await renderInfoPanel(id);
 }
 
 function renderChatHeader(){
@@ -1213,6 +1230,10 @@ function appendMessage(msg){
     bubble.appendChild(img);
   } else if(msg.type==='voice'){
     bubble.appendChild(makeVoicePlayer(msg.content));
+  } else if(msg.type==='video'){
+    const video=document.createElement('video');
+    video.className='msg-video';video.src=msg.content;video.controls=true;video.style.maxWidth='100%';video.style.maxHeight='300px';
+    bubble.appendChild(video);
   } else if(msg.type==='file'){
     const fd=JSON.parse(msg.content);
     const row=document.createElement('div');row.className='msg-file';
@@ -1275,14 +1296,29 @@ function scrollBottom(){
 
 function scrollToMessage(msgId){
   if(!msgId) return;
-  const el=document.querySelector(`[data-msg-id="${msgId}"]`);
-  if(!el) return;
-  el.scrollIntoView({behavior:'smooth',block:'center'});
-  // flash highlight
-  el.style.transition='background .2s';
-  el.style.background='rgba(79,142,247,0.18)';
-  el.style.borderRadius='12px';
-  setTimeout(()=>{el.style.background='';el.style.borderRadius='';},1200);
+  // Make sure we're in chat view
+  if(!activeChat){
+    console.warn('No active chat');
+    return;
+  }
+  // Switch back to chat view from files/media tabs
+  document.getElementById('chatView').style.display='flex';
+  document.getElementById('noChatView').style.display='none';
+  
+  // Give DOM time to update
+  setTimeout(()=>{
+    const el=document.querySelector(`[data-msg-id="${msgId}"]`);
+    if(!el){
+      console.warn('Message element not found:',msgId);
+      return;
+    }
+    el.scrollIntoView({behavior:'smooth',block:'center'});
+    // flash highlight
+    el.style.transition='background .2s';
+    el.style.background='rgba(79,142,247,0.18)';
+    el.style.borderRadius='12px';
+    setTimeout(()=>{el.style.background='';el.style.borderRadius='';},1200);
+  },0);
 }
 
 function updateLastMessage(chatId,content,ts){
@@ -1298,7 +1334,7 @@ function updateLastMessage(chatId,content,ts){
   }
 }
 
-function renderInfoPanel(chatId){
+async function renderInfoPanel(chatId){
   const contact=contacts.find(c=>c.id===chatId);
   if(!contact) return;
   const bigAv=document.getElementById('infoBigAv');
@@ -1307,7 +1343,7 @@ function renderInfoPanel(chatId){
   document.getElementById('infoStatus').textContent=contact.online?'в сети':'не в сети';
   document.getElementById('infoStatus').style.color=contact.online?'var(--green)':'var(--text3)';
   document.getElementById('infoId').textContent=chatId;
-  renderTabContent();
+  await renderTabContent();
 }
 
 async function renderTabContent(){
@@ -1363,10 +1399,10 @@ function updateRightPanel(msg){
 function setupEvents(){
   // Tabs
   document.querySelectorAll('.tab').forEach(t=>{
-    t.onclick=()=>{
+    t.onclick=async()=>{
       document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
       t.classList.add('active');activeTab=t.dataset.tab;
-      renderTabContent();
+      await renderTabContent();
     };
   });
 
@@ -1448,11 +1484,20 @@ function setupDragDrop(){
 
   document.addEventListener('dragover',e=>{
     e.preventDefault();
+    e.dataTransfer.dropEffect='copy';
+  });
+  
+  document.addEventListener('drop',e=>{
+    e.preventDefault();
   });
 
   chatView.addEventListener('dragenter',e=>{
     e.preventDefault();
-    if(!activeChat) return;
+    e.dataTransfer.dropEffect='copy';
+    if(!activeChat){
+      showToast('Выберите чат для отправки файлов');
+      return;
+    }
     dragCounter++;
     chatView.classList.add('drag-over');
   });
@@ -1464,23 +1509,36 @@ function setupDragDrop(){
 
   chatView.addEventListener('drop',async e=>{
     e.preventDefault();
+    e.stopPropagation();
     dragCounter=0;
     chatView.classList.remove('drag-over');
-    if(!activeChat) return;
+    if(!activeChat){showToast('Выберите чат для отправки файлов');return;}
     const files=[...e.dataTransfer.files];
+    if(!files.length) return;
+    showToast(`Отправка ${files.length} файл(ов)...`);
+    let successCount=0;
     for(const f of files){
-      if(f.type.startsWith('image/')){
-        const stripped=await stripExif(f);
-        const b64=await fileToBase64(stripped);
-        await sendMessage('image',b64);
-      } else {
-        if(f.size>50*1024*1024){showToast('Файл слишком большой (макс 50МБ)');continue;}
-        const b64=await fileToBase64(f);
-        const fd=JSON.stringify({name:f.name,size:f.size,data:b64});
-        await sendMessage('file',fd);
-      }
+      try{
+        if(f.type.startsWith('image/')){
+          const stripped=await stripExif(f);
+          const b64=await fileToBase64(stripped);
+          await sendMessage('image',b64);
+          successCount++;
+        } else if(f.type.startsWith('video/')){
+          if(f.size>100*1024*1024){showToast(`Видео "${f.name}" слишком большое (макс 100МБ)`);continue;}
+          const b64=await fileToBase64(f);
+          await sendMessage('video',b64);
+          successCount++;
+        } else {
+          if(f.size>50*1024*1024){showToast(`Файл "${f.name}" слишком большой (макс 50МБ)`);continue;}
+          const b64=await fileToBase64(f);
+          const fd=JSON.stringify({name:f.name,size:f.size,data:b64});
+          await sendMessage('file',fd);
+          successCount++;
+        }
+      }catch(err){console.error('Error:',f.name,err);showToast(`Ошибка при отправке "${f.name}"`);}
     }
-    if(files.length>1) showToast(`Отправлено файлов: ${files.length}`);
+    if(successCount>0){showToast(`✓ Отправлено ${successCount}/${files.length}`);}
   });
 }
 
