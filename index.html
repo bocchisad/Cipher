@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cipher — P2P Messenger</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/trystero@0.20.1/dist/trystero-torrent.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -969,11 +970,46 @@ function connectToPeer(peerId){
   conn.on('close',()=>onConnClose(conn));
   conn.on('error',()=>onConnClose(conn));
   connections[peerId]=conn;
+  
+  connectViaTrystero(peerId);
 }
 
 function connectViaTrystero(peerId) {
-  // Заглушка для резервного канала - в будущем можно реализовать через другой метод
-  // Пока полагаемся на PeerJS с автоматическим переподключением
+  if (!window.trystero) return;
+  if (torrentRooms[peerId]) return; // Уже слушаем комнату
+
+  // Генерируем уникальное имя комнаты для двух пользователей (сортируем ID)
+  const roomName = [myProfile.id, peerId].sort().join('_');
+  const room = window.trystero.joinRoom({appId: 'cipher-messenger'}, roomName);
+  torrentRooms[peerId] = room;
+
+  const [sendData, getTargetData] = room.makeAction('p2p-data');
+
+  room.onPeerJoin(id => {
+    console.log('Trystero подключен:', id);
+    setOnline(peerId, true);
+    
+    // Отправляем handshake через DHT
+    exportPublicKey(keyPair.publicKey).then(pubKey => {
+      sendData({type: 'HANDSHAKE', pubKey, nick: myProfile.nick, avatar: myProfile.avatar}, id);
+    });
+  });
+
+  getTargetData(async (data, id) => {
+    // Бесшовно прокидываем данные из торрента в существующую криптографию Cipher
+    // Имитируем объект соединения (pseudo-conn) для onConnData
+    const pseudoConn = { 
+      peer: peerId, 
+      open: true,
+      send: (payload) => sendData(payload, id) 
+    };
+    
+    // Записываем этот псевдо-коннект в общую базу соединений мессенджера
+    connections[peerId] = pseudoConn; 
+    onConnData(pseudoConn, data);
+  });
+
+  room.onPeerLeave(id => setOnline(peerId, false));
 }
 
 function handleIncomingConn(conn){
