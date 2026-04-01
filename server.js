@@ -91,10 +91,10 @@ async function handleMessage(ws, msg, setUserId) {
 
   switch(type) {
     case 'register':
-      handleRegister(ws, data);
+      handleRegister(ws, msg);
       break;
     case 'login':
-      handleLogin(ws, data, setUserId);
+      handleLogin(ws, msg, setUserId);
       break;
     case 'message':
       handleSendMessage(uuid, data);
@@ -108,8 +108,8 @@ async function handleMessage(ws, msg, setUserId) {
 }
 
 // ==================== REGISTRATION ====================
-function handleRegister(ws, data) {
-  const {password, nickname, avatar} = data || {};
+function handleRegister(ws, msg) {
+  const {password, nickname, avatar} = msg || {};
 
   if (!password || password.length < 4) {
     console.error('❌ Register error: invalid password');
@@ -151,8 +151,8 @@ function handleRegister(ws, data) {
 }
 
 // ==================== LOGIN ====================
-function handleLogin(ws, data, setUserId) {
-  const {uuid, password} = data || {};
+function handleLogin(ws, msg, setUserId) {
+  const {uuid, password} = msg || {};
 
   if (!uuid || !password) {
     console.error('❌ Login error: missing uuid or password');
