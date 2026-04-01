@@ -72,22 +72,30 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// Heartbeat
+// Heartbeat - проверяем соединения каждые 30 сек
 setInterval(() => {
+  let activeCount = 0;
   wss.clients.forEach((ws) => {
-    if (!ws.isAlive) return ws.terminate();
+    if (!ws.isAlive) {
+      console.log('💀 Терминирую мертвое соединение');
+      return ws.terminate();
+    }
+    activeCount++;
     ws.isAlive = false;
     ws.ping();
   });
+  // console.log(`[Heartbeat] ${activeCount} active connections`);
 }, 30000);
 
 // ==================== MESSAGE HANDLERS ====================
 async function handleMessage(ws, msg, setUsername) {
   const {type, data, username} = msg;
 
+  console.log(`📬 Сообщение type="${type}" от ${username || 'unknown'}`, data ? Object.keys(data) : '');
+
   switch(type) {
     case 'auth':
-      handleAuth(ws, data, setUsername);
+      handleAuth(ws, data, username, setUsername);
       break;
     case 'message':
       handleSendMessage(username, data);
@@ -95,20 +103,26 @@ async function handleMessage(ws, msg, setUsername) {
     case 'profile-update':
       handleProfileUpdate(username, data);
       break;
+    default:
+      console.warn(`⚠️ Неизвестный тип сообщения: ${type}`);
   }
 }
 
-function handleAuth(ws, data, setUsername) {
-  const {username, nick, avatar} = data;
-  
+function handleAuth(ws, data, clientUsername, setUsername) {
+  const {username, nick, avatar} = data || {};
+
   if (!username || username.length < 3) {
+    console.error('❌ Auth ошибка: неверный username', {username, nick});
     ws.send(JSON.stringify({type: 'error', error: 'Invalid username'}));
     return;
   }
 
-  // Удаляем старое соединение
+  console.log(`🔐 Auth попытка: ${username}`);
+
+  // Удаляем старое соединение если есть
   if (users.has(username)) {
     const old = users.get(username);
+    console.log(`♻️  Заменяю старое соединение для ${username}`);
     if (old.ws && old.ws.readyState === WebSocket.OPEN) {
       old.ws.close();
     }
@@ -125,7 +139,7 @@ function handleAuth(ws, data, setUsername) {
   users.set(username, user);
   setUsername(username);
 
-  console.log(`✓ ${username} connected (${users.size} total)`);
+  console.log(`✅ ${username} auth успешен (${users.size} total users online)`);
 
   // Отправляем список онлайн пользователей
   const onlineUsers = Array.from(users.values()).map(u => ({
@@ -137,41 +151,49 @@ function handleAuth(ws, data, setUsername) {
   // Отправляем сохранённые сообщения
   if (messageQueue.has(username)) {
     const pending = messageQueue.get(username);
+    console.log(`📨 Доставляю ${pending.length} сообщений для ${username}`);
     pending.forEach(msg => {
       ws.send(JSON.stringify({type: 'message', data: msg}));
     });
     messageQueue.delete(username);
-    console.log(`  📨 Доставлено ${pending.length} сообщений для ${username}`);
   }
 
-  ws.send(JSON.stringify({type: 'auth-ok', users: onlineUsers}));
+  ws.send(JSON.stringify({type: 'auth-ok', users: onlineUsers, username: username}));
 
   // Уведомляем всех о новом пользователе
-  broadcast({type: 'user-online', data: {username, nick: user.nick, avatar: user.avatar}});
+  broadcast({type: 'user-online', data: {username, nick: user.nick, avatar: user.avatar}}, username);
 }
 
 function handleSendMessage(from, data) {
   const {to, content, ts} = data;
   const message = {from, to, content, ts};
 
+  console.log(`💬 Сообщение: ${from} → ${to}`);
+
   const toUser = users.get(to);
-  
+
   if (toUser && toUser.ws.readyState === WebSocket.OPEN) {
     // Пользователь онлайн - отправляем сразу
     toUser.ws.send(JSON.stringify({type: 'message', data: message}));
+    console.log(`  ✓ Доставлено сразу`);
   } else {
     // Пользователь офлайн - сохраняем в очередь
     if (!messageQueue.has(to)) {
       messageQueue.set(to, []);
     }
     messageQueue.get(to).push(message);
-    console.log(`  ⏸️  Сообщение от ${from} → ${to} в очереди (${messageQueue.get(to).length} ожидают)`);
+    console.log(`  ⏸️  В очереди (${messageQueue.get(to).length} ожидают)`);
   }
 }
 
 function handleProfileUpdate(username, data) {
   const user = users.get(username);
-  if (!user) return;
+  if (!user) {
+    console.warn(`⚠️ Profile update от неизвестного пользователя: ${username}`);
+    return;
+  }
+
+  console.log(`👤 Profile update: ${username}`, {nick: data.nick, hasAvatar: !!data.avatar});
 
   if (data.nick) user.nick = data.nick;
   if (data.avatar) user.avatar = data.avatar;

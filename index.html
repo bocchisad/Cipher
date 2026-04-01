@@ -807,8 +807,31 @@ async function init(){
       try {
         await connectWebSocket();
 
+        // ВАЖНО: Ждем server-ready перед отправкой auth
+        console.log('⏳ Ожидаю server-ready от сервера...');
+
+        await new Promise((resolve) => {
+          const timeout = setTimeout(() => {
+            console.warn('⚠️ server-ready timeout, отправляю auth всё равно');
+            resolve();
+          }, 1000);
+
+          const checkReady = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'server-ready') {
+              clearTimeout(timeout);
+              ws.removeEventListener('message', checkReady);
+              console.log('✓ server-ready получен');
+              resolve();
+            }
+          };
+
+          ws.addEventListener('message', checkReady);
+        });
+
         // Отправляем auth информацию
         if (ws && ws.readyState === WebSocket.OPEN) {
+          console.log('📤 Отправляю auth с username:', username);
           ws.send(JSON.stringify({
             type: 'auth',
             username: username,
@@ -869,26 +892,48 @@ function setupReg(){
       // Пытаемся подключиться к серверу
       await connectWebSocket();
 
-      // Отправляем auth сообщение
-      sendToServer('auth', {username, password, nick: username, avatar: regAvatar});
+      // ВАЖНО: Ждем server-ready перед отправкой auth
+      console.log('⏳ Ожидаю server-ready от сервера...');
+      let serverReady = false;
 
-      // Ждём подтверждение от сервера (с timeout)
-      const authPromise = new Promise((resolve, reject) => {
-        let authReceived = false;
+      const readyPromise = new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          console.warn('⚠️ Timeout ожидания server-ready');
+          resolve();
+        }, 1500);
 
-        const originalHandler = ws.onmessage;
+        const origHandler = ws.onmessage;
         ws.onmessage = (e) => {
           const msg = JSON.parse(e.data);
-          if (msg.type === 'auth-ok' || msg.type === 'server-ready') {
-            authReceived = true;
-            console.log('✓ Auth принят сервером');
+          if (msg.type === 'server-ready') {
+            serverReady = true;
+            console.log('✓ server-ready получен');
+            clearTimeout(timeout);
           }
-          if (originalHandler) originalHandler(e);
+          if (origHandler) origHandler(e);
         };
+      });
+
+      await readyPromise;
+
+      // Отправляем auth сообщение с полными данными
+      console.log('📤 Отправляю auth:', username);
+      sendToServer('auth', {
+        username,
+        password,
+        nick: username,
+        avatar: regAvatar
+      });
+
+      // Ждём подтверждение от сервера (с timeout)
+      const authPromise = new Promise((resolve) => {
+        let authOk = false;
 
         const timeout = setTimeout(() => {
-          ws.onmessage = originalHandler;
-          resolve(); // Продолжаем даже если нет явного подтверждения
+          if (!authOk) {
+            console.warn('⚠️ Timeout ожидания auth-ok');
+          }
+          resolve();
         }, 2000);
       });
 
