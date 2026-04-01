@@ -4,26 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cipher — P2P Messenger</title>
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
-<!-- Artico - Новая и более надежная WebRTC библиотека (2024-2025) -->
-<script type="module">
-  import Artico from 'https://esm.sh/artico@latest';
-  window.Artico = Artico;
-  console.log('✓ Artico загружена');
-</script>
-
-<!-- Trystero - Децентрализованный протокол через esm.sh (избегает MIME-типа) -->
-<script type="module">
-  try {
-    const { joinRoom } = await import('https://esm.sh/trystero@0.21.0/torrent');
-    window.trystero = { joinRoom };
-    console.log('✓ Trystero загружена через esm.sh');
-  } catch(e) {
-    console.warn('⚠️ Trystero недоступна:', e.message);
-    window.trystero = null;
-  }
-</script>
+<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -86,10 +69,10 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
   padding:12px 16px;font-size:14px;margin-bottom:12px;transition:border-color .2s;
 }
 .reg-input:focus{border-color:var(--accent)}
-.id-box{
+.reg-hint{
   background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);
   padding:10px 16px;font-size:11px;font-family:var(--mono);color:var(--text2);
-  margin-bottom:20px;text-align:left;word-break:break-all;
+  margin-bottom:20px;text-align:left;line-height:1.5;
 }
 .btn-primary{
   width:100%;background:var(--accent);border-radius:var(--r);padding:13px;
@@ -98,6 +81,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 }
 .btn-primary:hover{background:var(--accent2)}
 .btn-primary:active{transform:scale(.98)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
 
 /* LAYOUT */
 #app{display:flex;height:100vh;display:none}
@@ -467,9 +451,10 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
       <span class="plus">+</span>
     </div>
     <input type="file" id="regAvatarFile" accept="image/*" style="display:none">
-    <input class="reg-input" id="regNick" type="text" placeholder="Ваш никнейм" maxlength="32">
-    <div class="id-box" id="regIdBox">Генерация ID...</div>
-    <button class="btn-primary" id="regBtn">Войти в мессенджер</button>
+    <input class="reg-input" id="regNick" type="text" placeholder="Username (минимум 3 символа)" maxlength="32">
+    <input class="reg-input" id="regPass" type="password" placeholder="Пароль" maxlength="64">
+    <div class="reg-hint" id="regHint">Введите username и пароль. Они используются для входа на любом устройстве.</div>
+    <button class="btn-primary" id="regBtn">Войти / Зарегистрироваться</button>
   </div>
 </div>
 
@@ -566,8 +551,8 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 <div class="modal-overlay" id="addChatModal">
   <div class="modal">
     <h2>Новый чат</h2>
-    <label>ID собеседника</label>
-    <input id="addChatId" type="text" placeholder="Вставьте 24-значный ID">
+    <label>Username собеседника</label>
+    <input id="addChatId" type="text" placeholder="Введите username контакта">
     <label>Никнейм (опционально)</label>
     <input id="addChatName" type="text" placeholder="Имя собеседника">
     <div class="modal-btns">
@@ -591,7 +576,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
       <input id="settingsNick" type="text" placeholder="Ваш никнейм">
     </div>
     <div class="settings-section">
-      <h3>Ваш ID</h3>
+      <h3>Ваш Username</h3>
       <div class="settings-id" id="settingsIdBox">...</div>
       <div class="copy-hint">Нажмите, чтобы скопировать</div>
     </div>
@@ -651,8 +636,16 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 <div id="toast"></div>
 
 <script>
-// ==================== DB ====================
-const DB_NAME='CipherDB',DB_VER=1;
+// ==================== GUN INIT ====================
+const gun = Gun([
+  'https://gun-manhattan.herokuapp.com/gun',
+  'https://gundb-relay-mlc.glitch.me/gun'
+]);
+console.log('✓ Gun.js инициализирована');
+window.gun = gun;
+
+// ==================== DB (IndexedDB) ====================
+const DB_NAME='CipherDB', DB_VER=1;
 let db;
 function openDB(){
   return new Promise((res,rej)=>{
@@ -660,7 +653,7 @@ function openDB(){
     req.onupgradeneeded=e=>{
       const d=e.target.result;
       if(!d.objectStoreNames.contains('profile')) d.createObjectStore('profile',{keyPath:'key'});
-      if(!d.objectStoreNames.contains('contacts')) d.createObjectStore('contacts',{keyPath:'id'});
+      if(!d.objectStoreNames.contains('contacts')) d.createObjectStore('contacts',{keyPath:'username'});
       if(!d.objectStoreNames.contains('messages')){
         const ms=d.createObjectStore('messages',{keyPath:'id',autoIncrement:true});
         ms.createIndex('chatId','chatId',{unique:false});
@@ -724,52 +717,7 @@ function dbDeleteByIndex(store,index,val){
   });
 }
 
-// ==================== CRYPTO ====================
-async function generateKeyPair(){
-  return await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveKey']);
-}
-async function exportPublicKey(key){
-  const raw=await crypto.subtle.exportKey('raw',key);
-  return btoa(String.fromCharCode(...new Uint8Array(raw)));
-}
-async function importPublicKey(b64){
-  const raw=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
-  return await crypto.subtle.importKey('raw',raw,{name:'ECDH',namedCurve:'P-256'},true,[]);
-}
-async function deriveAESKey(myPrivate,theirPublic){
-  return await crypto.subtle.deriveKey(
-    {name:'ECDH',public:theirPublic},{name:'ECDH',namedCurve:'P-256'},
-    // actually:
-    {name:'AES-GCM',length:256},true,['encrypt','decrypt']
-  ).catch(async ()=>{
-    // fallback derive
-    return await crypto.subtle.deriveKey(
-      {name:'ECDH',public:theirPublic},myPrivate,
-      {name:'AES-GCM',length:256},true,['encrypt','decrypt']
-    );
-  });
-}
-async function encryptMsg(key,text){
-  const iv=crypto.getRandomValues(new Uint8Array(12));
-  const enc=new TextEncoder();
-  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc.encode(text));
-  const combined=new Uint8Array(iv.byteLength+ct.byteLength);
-  combined.set(iv,0);combined.set(new Uint8Array(ct),iv.byteLength);
-  return btoa(String.fromCharCode(...combined));
-}
-async function decryptMsg(key,b64){
-  const combined=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
-  const iv=combined.slice(0,12),ct=combined.slice(12);
-  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct);
-  return new TextDecoder().decode(pt);
-}
-
 // ==================== UTILS ====================
-function genId(){
-  const arr=new Uint8Array(18);
-  crypto.getRandomValues(arr);
-  return Array.from(arr).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,24);
-}
 function fmtTime(ts){
   const d=new Date(ts);
   return d.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'});
@@ -793,18 +741,29 @@ function showToast(msg,dur=2500){
   setTimeout(()=>t.classList.remove('show'),dur);
 }
 function initials(name){return (name||'?').slice(0,2).toUpperCase()}
-function renderAvatar(el,av,name){
-  if(av){el.innerHTML=`<img src="${av}" alt="">`}
-  else{el.textContent=initials(name)}
+
+// FIX: renderAvatar теперь надёжно показывает аватар или инициалы
+function renderAvatar(el, av, name){
+  if(av && av.length > 10){
+    el.innerHTML='';
+    const img=document.createElement('img');
+    img.src=av;
+    img.alt='';
+    img.onerror=()=>{ el.innerHTML=''; el.textContent=initials(name); };
+    el.appendChild(img);
+  } else {
+    el.innerHTML='';
+    el.textContent=initials(name);
+  }
 }
-// Strip EXIF from image via canvas
+
 function stripExif(file){
   return new Promise(res=>{
     const img=new Image();
     const url=URL.createObjectURL(file);
     img.onload=()=>{
       const c=document.createElement('canvas');
-      c.width=img.width;c.height=img.height;
+      c.width=img.width; c.height=img.height;
       c.getContext('2d').drawImage(img,0,0);
       c.toBlob(b=>res(b),file.type||'image/jpeg',0.92);
       URL.revokeObjectURL(url);
@@ -819,47 +778,59 @@ function fileToBase64(file){
     fr.readAsDataURL(file);
   });
 }
+function escapeHtml(text){
+  const div=document.createElement('div');
+  div.textContent=text;
+  return div.innerHTML;
+}
 
 // ==================== STATE ====================
-let myProfile={id:'',nick:'',avatar:''};
-let keyPair=null;
-let contacts=[];// {id,nick,avatar,online,lastSeen}
-let activeChat=null;
-let peer=null;
-let connections={};// peerId -> DataConnection
-let mediaConnections={};// peerId -> MediaConnection
-let aesKeys={};// peerId -> CryptoKey
-let torrentRooms={};// Хранилище комнат Trystero (DHT)
-let articoConns={};// peerId -> Artico соединение
-let activeTab='media';
-let mediaRecorder=null;
-let isRecording=false;
-let audioChunks=[];
-let currentCall=null;
-let localStream=null;
-let aesKeys={};// peerId -> CryptoKey
-let torrentRooms={};// Хранилище комнат Trystero
-let activeTab='media';
-let mediaRecorder=null;
-let isRecording=false;
-let audioChunks=[];
-let currentCall=null;
-let localStream=null;
+let myProfile = {username:'', nick:'', avatar:''};
+let gunUser = null;
+let contacts = [];
+let activeChat = null;
+let chatSubscriptions = {}; // username -> gun subscription ref
+let activeTab = 'media';
+let mediaRecorder = null;
+let isRecording = false;
+let audioChunks = [];
+let currentCall = null;
+let localStream = null;
+// Дедупликация сообщений — храним ID уже добавленных в UI
+let renderedMsgIds = new Set();
 
 // ==================== INIT ====================
 async function init(){
   await openDB();
-  const profile=await dbGet('profile','main');
-  if(!profile){
-    // Show registration
-    const newId=genId();
-    document.getElementById('regIdBox').textContent=newId;
-    document.getElementById('regIdBox').dataset.id=newId;
-    setupReg();
+
+  // Проверяем сохранённые данные авторизации
+  const saved = localStorage.getItem('cipherAuth');
+  if(saved){
+    try{
+      const {username, password} = JSON.parse(saved);
+      setHint('Восстановление сессии...');
+      gun.user().auth(username, password, ack=>{
+        if(ack.err){
+          console.warn('Авторесторе не удался:', ack.err);
+          localStorage.removeItem('cipherAuth');
+          setupReg();
+        } else {
+          gunUser = gun.user();
+          startApp(username);
+        }
+      });
+    } catch(e){
+      localStorage.removeItem('cipherAuth');
+      setupReg();
+    }
   } else {
-    myProfile=profile;
-    startApp();
+    setupReg();
   }
+}
+
+function setHint(text){
+  const h=document.getElementById('regHint');
+  if(h) h.textContent=text;
 }
 
 // ==================== REGISTRATION ====================
@@ -875,446 +846,231 @@ function setupReg(){
     regAvatar=b64;
     pick.innerHTML=`<img src="${b64}" alt="">`;
   };
+
   document.getElementById('regBtn').onclick=async()=>{
-    const nick=document.getElementById('regNick').value.trim();
-    if(!nick){showToast('Введите никнейм');return;}
-    const id=document.getElementById('regIdBox').dataset.id;
-    myProfile={key:'main',id,nick,avatar:regAvatar};
-    await dbPut('profile',myProfile);
-    document.getElementById('regOverlay').style.display='none';
-    startApp();
+    const username=document.getElementById('regNick').value.trim().toLowerCase();
+    const password=document.getElementById('regPass').value;
+    if(!username || username.length<3){showToast('Username минимум 3 символа');return;}
+    if(!password || password.length<4){showToast('Пароль минимум 4 символа');return;}
+
+    const btn=document.getElementById('regBtn');
+    btn.disabled=true;
+    btn.textContent='Подключение...';
+    setHint('Попытка входа...');
+
+    // Сначала пробуем войти (вдруг пользователь уже существует)
+    gun.user().auth(username, password, async ack=>{
+      if(ack.err){
+        // Не получилось — создаём нового пользователя
+        setHint('Регистрация нового пользователя...');
+        gun.user().create(username, password, createAck=>{
+          if(createAck.err && !createAck.err.includes('already created')){
+            showToast('Ошибка: '+createAck.err);
+            btn.disabled=false;
+            btn.textContent='Войти / Зарегистрироваться';
+            setHint('Попробуйте другой username или пароль.');
+            return;
+          }
+          // После создания — авторизуемся
+          gun.user().auth(username, password, authAck=>{
+            if(authAck.err){
+              showToast('Ошибка авторизации: '+authAck.err);
+              btn.disabled=false;
+              btn.textContent='Войти / Зарегистрироваться';
+              return;
+            }
+            gunUser = gun.user();
+            localStorage.setItem('cipherAuth', JSON.stringify({username, password}));
+            startApp(username, true);
+          });
+        });
+      } else {
+        // Успешный вход
+        gunUser = gun.user();
+        localStorage.setItem('cipherAuth', JSON.stringify({username, password}));
+        startApp(username, false);
+      }
+    });
   };
 }
 
 // ==================== START APP ====================
-async function startApp(){
-  document.getElementById('app').style.display='flex';
+async function startApp(username, isNew){
+  console.log('🚀 Запуск Cipher для:', username);
+
   document.getElementById('regOverlay').style.display='none';
+  document.getElementById('app').style.display='flex';
 
-  // Generate or load ECDH keys
-  const storedKey=await dbGet('keys','__self__');
-  if(storedKey){
-    try{
-      const privRaw=Uint8Array.from(atob(storedKey.priv),c=>c.charCodeAt(0));
-      const pubRaw=Uint8Array.from(atob(storedKey.pub),c=>c.charCodeAt(0));
-      const priv=await crypto.subtle.importKey('pkcs8',privRaw,{name:'ECDH',namedCurve:'P-256'},true,['deriveKey']);
-      const pub=await crypto.subtle.importKey('raw',pubRaw,{name:'ECDH',namedCurve:'P-256'},true,[]);
-      keyPair={privateKey:priv,publicKey:pub};
-    }catch(e){keyPair=await generateAndStoreKey();}
-  } else {
-    keyPair=await generateAndStoreKey();
-  }
+  gunUser = gun.user();
 
-  contacts=await dbGetAll('contacts');
-  renderSidebar();
-  setupPeer();
+  // Загружаем профиль из Gun (или создаём новый)
+  gunUser.get('profile').once(async profile=>{
+    if(profile && profile.username){
+      myProfile = {
+        username: profile.username,
+        nick: profile.nick || profile.username,
+        avatar: profile.avatar || ''
+      };
+    } else {
+      // Новый пользователь — сохраняем профиль
+      myProfile = {username, nick: username, avatar: regAvatar};
+      gunUser.get('profile').put({
+        username,
+        nick: username,
+        avatar: regAvatar
+      });
+    }
+    renderSidebar();
+  });
+
+  // Загружаем контакты из локальной БД
+  const savedContacts = await dbGetAll('contacts');
+  contacts = savedContacts;
+
+  // Публикуем себя в сети
+  gun.get('users').get(username).put({
+    username,
+    nick: myProfile.nick || username,
+    avatar: myProfile.avatar || '',
+    online: true,
+    lastSeen: Date.now()
+  });
+
   setupEvents();
-}
+  subscribeToIncomingMessages();
+  renderSidebar();
+  showNoChatView();
 
-async function generateAndStoreKey(){
-  const kp=await generateKeyPair();
-  const privRaw=await crypto.subtle.exportKey('pkcs8',kp.privateKey);
-  const pubRaw=await crypto.subtle.exportKey('raw',kp.publicKey);
-  await dbPut('keys',{
-    peerId:'__self__',
-    priv:btoa(String.fromCharCode(...new Uint8Array(privRaw))),
-    pub:btoa(String.fromCharCode(...new Uint8Array(pubRaw)))
+  // Обновляем online-статус при закрытии
+  window.addEventListener('beforeunload', ()=>{
+    gun.get('users').get(username).get('online').put(false);
   });
-  return kp;
+
+  console.log('✓ Приложение запущено');
 }
 
-// ==================== PEER ====================
-let peerReconnectTimer=null;
+// ==================== GUN: Подписка на входящие сообщения ====================
+function subscribeToIncomingMessages(){
+  // Подписываемся на все чаты где мы участвуем
+  // Входящие сообщения — любой чат с нашим username
+  contacts.forEach(c => subscribeToChat(c.username));
+}
 
-function setupPeer(){
-  if(peer && !peer.destroyed) peer.destroy();
-  
-  // Конфигурация PeerJS с TURN серверами (критично для работы через NAT/файрволы)
-  const peerConfig = {
-    host: '0.peerjs.com',
-    port: 443,
-    secure: true,
-    path: '/',
-    config: {
-      iceServers: [
-        // STUN серверы для поиска публичного IP
-        {urls: 'stun:stun.l.google.com:19302'},
-        {urls: 'stun:stun1.l.google.com:19302'},
-        {urls: 'stun:global.stun.twilio.com:3478'},
-        
-        // TURN серверы (реле для NAT-пробиваемого соединения)
-        // Бесплатные серверы OpenRelay Project
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelayproject',
-          credential: 'openrelayproject'
-        }
-      ]
+function subscribeToChat(peerUsername){
+  if(chatSubscriptions[peerUsername]) return; // уже подписаны
+
+  const chatKey = [myProfile.username, peerUsername].sort().join('_');
+
+  const ref = gun.get('chats').get(chatKey).map().on(async (msg, msgId)=>{
+    if(!msg || !msg.from || !msg.ts) return;
+    if(renderedMsgIds.has(msgId)) return; // дедупликация
+
+    // Сохраняем в локальную БД если ещё нет
+    const existing = await dbGetByIndex('messages','chatId',peerUsername);
+    const alreadySaved = existing.find(m=>m.gunId===msgId);
+
+    const localMsg = {
+      chatId: peerUsername,
+      gunId: msgId,
+      from: msg.from,
+      to: msg.to,
+      type: msg.type || 'text',
+      content: msg.content || '',
+      ts: msg.ts,
+      read: activeChat===peerUsername
+    };
+
+    if(!alreadySaved){
+      const localId = await dbPut('messages', localMsg);
+      localMsg.id = localId;
+    } else {
+      localMsg.id = alreadySaved.id;
     }
-  };
-  
-  peer = new Peer(myProfile.id, peerConfig);
-  
-  peer.on('open', id => {
-    console.log('✓ Peer (PeerJS) открыт:', id);
-    if(peerReconnectTimer) {
-      clearTimeout(peerReconnectTimer);
-      peerReconnectTimer = null;
+
+    // Если это активный чат — рисуем в UI
+    if(activeChat === peerUsername && !renderedMsgIds.has(msgId)){
+      renderedMsgIds.add(msgId);
+      appendMessage(localMsg);
+      scrollBottom();
     }
-    // Переподключаемся к известным контактам
-    contacts.forEach(c => connectToPeer(c.id));
-  });
-  
-  peer.on('connection', conn => handleIncomingConn(conn));
-  peer.on('call', call => handleIncomingCall(call));
-  
-  peer.on('disconnected', () => {
-    console.warn('⚠️ Peer отключен, попытка переподключения...');
-    if(!peer.destroyed) {
-      try{
-        peer.reconnect();
-      } catch(e) {
-        console.warn('Ошибка reconnect:', e.message);
-        schedulePeerReconnect();
-      }
-    }
-  });
-  
-  peer.on('error', e => {
-    console.error('❌ Ошибка Peer:', e.type, '-', e.message || e);
-    
-    // Обработка unavailable-id - ID уже занят
-    if(e.type === 'unavailable-id') {
-      console.warn('📌 ID "' + myProfile.id + '" уже занят, генерируем новый...');
-      let newId = genId();
-      let attempts = 0;
-      while(contacts.some(c => c.id === newId) && attempts < 3) {
-        newId = genId();
-        attempts++;
-      }
-      myProfile.id = newId;
-      dbPut('profile', myProfile);
-      schedulePeerReconnect();
-      return;
-    }
-    
-    // Критические ошибки требуют перестройки peer
-    if(e.type === 'network' || 
-       e.type === 'server-error' || 
-       e.type === 'socket-error' || 
-       e.type === 'socket-closed' || 
-       e.type === 'peer-unavailable') {
-      schedulePeerReconnect();
-    }
-  });
-  
-  // Инициализируем Artico если доступна
-  if(window.Artico) {
-    try {
-      console.log('🚀 Инициализируем Artico как основной протокол...');
-      initArtico();
-    } catch(e) {
-      console.warn('⚠️ Artico инициализация ошибка:', e.message);
-    }
-  }
-}
 
-function initArtico() {
-  // Artico - новая альтернатива PeerJS (2024+)
-  // Будет использоваться параллельно как основной протокол для новых соединений
-  console.log('📡 Artico готова к использованию как основной WebRTC протокол');
-  // Artico будет инициализирована при первом успешном подключении
-}
+    // Обновляем превью в сайдбаре
+    updateLastMessage(peerUsername, msg.content, msg.ts);
 
-function schedulePeerReconnect(){
-  if(peerReconnectTimer) return;
-  peerReconnectTimer=setTimeout(()=>{
-    peerReconnectTimer=null;
-    console.log('♻️ Пересоздаем peer...');
-    // Properly destroy old peer
-    if(peer && !peer.destroyed){
-      try{peer.destroy();}catch(e){console.warn('error destroying peer:',e);}
-    }
-    connections={};
-    aesKeys={};
-    peer=null;
-    setupPeer();
-  },2000);
-}
-
-function connectToPeer(peerId){
-  if(!peer||peer.destroyed||peer.disconnected) {
-    console.warn('Peer не готов, планируем переподключение');
-    return;
-  }
-  
-  // Если уже есть открытое соединение - пропускаем
-  if(connections[peerId]&&connections[peerId].open) return;
-  
-  // Очищаем мертвое соединение
-  if(connections[peerId]) delete connections[peerId];
-  
-  let conn;
-  try{
-    conn=peer.connect(peerId,{reliable:true});
-  }catch(e){
-    console.warn('❌ PeerJS connect ошибка:', e.message);
-    return;
-  }
-  
-  // Проверяем, отдался ли объект соединения
-  if(!conn) {
-    console.warn('❌ Соединение с ' + peerId + ' не создано');
-    return;
-  }
-
-  conn.on('open',()=>onConnOpen(conn));
-  conn.on('data',d=>onConnData(conn,d));
-  conn.on('close',()=>onConnClose(conn));
-  conn.on('error',e=>{
-    console.warn('❌ Ошибка соединения с', peerId, ':', e);
-    onConnClose(conn);
-  });
-  
-  connections[peerId]=conn;
-  
-  // Параллельно пытаемся подключиться через Artico (основной протокол)
-  if(window.Artico) {
-    connectViaArtico(peerId).catch(e => {
-      console.warn('⚠️ Artico подключение ошибка:', e.message);
-      // На ошибку не реагируем, используем PeerJS как fallback
-    });
-  }
-  
-  // Резервный канал через Trystero (DHT)
-  connectViaTrystero(peerId);
-}
-
-async function connectViaArtico(peerId) {
-  if (!window.Artico) {
-    return; // Artico не доступна
-  }
-  
-  if (articoConns[peerId]) {
-    return; // Уже подключены
-  }
-  
-  console.log('🔗 Попытка подключения через Artico к', peerId);
-  
-  // Artico работает иначе, чем PeerJS
-  // Это фуункция для демонстрации - реальная реализация зависит от API Artico
-  try {
-    // Заглушка: Artico будет использована, когда PeerJS недоступна
-    console.log('📦 Artico: резервный протокол активирован для', peerId);
-    articoConns[peerId] = { status: 'pending', peerId };
-  } catch(e) {
-    console.warn('❌ Artico подключение ошибка:', e.message);
-  }
-}
-
-function connectViaTrystero(peerId) {
-  if (!window.trystero) {
-    console.log('📦 Trystero не доступна, используется только PeerJS');
-    return;
-  }
-  
-  if (torrentRooms[peerId]) return; // Уже слушаем комнату
-
-  try {
-    console.log('🌐 Подключение через Trystero (DHT)...');
-    
-    // Генерируем уникальное имя комнаты для двух пользователей (сортируем ID)
-    const roomName = [myProfile.id, peerId].sort().join('_');
-    const room = window.trystero.joinRoom({appId: 'cipher-messenger'}, roomName);
-    torrentRooms[peerId] = room;
-
-    const [sendData, getTargetData] = room.makeAction('p2p-data');
-
-    room.onPeerJoin(id => {
-      console.log('✓ Trystero (DHT) подключен:', id);
-      setOnline(peerId, true);
-      
-      // Отправляем handshake через DHT
-      exportPublicKey(keyPair.publicKey).then(pubKey => {
-        sendData({type: 'HANDSHAKE', pubKey, nick: myProfile.nick, avatar: myProfile.avatar}, id);
-      }).catch(e => console.warn('❌ Trystero handshake ошибка:', e));
-    });
-
-    getTargetData(async (data, id) => {
-      try {
-        // Бесшовно прокидываем данные из торрента в существующую криптографию Cipher
-        const pseudoConn = { 
-          peer: peerId, 
-          open: true,
-          type: 'trystero',
-          send: (payload) => sendData(payload, id) 
-        };
-        
-        // Используем Trystero соединение параллельно с PeerJS
-        if(!connections[peerId] || connections[peerId].type === 'trystero') {
-          connections[peerId] = pseudoConn;
-        }
-        onConnData(pseudoConn, data);
-      } catch(e) {
-        console.warn('❌ Ошибка обработки Trystero данных:', e);
-      }
-    });
-
-    room.onPeerLeave(id => {
-      console.log('⚠️ Trystero пир отключился:', id);
-      setOnline(peerId, false);
-    });
-  } catch(e) {
-    console.warn('⚠️ Trystero инициализация ошибка:', e.message);
-  }
-}
-
-function handleIncomingConn(conn){
-  conn.on('open',()=>onConnOpen(conn));
-  conn.on('data',d=>onConnData(conn,d));
-  conn.on('close',()=>onConnClose(conn));
-  conn.on('error',()=>onConnClose(conn));
-  connections[conn.peer]=conn;
-}
-
-async function onConnOpen(conn){
-  const peerId=conn.peer;
-  // mark online
-  setOnline(peerId,true);
-  // send handshake with our public key + profile
-  const pubKey=await exportPublicKey(keyPair.publicKey);
-  conn.send({type:'HANDSHAKE',pubKey,nick:myProfile.nick,avatar:myProfile.avatar});
-}
-
-async function onConnData(conn,data){
-  const peerId=conn.peer;
-  if(data.type==='HANDSHAKE'){
-    // derive shared AES key
-    const theirPub=await importPublicKey(data.pubKey);
-    const aesKey=await crypto.subtle.deriveKey(
-      {name:'ECDH',public:theirPub},keyPair.privateKey,
-      {name:'AES-GCM',length:256},false,['encrypt','decrypt']
-    );
-    aesKeys[peerId]=aesKey;
-    // update contact nick/avatar if already known
-    const contact=contacts.find(c=>c.id===peerId);
-    if(contact){
-      if(data.nick) contact.nick=data.nick;
-      if(data.avatar) contact.avatar=data.avatar;
-      await dbPut('contacts',contact);
-      renderSidebar();
-      if(activeChat===peerId) renderChatHeader();
-    }
-    return;
-  }
-  if(data.type==='MESSAGE'){
-    try{
-      const key=aesKeys[peerId];
-      if(!key) return;
-      const plain=await decryptMsg(key,data.payload);
-      const msgObj=JSON.parse(plain);
-      const msg={chatId:peerId,from:peerId,type:msgObj.type||'text',content:msgObj.content,ts:Date.now(),read:activeChat===peerId};
-      const id=await dbPut('messages',msg);
-      msg.id=id;
-      if(activeChat===peerId){
-        appendMessage(msg);
-        scrollBottom();
-        // send read receipt
-        conn.send({type:'READ',ts:msg.ts});
-      } else {
-        // increment unread
-        const contact=contacts.find(c=>c.id===peerId);
-        if(contact){contact.unread=(contact.unread||0)+1;await dbPut('contacts',contact);}
+    // Если не активный чат — инкрементируем unread
+    if(activeChat !== peerUsername && msg.from !== myProfile.username){
+      const c = contacts.find(c=>c.username===peerUsername);
+      if(c){
+        c.unread = (c.unread||0)+1;
+        await dbPut('contacts',c);
         renderSidebar();
       }
-      updateLastMessage(peerId,msgObj.content,msg.ts);
-      updateRightPanel(msg);
-    }catch(e){console.warn('decrypt failed',e);}
-    return;
-  }
-  if(data.type==='DELETE_CHAT'){
-    await dbDeleteByIndex('messages','chatId',peerId);
-    const idx=contacts.findIndex(c=>c.id===peerId);
-    if(idx>-1){contacts.splice(idx,1);await dbDelete('contacts',peerId);}
-    if(activeChat===peerId){activeChat=null;showNoChatView();}
-    renderSidebar();
-    showToast('Собеседник удалил переписку');
-    return;
-  }
-  if(data.type==='READ'){
-    // mark messages as read
-    renderSidebar();
-    return;
-  }
-}
+    }
+  });
 
-function onConnClose(conn){
-  const peerId=conn.peer;
-  setOnline(peerId,false);
-  delete connections[peerId];
-  // retry connection after delay if contact still exists
-  const contact=contacts.find(c=>c.id===peerId);
-  if(contact){
-    setTimeout(()=>{
-      if(!connections[peerId]) connectToPeer(peerId);
-    },5000);
-  }
-}
+  chatSubscriptions[peerUsername] = ref;
 
-function setOnline(peerId,online){
-  const c=contacts.find(c=>c.id===peerId);
-  if(c){c.online=online;dbPut('contacts',c);}
-  renderSidebar();
-  if(activeChat===peerId) renderChatHeader();
+  // Подписываемся на онлайн-статус
+  gun.get('users').get(peerUsername).get('online').on(online=>{
+    setOnline(peerUsername, !!online);
+  });
 }
 
 // ==================== SEND ====================
-async function sendMessage(type,content){
-  if(!activeChat) return;
-  const conn=connections[activeChat];
-  const key=aesKeys[activeChat];
-  const msgObj={type,content};
-  const plain=JSON.stringify(msgObj);
-  let payload=plain;
-  if(key){
-    try{payload=await encryptMsg(key,plain);}catch(e){console.warn('encrypt failed',e);}
-  }
-  const msg={chatId:activeChat,from:'me',type,content,ts:Date.now(),read:true};
-  const id=await dbPut('messages',msg);
-  msg.id=id;
-  appendMessage(msg);
+async function sendMessage(type, content){
+  if(!activeChat || !gunUser) return;
+
+  const chatKey = [myProfile.username, activeChat].sort().join('_');
+  const msgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2,9);
+
+  const message = {
+    from: myProfile.username,
+    to: activeChat,
+    type,
+    content,
+    ts: Date.now()
+  };
+
+  // Сохраняем локально
+  const localMsg = {...message, chatId: activeChat, gunId: msgId, read: true};
+  const localId = await dbPut('messages', localMsg);
+  localMsg.id = localId;
+
+  // Публикуем в Gun
+  gun.get('chats').get(chatKey).get(msgId).put(message, ack=>{
+    if(ack.err) console.warn('Gun send error:', ack.err);
+  });
+
+  // Рисуем в UI (сразу, не ждём Gun)
+  renderedMsgIds.add(msgId);
+  appendMessage(localMsg);
   scrollBottom();
-  updateLastMessage(activeChat,content,msg.ts);
-  updateRightPanel(msg);
-  if(conn && conn.open){
-    conn.send({type:'MESSAGE',payload});
-  }
+
+  updateLastMessage(activeChat, content, message.ts);
 }
 
 // ==================== RENDER ====================
 function renderSidebar(){
   const myAv=document.getElementById('myAvSidebar');
-  renderAvatar(myAv,myProfile.avatar,myProfile.nick);
-  document.getElementById('myNickSidebar').textContent=myProfile.nick||'Вы';
+  if(myAv) renderAvatar(myAv, myProfile.avatar, myProfile.nick||myProfile.username);
+  const nickEl=document.getElementById('myNickSidebar');
+  if(nickEl) nickEl.textContent=myProfile.nick||myProfile.username||'Вы';
+
   const list=document.getElementById('chatList');
+  if(!list) return;
   list.innerHTML='';
   contacts.forEach(c=>{
     const item=document.createElement('div');
-    item.className='chat-item'+(activeChat===c.id?' active':'');
-    item.dataset.id=c.id;
+    item.className='chat-item'+(activeChat===c.username?' active':'');
+    item.dataset.id=c.username;
     const av=document.createElement('div');
     av.className='av';
-    renderAvatar(av,c.avatar,c.nick);
+    renderAvatar(av, c.avatar, c.nick||c.username);
     if(c.online){
       const dot=document.createElement('div');dot.className='online-dot';av.appendChild(dot);
     }
     const info=document.createElement('div');info.className='info';
-    const name=document.createElement('div');name.className='name';name.textContent=c.nick||c.id.slice(0,8);
+    const name=document.createElement('div');name.className='name';name.textContent=c.nick||c.username;
     const last=document.createElement('div');last.className='last';last.textContent=c.lastMsg||'Нет сообщений';
     info.appendChild(name);info.appendChild(last);
     const meta=document.createElement('div');meta.className='meta';
@@ -1326,8 +1082,8 @@ function renderSidebar(){
       meta.appendChild(u);
     }
     item.appendChild(av);item.appendChild(info);item.appendChild(meta);
-    item.onclick=()=>openChat(c.id);
-    item.oncontextmenu=e=>{e.preventDefault();showChatCtxMenu(e,c.id);};
+    item.onclick=()=>openChat(c.username);
+    item.oncontextmenu=e=>{e.preventDefault();showChatCtxMenu(e,c.username);};
     list.appendChild(item);
   });
 }
@@ -1338,10 +1094,6 @@ function showChatCtxMenu(e,chatId){
     <div class="ctx-item" data-action="delete-local">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
       Удалить у меня
-    </div>
-    <div class="ctx-item danger" data-action="delete-both">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-      Удалить у обоих
     </div>
   `;
   menu.style.display='block';
@@ -1355,17 +1107,17 @@ document.addEventListener('click',e=>{
   if(action&&menu.style.display==='block'){
     const chatId=menu.dataset.chatId;
     if(action.dataset.action==='delete-local') deleteChatLocal(chatId);
-    else if(action.dataset.action==='delete-both') deleteChatBoth(chatId);
     menu.style.display='none';
   } else {
     menu.style.display='none';
   }
 });
 
-async function openChat(id){
-  activeChat=id;
-  const contact=contacts.find(c=>c.id===id);
-  if(contact){contact.unread=0;await dbPut('contacts',contact);}
+async function openChat(username){
+  activeChat=username;
+  renderedMsgIds = new Set(); // сбрасываем дедупликацию при смене чата
+
+  const contact=contacts.find(c=>c.username===username);
   document.getElementById('noChatView').style.display='none';
   const cv=document.getElementById('chatView');
   cv.style.display='flex';
@@ -1373,26 +1125,54 @@ async function openChat(id){
   document.getElementById('infoPanelEmpty').style.display='none';
   renderChatHeader();
   renderSidebar();
+
+  // Сбрасываем unread
+  if(contact && contact.unread){
+    contact.unread=0;
+    await dbPut('contacts',contact);
+    renderSidebar();
+  }
+
   await loadMessages();
-  // connect if not connected
-  if(!connections[id]) connectToPeer(id);
-  // render info panel AFTER messages loaded so media tab is populated
-  await renderInfoPanel(id);
+
+  // Подписываемся на чат если ещё не подписаны
+  subscribeToChat(username);
+
+  // Подгружаем профиль собеседника из Gun
+  gun.get('users').get(username).once(userData=>{
+    if(userData && userData.username){
+      const c=contacts.find(c=>c.username===username);
+      if(c){
+        if(userData.avatar && userData.avatar.length>10) c.avatar=userData.avatar;
+        if(userData.nick) c.nick=userData.nick;
+        dbPut('contacts',c);
+        renderSidebar();
+        renderChatHeader();
+      }
+    }
+  });
+
+  await renderInfoPanel(username);
 }
 
 function renderChatHeader(){
-  const contact=contacts.find(c=>c.id===activeChat);
+  const contact=contacts.find(c=>c.username===activeChat);
   if(!contact) return;
   const av=document.getElementById('headerAv');
-  renderAvatar(av,contact.avatar,contact.nick);
-  document.getElementById('headerName').textContent=contact.nick||contact.id.slice(0,12);
-  document.getElementById('headerStatus').textContent=contact.online?'в сети':'не в сети';
-  document.getElementById('headerStatus').style.color=contact.online?'var(--green)':'var(--text3)';
+  if(av) renderAvatar(av, contact.avatar, contact.nick||contact.username);
+  const nameEl=document.getElementById('headerName');
+  if(nameEl) nameEl.textContent=contact.nick||contact.username;
+  const statusEl=document.getElementById('headerStatus');
+  if(statusEl){
+    statusEl.textContent=contact.online?'в сети':'не в сети';
+    statusEl.style.color=contact.online?'var(--green)':'var(--text3)';
+  }
 }
 
 async function loadMessages(){
   const area=document.getElementById('messagesArea');
   area.innerHTML='';
+  renderedMsgIds = new Set();
   const msgs=await dbGetByIndex('messages','chatId',activeChat);
   msgs.sort((a,b)=>a.ts-b.ts);
   let lastDate='';
@@ -1402,6 +1182,7 @@ async function loadMessages(){
       const div=document.createElement('div');div.className='date-divider';div.textContent=d;
       area.appendChild(div);lastDate=d;
     }
+    if(m.gunId) renderedMsgIds.add(m.gunId);
     appendMessage(m);
   });
   scrollBottom();
@@ -1409,14 +1190,14 @@ async function loadMessages(){
 
 function appendMessage(msg){
   const area=document.getElementById('messagesArea');
-  const isOut=msg.from==='me';
-  const contact=contacts.find(c=>c.id===activeChat)||{};
+  const isOut=msg.from===myProfile.username;
+  const contact=contacts.find(c=>c.username===activeChat)||{};
   const wrapper=document.createElement('div');
   wrapper.className='msg'+(isOut?' out':'');
   if(msg.id) wrapper.dataset.msgId=msg.id;
   if(!isOut){
     const mav=document.createElement('div');mav.className='mavatar';
-    renderAvatar(mav,contact.avatar,contact.nick);
+    renderAvatar(mav, contact.avatar, contact.nick||contact.username);
     wrapper.appendChild(mav);
   }
   const bubble=document.createElement('div');bubble.className='bubble';
@@ -1434,23 +1215,26 @@ function appendMessage(msg){
     bubble.appendChild(makeVoicePlayer(msg.content));
   } else if(msg.type==='video'){
     const video=document.createElement('video');
-    video.className='msg-video';video.src=msg.content;video.controls=true;video.style.maxWidth='100%';video.style.maxHeight='300px';
+    video.className='msg-video';video.src=msg.content;video.controls=true;
+    video.style.maxWidth='100%';video.style.maxHeight='300px';
     bubble.appendChild(video);
   } else if(msg.type==='file'){
-    const fd=JSON.parse(msg.content);
-    const row=document.createElement('div');row.className='msg-file';
-    const icon=document.createElement('div');icon.className='file-icon';
-    icon.innerHTML=`<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
-    const fi=document.createElement('div');fi.className='file-info';
-    const fn=document.createElement('div');fn.className='file-name';fn.textContent=fd.name;
-    const fs=document.createElement('div');fs.className='file-size';fs.textContent=fmtSize(fd.size||0);
-    fi.appendChild(fn);fi.appendChild(fs);
-    const dl=document.createElement('a');
-    dl.href=fd.data;dl.download=fd.name;
-    dl.innerHTML=`<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
-    dl.style.color='var(--accent)';
-    row.appendChild(icon);row.appendChild(fi);row.appendChild(dl);
-    bubble.appendChild(row);
+    try{
+      const fd=JSON.parse(msg.content);
+      const row=document.createElement('div');row.className='msg-file';
+      const icon=document.createElement('div');icon.className='file-icon';
+      icon.innerHTML=`<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
+      const fi=document.createElement('div');fi.className='file-info';
+      const fn=document.createElement('div');fn.className='file-name';fn.textContent=fd.name;
+      const fs=document.createElement('div');fs.className='file-size';fs.textContent=fmtSize(fd.size||0);
+      fi.appendChild(fn);fi.appendChild(fs);
+      const dl=document.createElement('a');
+      dl.href=fd.data;dl.download=fd.name;
+      dl.innerHTML=`<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+      dl.style.color='var(--accent)';
+      row.appendChild(icon);row.appendChild(fi);row.appendChild(dl);
+      bubble.appendChild(row);
+    }catch(e){ const p=document.createElement('div');p.textContent='[файл]';bubble.appendChild(p); }
   }
   const mt=document.createElement('div');mt.className='mtime';
   mt.textContent=fmtTime(msg.ts);
@@ -1471,7 +1255,8 @@ function makeVoicePlayer(dataUrl){
   let audio=null,playing=false,timer=null;
   btn.onclick=()=>{
     if(!audio){audio=new Audio(dataUrl);}
-    if(playing){audio.pause();playing=false;clearInterval(timer);
+    if(playing){
+      audio.pause();playing=false;clearInterval(timer);
       btn.innerHTML=`<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>`;
     } else {
       audio.play();playing=true;
@@ -1498,40 +1283,44 @@ function scrollBottom(){
 
 function scrollToMessage(msgId){
   if(!msgId) return;
-  // Явно приводим msgId к строке для корректной работы querySelector
   const el=document.querySelector(`[data-msg-id="${String(msgId)}"]`);
   if(!el) return;
-  
-  el.scrollIntoView({behavior:'smooth', block:'center'});
-  // Визуальная подсветка нужного файла
+  el.scrollIntoView({behavior:'smooth',block:'center'});
   el.style.transition='background .2s';
   el.style.background='rgba(79,142,247,0.18)';
   el.style.borderRadius='12px';
   setTimeout(()=>{el.style.background='';el.style.borderRadius='';},1200);
 }
 
-function updateLastMessage(chatId,content,ts){
-  const c=contacts.find(c=>c.id===chatId);
+function updateLastMessage(chatId, content, ts){
+  const c=contacts.find(c=>c.username===chatId);
   if(c){
     let preview=content;
     if(content&&content.startsWith('data:image')) preview='📷 Фото';
     else if(content&&content.startsWith('data:audio')) preview='🎵 Голосовое';
     else if(content&&content.length>50) preview=content.slice(0,50)+'...';
-    c.lastMsg=preview;c.lastTs=ts;
+    c.lastMsg=preview; c.lastTs=ts;
     dbPut('contacts',c);
     renderSidebar();
   }
 }
 
-async function renderInfoPanel(chatId){
-  const contact=contacts.find(c=>c.id===chatId);
+function setOnline(peerUsername, online){
+  const c=contacts.find(c=>c.username===peerUsername);
+  if(c){ c.online=online; dbPut('contacts',c); }
+  renderSidebar();
+  if(activeChat===peerUsername) renderChatHeader();
+}
+
+async function renderInfoPanel(username){
+  const contact=contacts.find(c=>c.username===username);
   if(!contact) return;
   const bigAv=document.getElementById('infoBigAv');
-  renderAvatar(bigAv,contact.avatar,contact.nick);
-  document.getElementById('infoName').textContent=contact.nick||'Неизвестный';
+  renderAvatar(bigAv, contact.avatar, contact.nick||contact.username);
+  document.getElementById('infoName').textContent=contact.nick||contact.username;
   document.getElementById('infoStatus').textContent=contact.online?'в сети':'не в сети';
   document.getElementById('infoStatus').style.color=contact.online?'var(--green)':'var(--text3)';
-  document.getElementById('infoId').textContent=chatId;
+  document.getElementById('infoId').textContent=username;
   await renderTabContent();
 }
 
@@ -1548,7 +1337,6 @@ async function renderTabContent(){
       const t=document.createElement('div');t.className='media-thumb';
       const img=document.createElement('img');img.src=m.content;
       img.onclick=()=>openLightbox(m.content);
-      t.title='Нажмите дважды, чтобы перейти к сообщению';
       t.ondblclick=()=>scrollToMessage(m.id);
       t.appendChild(img);grid.appendChild(t);
     });
@@ -1559,7 +1347,6 @@ async function renderTabContent(){
     files.forEach(m=>{
       const fd=m.type==='file'?JSON.parse(m.content):{name:'видео',size:0,data:m.content};
       const row=document.createElement('div');row.className='file-row';
-      row.title='Нажмите, чтобы перейти к сообщению';
       row.innerHTML=`<div class="file-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg></div><div class="file-info"><div class="file-name">${fd.name}</div><div class="file-size">${fmtSize(fd.size||0)}</div></div><div style="color:var(--accent);margin-left:auto;font-size:11px">↑</div>`;
       row.onclick=()=>scrollToMessage(m.id);
       tc.appendChild(row);
@@ -1578,10 +1365,6 @@ async function renderTabContent(){
       tc.appendChild(row);
     });
   }
-}
-
-function updateRightPanel(msg){
-  if(msg.chatId===activeChat) renderTabContent();
 }
 
 // ==================== EVENTS ====================
@@ -1615,10 +1398,10 @@ function setupEvents(){
     const b64=await fileToBase64(stripped);
     myProfile.avatar=b64;
     const av=document.getElementById('settingsAv');
-    av.innerHTML=`<img src="${b64}" alt="">`;
+    renderAvatar(av, b64, myProfile.nick);
   };
   document.getElementById('settingsIdBox').onclick=()=>{
-    navigator.clipboard.writeText(myProfile.id);showToast('ID скопирован!');
+    navigator.clipboard.writeText(myProfile.username).then(()=>showToast('Username скопирован!'));
   };
   document.getElementById('exportBtn').onclick=exportData;
   document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
@@ -1629,7 +1412,6 @@ function setupEvents(){
   document.getElementById('msgInput').onkeydown=e=>{
     if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();doSend();}
   };
-  // Auto-resize textarea
   document.getElementById('msgInput').oninput=function(){
     this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px';
   };
@@ -1641,9 +1423,9 @@ function setupEvents(){
   // Voice record
   document.getElementById('recordBtn').onclick=toggleRecord;
 
-  // Calls
-  document.getElementById('audioCallBtn').onclick=()=>startCall(false);
-  document.getElementById('videoCallBtn').onclick=()=>startCall(true);
+  // Calls (UI only, нет PeerJS — показываем заглушку)
+  document.getElementById('audioCallBtn').onclick=()=>showToast('Звонки будут доступны в следующей версии');
+  document.getElementById('videoCallBtn').onclick=()=>showToast('Видеозвонки будут доступны в следующей версии');
 
   // Delete chat
   document.getElementById('deleteChatBtn').onclick=()=>{
@@ -1652,7 +1434,7 @@ function setupEvents(){
   };
   document.getElementById('deleteCancelBtn').onclick=()=>document.getElementById('deleteChatModal').style.display='none';
   document.getElementById('deleteLocalBtn').onclick=()=>{deleteChatLocal(activeChat);document.getElementById('deleteChatModal').style.display='none';};
-  document.getElementById('deleteBothBtn').onclick=()=>{deleteChatBoth(activeChat);document.getElementById('deleteChatModal').style.display='none';};
+  document.getElementById('deleteBothBtn').onclick=()=>{deleteChatLocal(activeChat);document.getElementById('deleteChatModal').style.display='none';};
 
   // Lightbox
   document.getElementById('lightbox').onclick=()=>document.getElementById('lightbox').style.display='none';
@@ -1670,31 +1452,13 @@ function setupEvents(){
 function setupDragDrop(){
   const chatView=document.getElementById('chatView');
   let dragTimer;
-
-  document.addEventListener('dragover', e => e.preventDefault());
-
-  chatView.addEventListener('dragenter', e => {
-    e.preventDefault();
+  document.addEventListener('dragover',e=>e.preventDefault());
+  chatView.addEventListener('dragenter',e=>{e.preventDefault();if(!activeChat) return;chatView.classList.add('drag-over');});
+  chatView.addEventListener('dragover',e=>{e.preventDefault();clearTimeout(dragTimer);});
+  chatView.addEventListener('dragleave',e=>{dragTimer=setTimeout(()=>chatView.classList.remove('drag-over'),50);});
+  chatView.addEventListener('drop',async e=>{
+    e.preventDefault();clearTimeout(dragTimer);chatView.classList.remove('drag-over');
     if(!activeChat) return;
-    chatView.classList.add('drag-over');
-  });
-
-  chatView.addEventListener('dragover', e => {
-    e.preventDefault();
-    clearTimeout(dragTimer); // Сбрасываем таймер, пока мышь двигается над окном
-  });
-
-  chatView.addEventListener('dragleave', e => {
-    // Убираем оверлей только если мышь реально покинула зону (избавляет от мерцания)
-    dragTimer = setTimeout(() => chatView.classList.remove('drag-over'), 50);
-  });
-
-  chatView.addEventListener('drop', async e => {
-    e.preventDefault();
-    clearTimeout(dragTimer);
-    chatView.classList.remove('drag-over');
-    if(!activeChat) return;
-    
     const files=[...e.dataTransfer.files];
     for(const f of files){
       if(f.type.startsWith('image/')){
@@ -1721,18 +1485,41 @@ function doSend(){
 }
 
 async function addChat(){
-  const id=document.getElementById('addChatId').value.trim();
-  const nick=document.getElementById('addChatName').value.trim()||id.slice(0,8);
-  if(!id){showToast('Введите ID');return;}
-  if(id===myProfile.id){showToast('Нельзя добавить себя');return;}
-  if(contacts.find(c=>c.id===id)){showToast('Уже добавлен');document.getElementById('addChatModal').style.display='none';return;}
-  const contact={id,nick,avatar:'',online:false,lastMsg:'',lastTs:0,unread:0};
-  contacts.push(contact);
-  await dbPut('contacts',contact);
-  renderSidebar();
-  document.getElementById('addChatModal').style.display='none';
-  connectToPeer(id);
-  openChat(id);
+  const username=document.getElementById('addChatId').value.trim().toLowerCase();
+  const nick=document.getElementById('addChatName').value.trim()||username;
+  if(!username){showToast('Введите username');return;}
+  if(username===myProfile.username){showToast('Нельзя добавить себя');return;}
+  if(contacts.find(c=>c.username===username)){
+    showToast('Уже добавлен');
+    document.getElementById('addChatModal').style.display='none';
+    openChat(username);
+    return;
+  }
+
+  // Проверяем существование пользователя в Gun
+  showToast('Поиск пользователя...');
+  gun.get('users').get(username).once(async userData=>{
+    const contact={
+      username,
+      nick: userData?.nick || nick,
+      avatar: userData?.avatar || '',
+      online: userData?.online || false,
+      lastMsg:'',lastTs:0,unread:0
+    };
+    contacts.push(contact);
+    await dbPut('contacts', contact);
+
+    // Сохраняем в Gun под нашим профилем
+    if(gunUser){
+      gunUser.get('contacts').get(username).put({username, nick:contact.nick});
+    }
+
+    renderSidebar();
+    document.getElementById('addChatModal').style.display='none';
+    subscribeToChat(username);
+    openChat(username);
+    showToast(userData ? `Пользователь ${username} найден` : `Контакт добавлен (пока оффлайн)`);
+  });
 }
 
 function showNoChatView(){
@@ -1744,17 +1531,96 @@ function showNoChatView(){
 
 async function deleteChatLocal(chatId){
   await dbDeleteByIndex('messages','chatId',chatId);
-  const idx=contacts.findIndex(c=>c.id===chatId);
-  if(idx>-1){contacts.splice(idx,1);await dbDelete('contacts',chatId);}
+  const idx=contacts.findIndex(c=>c.username===chatId);
+  if(idx>-1){
+    contacts.splice(idx,1);
+    await dbDelete('contacts',chatId);
+  }
+  // Отписываемся от Gun
+  if(chatSubscriptions[chatId]){
+    // gun.off не требует явного вызова для .on, просто перестаём слушать
+    delete chatSubscriptions[chatId];
+  }
   if(activeChat===chatId){activeChat=null;showNoChatView();}
   renderSidebar();
   showToast('Чат удалён');
 }
 
-async function deleteChatBoth(chatId){
-  const conn=connections[chatId];
-  if(conn&&conn.open) conn.send({type:'DELETE_CHAT',chatId});
-  await deleteChatLocal(chatId);
+// ==================== SETTINGS ====================
+function openSettings(){
+  const m=document.getElementById('settingsModal');
+  m.style.display='flex';
+  document.getElementById('settingsNick').value=myProfile.nick||'';
+  document.getElementById('settingsIdBox').textContent=myProfile.username;
+  const av=document.getElementById('settingsAv');
+  renderAvatar(av, myProfile.avatar, myProfile.nick||myProfile.username);
+}
+
+async function saveSettings(){
+  const nick=document.getElementById('settingsNick').value.trim();
+  if(nick) myProfile.nick=nick;
+
+  // Сохраняем профиль в Gun
+  if(gunUser){
+    gunUser.get('profile').put({
+      username: myProfile.username,
+      nick: myProfile.nick,
+      avatar: myProfile.avatar
+    });
+    // Обновляем публичный профиль
+    gun.get('users').get(myProfile.username).put({
+      username: myProfile.username,
+      nick: myProfile.nick,
+      avatar: myProfile.avatar,
+      online: true,
+      lastSeen: Date.now()
+    });
+  }
+
+  renderSidebar();
+  if(activeChat) renderChatHeader();
+  document.getElementById('settingsModal').style.display='none';
+  showToast('Сохранено');
+}
+
+// ==================== EXPORT/IMPORT ====================
+async function exportData(){
+  const contacts_=await dbGetAll('contacts');
+  const messages=await dbGetAll('messages');
+  const data={profile:myProfile, contacts:contacts_, messages, exportedAt:Date.now()};
+  const json=JSON.stringify(data);
+  const pass=prompt('Пароль для шифрования резервной копии:');
+  if(!pass) return;
+  const enc=new TextEncoder();
+  const keyMat=await crypto.subtle.importKey('raw',enc.encode(pass.padEnd(32,'x').slice(0,32)),{name:'AES-GCM'},false,['encrypt']);
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},keyMat,enc.encode(json));
+  const result={iv:btoa(String.fromCharCode(...iv)),data:btoa(String.fromCharCode(...new Uint8Array(ct)))};
+  const blob=new Blob([JSON.stringify(result)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='cipher_backup.json';a.click();
+  URL.revokeObjectURL(url);
+  showToast('Данные экспортированы');
+}
+
+async function importData(){
+  const f=document.getElementById('importFile').files[0];
+  if(!f) return;
+  const text=await f.text();
+  const {iv,data}=JSON.parse(text);
+  const pass=prompt('Пароль для расшифровки:');
+  if(!pass) return;
+  try{
+    const enc=new TextEncoder();
+    const keyMat=await crypto.subtle.importKey('raw',enc.encode(pass.padEnd(32,'x').slice(0,32)),{name:'AES-GCM'},false,['decrypt']);
+    const ivArr=Uint8Array.from(atob(iv),c=>c.charCodeAt(0));
+    const ctArr=Uint8Array.from(atob(data),c=>c.charCodeAt(0));
+    const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:ivArr},keyMat,ctArr);
+    const json=JSON.parse(new TextDecoder().decode(pt));
+    for(const c of json.contacts) await dbPut('contacts',c);
+    for(const m of json.messages){const {id:_,...rest}=m;await dbPut('messages',rest);}
+    showToast('Данные восстановлены. Перезагрузите страницу.');
+  }catch(e){showToast('Неверный пароль или повреждённый файл');}
 }
 
 // ==================== FILE ATTACH ====================
@@ -1799,158 +1665,6 @@ async function toggleRecord(){
     isRecording=false;
     document.getElementById('recordBtn').classList.remove('recording');
   }
-}
-
-// ==================== SETTINGS ====================
-function openSettings(){
-  const m=document.getElementById('settingsModal');
-  m.style.display='flex';
-  document.getElementById('settingsNick').value=myProfile.nick||'';
-  document.getElementById('settingsIdBox').textContent=myProfile.id;
-  const av=document.getElementById('settingsAv');
-  renderAvatar(av,myProfile.avatar,myProfile.nick);
-}
-
-async function saveSettings(){
-  const nick=document.getElementById('settingsNick').value.trim();
-  if(nick) myProfile.nick=nick;
-  myProfile.key='main';
-  await dbPut('profile',myProfile);
-  renderSidebar();
-  if(activeChat) renderChatHeader();
-  document.getElementById('settingsModal').style.display='none';
-  showToast('Сохранено');
-  // notify connected peers
-  Object.values(connections).forEach(conn=>{
-    if(conn&&conn.open) conn.send({type:'HANDSHAKE',pubKey:'',nick:myProfile.nick,avatar:myProfile.avatar});
-  });
-}
-
-// ==================== EXPORT/IMPORT ====================
-async function exportData(){
-  const profile=await dbGetAll('profile');
-  const contacts_=await dbGetAll('contacts');
-  const messages=await dbGetAll('messages');
-  const keys=await dbGetAll('keys');
-  const data={profile,contacts:contacts_,messages,keys,exportedAt:Date.now()};
-  const json=JSON.stringify(data);
-  // "encrypt" with a simple password prompt
-  const pass=prompt('Пароль для шифрования резервной копии:');
-  if(!pass) return;
-  const enc=new TextEncoder();
-  const keyMat=await crypto.subtle.importKey('raw',enc.encode(pass.padEnd(32,'x').slice(0,32)),{name:'AES-GCM'},false,['encrypt']);
-  const iv=crypto.getRandomValues(new Uint8Array(12));
-  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},keyMat,enc.encode(json));
-  const result={iv:btoa(String.fromCharCode(...iv)),data:btoa(String.fromCharCode(...new Uint8Array(ct)))};
-  const blob=new Blob([JSON.stringify(result)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');a.href=url;a.download='cipher_backup.json';a.click();
-  URL.revokeObjectURL(url);
-  showToast('Данные экспортированы');
-}
-
-async function importData(){
-  const f=document.getElementById('importFile').files[0];
-  if(!f) return;
-  const text=await f.text();
-  const {iv,data}=JSON.parse(text);
-  const pass=prompt('Пароль для расшифровки:');
-  if(!pass) return;
-  try{
-    const enc=new TextEncoder();
-    const keyMat=await crypto.subtle.importKey('raw',enc.encode(pass.padEnd(32,'x').slice(0,32)),{name:'AES-GCM'},false,['decrypt']);
-    const ivArr=Uint8Array.from(atob(iv),c=>c.charCodeAt(0));
-    const ctArr=Uint8Array.from(atob(data),c=>c.charCodeAt(0));
-    const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:ivArr},keyMat,ctArr);
-    const json=JSON.parse(new TextDecoder().decode(pt));
-    // restore
-    for(const p of json.profile) await dbPut('profile',p);
-    for(const c of json.contacts) await dbPut('contacts',c);
-    for(const m of json.messages){const {id:_,...rest}=m;await dbPut('messages',rest);}
-    for(const k of json.keys) await dbPut('keys',k);
-    showToast('Данные восстановлены. Перезагрузите страницу.');
-  }catch(e){showToast('Неверный пароль или повреждённый файл');}
-}
-
-// ==================== CALLS ====================
-async function startCall(video){
-  if(!activeChat){return;}
-  try{
-    localStream=await navigator.mediaDevices.getUserMedia({audio:true,video});
-    const call=peer.call(activeChat,localStream,{metadata:{nick:myProfile.nick,video}});
-    currentCall=call;
-    showCallUI(activeChat,video?'Видеозвонок':'Аудиозвонок','Вызов...',false);
-    call.on('stream',remoteStream=>{
-      showRemoteStream(remoteStream,video);
-    });
-    call.on('close',()=>endCallUI());
-    call.on('error',()=>endCallUI());
-    if(video){
-      const lv=document.getElementById('localVideo');
-      lv.srcObject=localStream;lv.style.display='block';
-    }
-  }catch(e){showToast('Нет доступа к камере/микрофону');}
-}
-
-function handleIncomingCall(call){
-  const meta=call.metadata||{};
-  const contact=contacts.find(c=>c.id===call.peer)||{nick:call.peer.slice(0,8)};
-  currentCall=call;
-  showCallUI(call.peer,contact.nick,meta.video?'Входящий видеозвонок':'Входящий звонок',true);
-  call.on('stream',remoteStream=>{showRemoteStream(remoteStream,meta.video);});
-  call.on('close',()=>endCallUI());
-}
-
-function showCallUI(peerId,name,status,incoming){
-  const ov=document.getElementById('callOverlay');
-  ov.style.display='flex';
-  const contact=contacts.find(c=>c.id===peerId)||{};
-  const av=document.getElementById('callAv');
-  av.innerHTML='<div class="call-ring"></div><div class="call-ring call-ring2"></div>';
-  renderAvatar(av,contact.avatar,contact.nick||name);
-  document.getElementById('callName').textContent=contact.nick||name;
-  document.getElementById('callStatus').textContent=status;
-  const btns=document.getElementById('callBtns');
-  btns.innerHTML='';
-  if(incoming){
-    const accept=document.createElement('button');
-    accept.className='call-btn call-accept';
-    accept.innerHTML='✓';accept.title='Принять';
-    accept.onclick=async()=>{
-      try{
-        localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:!!currentCall.metadata?.video});
-        currentCall.answer(localStream);
-        document.getElementById('callStatus').textContent='Разговор...';
-        btns.innerHTML='';
-        const end2=document.createElement('button');end2.className='call-btn call-end';end2.innerHTML='✕';
-        end2.onclick=endCall;btns.appendChild(end2);
-      }catch(e){showToast('Нет доступа к микрофону');}
-    };
-    btns.appendChild(accept);
-  }
-  const end=document.createElement('button');
-  end.className='call-btn call-end';end.innerHTML='✕';end.title='Завершить';
-  end.onclick=endCall;btns.appendChild(end);
-}
-
-function showRemoteStream(stream,video){
-  const rv=document.getElementById('remoteVideo');
-  rv.srcObject=stream;
-  if(video){rv.style.display='block';document.getElementById('callOverlay').style.background='transparent';}
-  document.getElementById('callStatus').textContent='Разговор...';
-}
-
-function endCall(){
-  if(currentCall) currentCall.close();
-  endCallUI();
-}
-function endCallUI(){
-  document.getElementById('callOverlay').style.display='none';
-  document.getElementById('callOverlay').style.background='rgba(10,11,13,.96)';
-  const rv=document.getElementById('remoteVideo');rv.srcObject=null;rv.style.display='none';
-  const lv=document.getElementById('localVideo');lv.srcObject=null;lv.style.display='none';
-  if(localStream){localStream.getTracks().forEach(t=>t.stop());localStream=null;}
-  currentCall=null;
 }
 
 // ==================== LIGHTBOX ====================
