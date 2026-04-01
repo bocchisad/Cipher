@@ -423,33 +423,6 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 // ==================== WebSocket Connection ====================
 let ws = null;
 
-// Auto-detect WS/WSS based on page protocol
-function getDefaultServerAddress() {
-  const saved = localStorage.getItem('cipherServer');
-  if (saved) return saved;
-  
-  // If hosted on HTTPS (GitHub Pages, Heroku), use WSS; otherwise WS
-  const isHttps = window.location.protocol === 'https:';
-  const defaultProto = isHttps ? 'wss' : 'ws';
-  
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return `${defaultProto}://localhost:9000`;
-  }
-  
-  // For GitHub Pages and other HTTPS hosts, show prompt for server address
-  if (isHttps) {
-    const addr = prompt(
-      'Введите адрес сервера (например: wss://your-app.herokuapp.com или wss://192.168.1.1:9000)\n\nEnter server address (e.g. wss://your-app.herokuapp.com or wss://192.168.1.1:9000)',
-      'wss://localhost:9000'
-    );
-    if (addr) {
-      localStorage.setItem('cipherServer', addr);
-      return addr;
-    }
-  }
-  
-  return `${defaultProto}://localhost:9000`;
-}
 
 let serverAddress = 'wss://53163457-1fda-4050-a8be-bcbf554d38ca-00-35o9h5km464v0.kirk.replit.dev';
 let reconnectAttempts = 0;
@@ -745,14 +718,13 @@ async function init(){
       setHint('Восстановление сессии...');
       
       try {
-        await connectWebSocket();
-        gunUser = {username, password};
-        startApp(username);
-      } catch (err) {
-        console.warn('Connection failed, using offline mode');
-        gunUser = {username, password};
-        startApp(username);
-      }
+            await connectWebSocket();
+            startApp(username);
+          } catch (err) {
+            console.warn('Connection failed, using offline mode');
+            startApp(username);
+          }
+          
     } catch(e){
       localStorage.removeItem('cipherAuth');
       setupReg();
@@ -785,7 +757,8 @@ function setupReg(){
   document.getElementById('regBtn').onclick=async()=>{
     const username=document.getElementById('regNick').value.trim().toLowerCase();
     const password=document.getElementById('regPass').value;
-    const server=document.getElementById('regServer').value.trim();
+    const serverNode=document.getElementById('regServer');
+    const server=serverNode ? serverNode.value.trim() : '';
     
     if(!username || username.length<3){showToast('Username минимум 3 символа');return;}
     if(!password || password.length<4){showToast('Пароль минимум 4 символа');return;}
