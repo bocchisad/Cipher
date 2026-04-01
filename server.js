@@ -22,21 +22,20 @@ const users = new Map(); // username -> {ws, nick, avatar, lastSeen}
 const messageQueue = new Map(); // username -> [{from, to, content, ts}, ...]
 
 // ==================== SERVER ====================
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type'
+};
+
 const app = http.createServer((req, res) => {
-  if (req.url === '/' || req.url === '/index.html') {
-    fs.readFile(path.join(__dirname, 'index.html'), (err, data) => {
-      if (err) {
-        res.writeHead(500);
-        res.end('Error loading index.html');
-        return;
-      }
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(data);
-    });
-  } else {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end(`Cipher Messenger Server\n${users.size} users connected`);
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS_HEADERS);
+    res.end();
+    return;
   }
+  res.writeHead(200, { 'Content-Type': 'text/plain', ...CORS_HEADERS });
+  res.end(`Cipher Messenger Relay Server\n${users.size} users connected`);
 });
 
 const wss = new WebSocket.Server({ server: app });
