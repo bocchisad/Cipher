@@ -6,36 +6,9 @@
 <title>Cipher — P2P Messenger</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script>
-  // Загружаем Trystero с fallback на другие CDN
-  (function() {
-    const scripts = [
-      'https://unpkg.com/trystero@0.20.1/dist/trystero-torrent.min.js',
-      'https://cdn.jsdelivr.net/npm/trystero@0.20.1/dist/trystero-torrent.min.js'
-    ];
-    
-    function loadScript(src) {
-      return new Promise((resolve) => {
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = () => resolve(true);
-        script.onerror = () => resolve(false);
-        document.head.appendChild(script);
-      });
-    }
-    
-    async function loadTrystero() {
-      for (const src of scripts) {
-        const success = await loadScript(src);
-        if (success) {
-          console.log('✓ Trystero загружена с:', src);
-          return;
-        }
-      }
-      console.warn('⚠️ Не удалось загрузить Trystero - будет использован только PeerJS');
-    }
-    
-    loadTrystero();
-  })();
+  // Trystero отключена (обе CDN возвращают неправильный MIME type)
+  // Используем только стабильный PeerJS
+  window.trystero = null;
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -932,7 +905,7 @@ let peerReconnectTimer=null;
 function setupPeer(){
   if(peer && !peer.destroyed) peer.destroy();
   
-  // Конфигурация PeerJS с резервными сигнальными серверами
+  // Конфигурация PeerJS с оптимизированными STUN серверами (3-4 макс)
   const peerConfig = {
     host: '0.peerjs.com',
     port: 443,
@@ -942,10 +915,7 @@ function setupPeer(){
       iceServers: [
         {urls: 'stun:stun.l.google.com:19302'},
         {urls: 'stun:stun1.l.google.com:19302'},
-        {urls: 'stun:global.stun.twilio.com:3478'},
-        {urls: 'stun:stun2.l.google.com:19302'},
-        {urls: 'stun:stun3.l.google.com:19302'},
-        {urls: 'stun:stun4.l.google.com:19302'}
+        {urls: 'stun:global.stun.twilio.com:3478'}
       ]
     }
   };
@@ -978,14 +948,29 @@ function setupPeer(){
   });
   
   peer.on('error', e => {
-    console.error('❌ Peer ошибка:', e.type, '-', e.message || e);
+    console.error('❌ Ошибка Peer:', e.type, '-', e.message || e);
+    
+    // Обработка unavailable-id - ID уже занят
+    if(e.type === 'unavailable-id') {
+      console.warn('📌 ID "' + myProfile.id + '" уже занят, генерируем новый...');
+      // Сбрасываем ID и переинициализируем
+      let newId = genId();
+      let attempts = 0;
+      while(contacts.some(c => c.id === newId) && attempts < 3) {
+        newId = genId();
+        attempts++;
+      }
+      myProfile.id = newId;
+      dbPut('profile', myProfile);
+      schedulePeerReconnect();
+      return;
+    }
     
     // Критические ошибки требуют перестройки peer
     if(e.type === 'network' || 
        e.type === 'server-error' || 
        e.type === 'socket-error' || 
        e.type === 'socket-closed' || 
-       e.type === 'unavailable-id' ||
        e.type === 'peer-unavailable') {
       schedulePeerReconnect();
     }
@@ -1043,9 +1028,6 @@ function connectToPeer(peerId){
   });
   
   connections[peerId]=conn;
-  
-  // Пытаемся подключить Trystero как резервный канал
-  connectViaTrystero(peerId);
 }
 
 function connectViaTrystero(peerId) {
