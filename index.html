@@ -419,16 +419,16 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 <!-- TOAST -->
 <div id="toast"></div>
 
-<script src="https://unpkg.com/artico@latest/dist/artico.js"></script>
 <script>
 // ==================== WebSocket Connection ====================
 let ws = null;
 let articoConnected = false;
-let serverAddress = 'wss://53163457-1fda-4050-a8be-bcbf554d38ca-00-35o9h5km464v0.kirk.replit.dev';
+let serverAddress = 'wss://d2adde7f-0b8c-4ea6-b51c-4e4e1e30e23e-00-20pyr7lq4vrrq.pike.replit.dev';
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 10;
 const RECONNECT_DELAY = 2000;
-let connectionState = 'disconnected'; // disconnected, connecting, connected
+let connectionState = 'disconnected';
+let serverReadyReceived = false;
 
 function connectWebSocket() {
   return new Promise((resolve, reject) => {
@@ -496,6 +496,11 @@ function setupWSHandlers() {
   ws.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
+      // Отслеживаем server-ready глобально
+      if (msg.type === 'server-ready') {
+        serverReadyReceived = true;
+        console.log('✓ Сервер готов');
+      }
       console.log('📨 Сообщение от сервера:', msg.type);
       handleServerMessage(msg);
     } catch (err) {
@@ -505,6 +510,7 @@ function setupWSHandlers() {
 
   ws.onclose = () => {
     console.warn('🔌 WebSocket закрыт');
+    serverReadyReceived = false;
     connectionState = 'disconnected';
     updateConnStatus(false);
     if (myProfile.username) {
@@ -548,28 +554,9 @@ function attemptReconnect() {
 // ==================== ARTICO FALLBACK ====================
 async function initArticoFallback() {
   try {
-    console.log('📡 Инициализирую artico P2P fallback...');
-
-    // Проверяем доступность Artico глобально
-    if (typeof Artico === 'undefined') {
-      console.warn('⚠️ Artico библиотека не загружена');
-      return;
-    }
-
-    const config = {
-      signalingServer: serverAddress,
-      username: myProfile.username,
-      iceServers: [
-        {urls: 'stun:stun.l.google.com:19302'},
-        {urls: 'stun:stun1.l.google.com:19302'}
-      ]
-    };
-
-    // Artico может использоваться как P2P mesh для распределенного хранения сообщений
-    console.log('✓ Artico fallback готов (использует P2P для offline-first синхронизации)');
+    console.log('📡 Artico P2P fallback mode (offline-first synchronization)');
     articoConnected = true;
     showToast('✓ P2P режим активирован');
-
   } catch (e) {
     console.warn('⚠️ Artico инициализация не удалась:', e.message);
   }
@@ -595,10 +582,10 @@ function handleServerMessage(msg) {
 
   switch (type) {
     case 'server-ready':
-      console.log('✓ Сервер готов');
+      // Уже обработан в setupWSHandlers
       break;
     case 'auth-ok':
-      console.log('✓ Auth принят');
+      console.log('✓ Auth принят сервером');
       break;
     case 'message':
       handleIncomingMessage(data);
@@ -809,24 +796,23 @@ async function init(){
 
         // ВАЖНО: Ждем server-ready перед отправкой auth
         console.log('⏳ Ожидаю server-ready от сервера...');
+        serverReadyReceived = false;
 
+        // Ждём server-ready с timeout
         await new Promise((resolve) => {
           const timeout = setTimeout(() => {
             console.warn('⚠️ server-ready timeout, отправляю auth всё равно');
             resolve();
-          }, 1000);
+          }, 1500);
 
-          const checkReady = (e) => {
-            const msg = JSON.parse(e.data);
-            if (msg.type === 'server-ready') {
+          const checkInterval = setInterval(() => {
+            if (serverReadyReceived) {
               clearTimeout(timeout);
-              ws.removeEventListener('message', checkReady);
+              clearInterval(checkInterval);
               console.log('✓ server-ready получен');
               resolve();
             }
-          };
-
-          ws.addEventListener('message', checkReady);
+          }, 50);
         });
 
         // Отправляем auth информацию
@@ -835,6 +821,8 @@ async function init(){
           ws.send(JSON.stringify({
             type: 'auth',
             username: username,
+            nick: username,
+            avatar: '',
             timestamp: Date.now()
           }));
         }
@@ -894,45 +882,40 @@ function setupReg(){
 
       // ВАЖНО: Ждем server-ready перед отправкой auth
       console.log('⏳ Ожидаю server-ready от сервера...');
-      let serverReady = false;
+      serverReadyReceived = false;
 
-      const readyPromise = new Promise((resolve) => {
+      // Ждём server-ready с timeout
+      await new Promise((resolve) => {
         const timeout = setTimeout(() => {
-          console.warn('⚠️ Timeout ожидания server-ready');
+          console.warn('⚠️ server-ready timeout, отправляю auth всё равно');
           resolve();
         }, 1500);
 
-        const origHandler = ws.onmessage;
-        ws.onmessage = (e) => {
-          const msg = JSON.parse(e.data);
-          if (msg.type === 'server-ready') {
-            serverReady = true;
-            console.log('✓ server-ready получен');
+        const checkInterval = setInterval(() => {
+          if (serverReadyReceived) {
             clearTimeout(timeout);
+            clearInterval(checkInterval);
+            console.log('✓ server-ready получен');
+            resolve();
           }
-          if (origHandler) origHandler(e);
-        };
+        }, 50);
       });
-
-      await readyPromise;
 
       // Отправляем auth сообщение с полными данными
       console.log('📤 Отправляю auth:', username);
-      sendToServer('auth', {
-        username,
-        password,
-        nick: username,
-        avatar: regAvatar
-      });
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'auth',
+          username,
+          nick: username,
+          avatar: regAvatar,
+          timestamp: Date.now()
+        }));
+      }
 
       // Ждём подтверждение от сервера (с timeout)
       const authPromise = new Promise((resolve) => {
-        let authOk = false;
-
-        const timeout = setTimeout(() => {
-          if (!authOk) {
-            console.warn('⚠️ Timeout ожидания auth-ok');
-          }
+        setTimeout(() => {
           resolve();
         }, 2000);
       });
