@@ -350,8 +350,8 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 <div class="modal-overlay" id="addChatModal">
   <div class="modal">
     <h2>Новый чат</h2>
-    <label>Username собеседника</label>
-    <input id="addChatId" type="text" placeholder="Введите username контакта">
+    <label>UUID собеседника</label>
+    <input id="addChatId" type="text" placeholder="Введите UUID контакта">
     <label>Никнейм (опционально)</label>
     <input id="addChatName" type="text" placeholder="Имя собеседника">
     <div class="modal-btns">
@@ -1615,22 +1615,22 @@ function doSend(){
 }
 
 async function addChat(){
-  const username=document.getElementById('addChatId').value.trim().toLowerCase();
-  const nick=document.getElementById('addChatName').value.trim()||username;
+  const uuid=document.getElementById('addChatId').value.trim().toLowerCase();
+  const nick=document.getElementById('addChatName').value.trim()||uuid;
   
-  if(!username){showToast('Введите username');return;}
-  if(username===myProfile.uuid){showToast('Нельзя добавить себя');return;}
+  if(!uuid){showToast('Введите UUID');return;}
+  if(uuid===myProfile.uuid){showToast('Нельзя добавить себя');return;}
   
-  if(contacts.find(c=>c.uuid===username)){
+  if(contacts.find(c=>c.uuid===uuid)){
     showToast('Уже добавлен');
     document.getElementById('addChatModal').style.display='none';
-    openChat(username);
+    openChat(uuid);
     return;
   }
 
   const contact={
-    username,
-    nick: nick || username,
+    uuid,
+    nick: nick || uuid,
     avatar: '',
     online: false,
     lastMsg: '',
@@ -1642,11 +1642,11 @@ async function addChat(){
   await dbPut('contacts', contact);
   renderSidebar();
   document.getElementById('addChatModal').style.display='none';
-  openChat(username);
-  showToast(`Контакт ${username} добавлен`);
+  openChat(uuid);
+  showToast(`Контакт добавлен`);
 
   if(ws && ws.readyState === WebSocket.OPEN) {
-    sendToServer('user-search', {username});
+    sendToServer('user-search', {uuid});
   }
 }
 
