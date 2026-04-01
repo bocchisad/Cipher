@@ -1,32 +1,29 @@
 #!/usr/bin/env node
 /**
- * Cipher P2P Messenger Server
- * Минималистичный сервер мессенджера (как Telegram/WhatsApp)
- * 
- * Функции:
- * - Маршрутизация сообщений между пользователями
- * - Хранение сообщений для офлайн пользователей
- * - Синхронизация статуса онлайн/офлайн
+ * Cipher P2P Messenger Server - UUID-based Authentication
+ * - UUID: реальный идентификатор пользователя
+ * - Nickname: визуальное имя (может быть изменено)
+ * - Сообщения отправляются по UUID
  */
 
 const WebSocket = require('ws');
 const http = require('http');
-const https = require('https');
-const fs = require('fs');
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
+// ==================== HELPERS ====================
+function generateUUID() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
 // ==================== STORAGE ====================
-const users = new Map(); // username -> {ws, nick, avatar, lastSeen}
-const messageQueue = new Map(); // username -> [{from, to, content, ts}, ...]
+const users = new Map(); // uuid -> {ws, uuid, nickname, avatar, lastSeen, password}
+const messageQueue = new Map(); // uuid -> [{from, to, content, ts}, ...]
 
 // ==================== SERVER ====================
-let app;
-
-// На Replit HTTPS автоматический через фронтенд
-// Мы просто используем HTTP локально, а Replit обрабатывает SSL/TLS
-app = http.createServer((req, res) => {
+const app = http.createServer((req, res) => {
   res.writeHead(200, {'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*'});
   res.end(`Cipher Messenger Server\n${users.size} users connected\nUptime: ${process.uptime().toFixed(0)}s`);
 });
@@ -34,7 +31,7 @@ app = http.createServer((req, res) => {
 const wss = new WebSocket.Server({server: app, perMessageDeflate: false});
 
 wss.on('connection', (ws, req) => {
-  let username = null;
+  let userId = null; // UUID пользователя
   let isAlive = true;
   const ip = req.socket.remoteAddress;
 
@@ -50,166 +47,224 @@ wss.on('connection', (ws, req) => {
   ws.on('message', async (data) => {
     try {
       const msg = JSON.parse(data);
-      await handleMessage(ws, msg, (username_) => username = username_);
+      await handleMessage(ws, msg, (uid) => userId = uid);
     } catch (err) {
-      console.error('Message error:', err.message);
+      console.error('❌ Message error:', err.message);
     }
   });
 
   ws.on('close', () => {
-    if (username) {
-      const user = users.get(username);
+    if (userId) {
+      const user = users.get(userId);
       if (user && user.ws === ws) {
-        users.delete(username);
-        broadcast({type: 'user-offline', data: username});
-        console.log(`✗ ${username} disconnected`);
+        users.delete(userId);
+        broadcast({type: 'user-offline', data: userId});
+        console.log(`✗ ${user.nickname} (${userId}) disconnected`);
       }
     }
   });
 
   ws.on('error', (err) => {
-    console.error('WS error:', err.message);
+    console.error('❌ WS error:', err.message);
   });
 });
 
-// Heartbeat - проверяем соединения каждые 30 сек
+// Heartbeat
 setInterval(() => {
   let activeCount = 0;
   wss.clients.forEach((ws) => {
     if (!ws.isAlive) {
-      console.log('💀 Терминирую мертвое соединение');
+      console.log('💀 Terminating dead connection');
       return ws.terminate();
     }
     activeCount++;
     ws.isAlive = false;
     ws.ping();
   });
-  // console.log(`[Heartbeat] ${activeCount} active connections`);
 }, 30000);
 
 // ==================== MESSAGE HANDLERS ====================
-async function handleMessage(ws, msg, setUsername) {
-  const {type, data, username} = msg;
+async function handleMessage(ws, msg, setUserId) {
+  const {type, data, uuid} = msg;
 
-  console.log(`📬 Сообщение type="${type}" от ${username || 'unknown'}`, data ? Object.keys(data) : '');
+  console.log(`📬 Message type="${type}" from ${uuid ? uuid.substring(0, 8) : 'unknown'}...`);
 
   switch(type) {
-    case 'auth':
-      handleAuth(ws, data, username, setUsername);
+    case 'register':
+      handleRegister(ws, data);
+      break;
+    case 'login':
+      handleLogin(ws, data, setUserId);
       break;
     case 'message':
-      handleSendMessage(username, data);
+      handleSendMessage(uuid, data);
       break;
     case 'profile-update':
-      handleProfileUpdate(username, data);
+      handleProfileUpdate(uuid, data);
       break;
     default:
-      console.warn(`⚠️ Неизвестный тип сообщения: ${type}`);
+      console.warn(`⚠️ Unknown message type: ${type}`);
   }
 }
 
-function handleAuth(ws, data, clientUsername, setUsername) {
-  const {username, nick, avatar} = data || {};
+// ==================== REGISTRATION ====================
+function handleRegister(ws, data) {
+  const {password, nickname, avatar} = data || {};
 
-  if (!username || username.length < 3) {
-    console.error('❌ Auth ошибка: неверный username', {username, nick});
-    ws.send(JSON.stringify({type: 'error', error: 'Invalid username'}));
+  if (!password || password.length < 4) {
+    console.error('❌ Register error: invalid password');
+    ws.send(JSON.stringify({type: 'error', error: 'Password too short (min 4)'}));
     return;
   }
 
-  console.log(`🔐 Auth попытка: ${username}`);
-
-  // Удаляем старое соединение если есть
-  if (users.has(username)) {
-    const old = users.get(username);
-    console.log(`♻️  Заменяю старое соединение для ${username}`);
-    if (old.ws && old.ws.readyState === WebSocket.OPEN) {
-      old.ws.close();
-    }
+  if (!nickname || nickname.length < 1) {
+    console.error('❌ Register error: invalid nickname');
+    ws.send(JSON.stringify({type: 'error', error: 'Nickname too short'}));
+    return;
   }
+
+  // Генерируем новый UUID
+  const uuid = generateUUID();
+
+  console.log(`📝 Register new user: ${nickname} → ${uuid.substring(0, 8)}...`);
 
   const user = {
     ws,
-    username,
-    nick: nick || username,
+    uuid,
+    nickname: nickname || 'User',
     avatar: avatar || '',
+    password: hashPassword(password), // TODO: use proper hashing
     lastSeen: Date.now()
   };
 
-  users.set(username, user);
-  setUsername(username);
+  users.set(uuid, user);
 
-  console.log(`✅ ${username} auth успешен (${users.size} total users online)`);
+  console.log(`✅ Registration successful: ${nickname} (${uuid.substring(0, 8)}...)`);
+
+  // Отправляем UUID клиенту
+  ws.send(JSON.stringify({
+    type: 'register-ok',
+    uuid: uuid,
+    nickname: user.nickname,
+    avatar: user.avatar
+  }));
+}
+
+// ==================== LOGIN ====================
+function handleLogin(ws, data, setUserId) {
+  const {uuid, password} = data || {};
+
+  if (!uuid || !password) {
+    console.error('❌ Login error: missing uuid or password');
+    ws.send(JSON.stringify({type: 'error', error: 'Missing credentials'}));
+    return;
+  }
+
+  const user = users.get(uuid);
+
+  if (!user) {
+    console.error(`❌ Login error: user not found ${uuid.substring(0, 8)}...`);
+    ws.send(JSON.stringify({type: 'error', error: 'User not found'}));
+    return;
+  }
+
+  // TODO: implement proper password verification
+  if (user.password !== hashPassword(password)) {
+    console.error(`❌ Login error: wrong password for ${uuid.substring(0, 8)}...`);
+    ws.send(JSON.stringify({type: 'error', error: 'Wrong password'}));
+    return;
+  }
+
+  console.log(`🔐 Login attempt: ${user.nickname} (${uuid.substring(0, 8)}...)`);
+
+  // Закрываем старое соединение если есть
+  if (user.ws && user.ws !== ws && user.ws.readyState === WebSocket.OPEN) {
+    console.log(`♻️  Replacing old connection`);
+    user.ws.close();
+  }
+
+  // Обновляем пользователя с новым WebSocket
+  user.ws = ws;
+  user.lastSeen = Date.now();
+  users.set(uuid, user);
+  setUserId(uuid);
+
+  console.log(`✅ Login successful: ${user.nickname} (${users.size} total online)`);
 
   // Отправляем список онлайн пользователей
   const onlineUsers = Array.from(users.values()).map(u => ({
-    username: u.username,
-    nick: u.nick,
+    uuid: u.uuid,
+    nickname: u.nickname,
     avatar: u.avatar
   }));
 
   // Отправляем сохранённые сообщения
-  if (messageQueue.has(username)) {
-    const pending = messageQueue.get(username);
-    console.log(`📨 Доставляю ${pending.length} сообщений для ${username}`);
+  if (messageQueue.has(uuid)) {
+    const pending = messageQueue.get(uuid);
+    console.log(`📨 Delivering ${pending.length} queued messages`);
     pending.forEach(msg => {
       ws.send(JSON.stringify({type: 'message', data: msg}));
     });
-    messageQueue.delete(username);
+    messageQueue.delete(uuid);
   }
 
-  ws.send(JSON.stringify({type: 'auth-ok', users: onlineUsers, username: username}));
+  ws.send(JSON.stringify({
+    type: 'login-ok',
+    uuid: uuid,
+    nickname: user.nickname,
+    avatar: user.avatar,
+    users: onlineUsers
+  }));
 
   // Уведомляем всех о новом пользователе
-  broadcast({type: 'user-online', data: {username, nick: user.nick, avatar: user.avatar}}, username);
+  broadcast({type: 'user-online', data: {uuid, nickname: user.nickname, avatar: user.avatar}}, uuid);
 }
 
-function handleSendMessage(from, data) {
-  const {to, content, ts} = data;
-  const message = {from, to, content, ts};
+// ==================== MESSAGE SENDING ====================
+function handleSendMessage(fromUuid, data) {
+  const {to, content, ts, type: msgType} = data;
+  const message = {from: fromUuid, to, content, ts, type: msgType};
 
-  console.log(`💬 Сообщение: ${from} → ${to}`);
+  console.log(`💬 Message: ${fromUuid.substring(0, 8)}... → ${to.substring(0, 8)}...`);
 
   const toUser = users.get(to);
 
   if (toUser && toUser.ws.readyState === WebSocket.OPEN) {
-    // Пользователь онлайн - отправляем сразу
     toUser.ws.send(JSON.stringify({type: 'message', data: message}));
-    console.log(`  ✓ Доставлено сразу`);
+    console.log(`  ✓ Delivered immediately`);
   } else {
-    // Пользователь офлайн - сохраняем в очередь
     if (!messageQueue.has(to)) {
       messageQueue.set(to, []);
     }
     messageQueue.get(to).push(message);
-    console.log(`  ⏸️  В очереди (${messageQueue.get(to).length} ожидают)`);
+    console.log(`  ⏸️  Queued (${messageQueue.get(to).length} pending)`);
   }
 }
 
-function handleProfileUpdate(username, data) {
-  const user = users.get(username);
+// ==================== PROFILE UPDATE ====================
+function handleProfileUpdate(uuid, data) {
+  const user = users.get(uuid);
   if (!user) {
-    console.warn(`⚠️ Profile update от неизвестного пользователя: ${username}`);
+    console.warn(`⚠️ Profile update from unknown user: ${uuid.substring(0, 8)}...`);
     return;
   }
 
-  console.log(`👤 Profile update: ${username}`, {nick: data.nick, hasAvatar: !!data.avatar});
-
-  if (data.nick) user.nick = data.nick;
+  if (data.nickname) user.nickname = data.nickname;
   if (data.avatar) user.avatar = data.avatar;
 
-  // Уведомляем всех об обновлении профиля
+  console.log(`👤 Profile update: ${user.nickname}`);
+
   broadcast({
     type: 'user-profile',
-    data: {username, nick: user.nick, avatar: user.avatar}
+    data: {uuid, nickname: user.nickname, avatar: user.avatar}
   });
 }
 
 // ==================== BROADCAST ====================
-function broadcast(msg, excludeUser = null) {
+function broadcast(msg, excludeUuid = null) {
   const data = JSON.stringify(msg);
-  for (const [username, user] of users) {
-    if (excludeUser && username === excludeUser) continue;
+  for (const [uuid, user] of users) {
+    if (excludeUuid && uuid === excludeUuid) continue;
     if (user.ws.readyState === WebSocket.OPEN) {
       user.ws.send(data);
     }
@@ -218,54 +273,35 @@ function broadcast(msg, excludeUser = null) {
 
 // ==================== STATS ====================
 setInterval(() => {
-  console.log(`[${new Date().toLocaleTimeString()}] 👥 Пользователей: ${users.size}, 📋 В очереди: ${messageQueue.size}`);
+  console.log(`[${new Date().toLocaleTimeString()}] 👥 Users: ${users.size}, 📋 Queued: ${messageQueue.size}`);
 }, 30000);
 
-// ==================== GRACEFUL SHUTDOWN ====================
+// ==================== SHUTDOWN ====================
 process.on('SIGINT', () => {
-  console.log('\n👋 Выключение сервера...');
+  console.log('\n👋 Shutting down server...');
   wss.clients.forEach(ws => ws.close());
   app.close(() => {
-    console.log('✅ Сервер остановлен');
+    console.log('✅ Server stopped');
     process.exit(0);
   });
 });
 
 // ==================== START ====================
 app.listen(PORT, HOST, () => {
-  const proto = 'wss';
-  // На Replit URL генерируется автоматически и доступен через переменную окружения
-  // Формат: https://projectname.randomstring.repl.co
-  const replitUrl = process.env.REPLIT_OUTAGE_URL || process.env.REPL_SLUG || 'localhost';
-  const domain = replitUrl.replace('https://', '').replace('http://', '');
-
   console.log(`
 ╔═══════════════════════════════════════════════════════╗
-║     Cipher Messenger Server v2.1 - WebSocket Relay    ║
+║  Cipher Server v3.0 - UUID-based Authentication      ║
 ║═══════════════════════════════════════════════════════║
-║ 🚀 Запущен на: 0.0.0.0:${PORT}${' '.repeat(18 - String(PORT).length)}║
-║ 🌐 WebSocket URL:                                     ║
-║    ${proto}://${domain}${' '.repeat(30 - domain.length)}║
-║ 📊 Статус: Готово к подключению${' '.repeat(16)}║
-║ 🔐 Поддерживает WSS (Secure WebSocket)${' '.repeat(8)}║
+║ 🚀 Running on: 0.0.0.0:${PORT}${' '.repeat(18 - String(PORT).length)}║
+║ 🔐 Auth: Register/Login with UUID + Password         ║
+║ 📊 Status: Ready for connections                     ║
 ╚═══════════════════════════════════════════════════════╝
   `);
-
-  console.log(`\n✓ Сервер готов к подключениям`);
-  console.log(`✓ Используйте этот URL в клиенте: wss://${domain}`);
-  console.log(`✓ Ожидаю соединения на порту ${PORT}\n`);
+  console.log(`✓ WebSocket server listening on port ${PORT}\n`);
 });
 
-function getLocalIP() {
-  const {networkInterfaces} = require('os');
-  const interfaces = networkInterfaces();
-  
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return 'localhost';
+// ==================== UTILS ====================
+function hashPassword(pwd) {
+  // TODO: use bcrypt or argon2
+  return crypto.createHash('sha256').update(pwd).digest('hex');
 }

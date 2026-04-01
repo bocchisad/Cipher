@@ -513,7 +513,7 @@ function setupWSHandlers() {
     serverReadyReceived = false;
     connectionState = 'disconnected';
     updateConnStatus(false);
-    if (myProfile.username) {
+    if (myProfile.uuid) {
       console.log('🔄 Переподключаюсь...');
       attemptReconnect();
     }
@@ -531,7 +531,7 @@ function attemptReconnect() {
     console.error('❌ Не удалось подключиться после', MAX_RECONNECT_ATTEMPTS, 'попыток');
     showToast('❌ Проблема с подключением. Используется автономный режим.');
     // Пытаемся инициализировать artico как fallback
-    if (myProfile.username && !articoConnected) {
+    if (myProfile.uuid && !articoConnected) {
       console.log('🔄 Пробую artico как fallback...');
       initArticoFallback();
     }
@@ -563,7 +563,7 @@ async function initArticoFallback() {
 }
 
 function sendToServer(type, data) {
-  const msg = {type, data, username: myProfile.username, timestamp: Date.now()};
+  const msg = {type, data, username: myProfile.uuid, timestamp: Date.now()};
 
   if (ws && ws.readyState === WebSocket.OPEN) {
     console.log(`📤 Отправляю "${type}" на сервер через WebSocket`);
@@ -584,8 +584,15 @@ function handleServerMessage(msg) {
     case 'server-ready':
       // Уже обработан в setupWSHandlers
       break;
-    case 'auth-ok':
-      console.log('✓ Auth принят сервером');
+    case 'register-ok':
+      console.log('✅ Register successful, UUID:', msg.uuid?.substring(0, 8) + '...');
+      break;
+    case 'login-ok':
+      console.log('✅ Login successful');
+      break;
+    case 'error':
+      console.error('❌ Server error:', data?.error || msg.error);
+      showToast('❌ Ошибка: ' + (data?.error || msg.error));
       break;
     case 'message':
       handleIncomingMessage(data);
@@ -625,7 +632,7 @@ async function openDB(){
     req.onupgradeneeded=e=>{
       const d=e.target.result;
       if(!d.objectStoreNames.contains('profile')) d.createObjectStore('profile',{keyPath:'key'});
-      if(!d.objectStoreNames.contains('contacts')) d.createObjectStore('contacts',{keyPath:'username'});
+      if(!d.objectStoreNames.contains('contacts')) d.createObjectStore('contacts',{keyPath:'uuid'});
       if(!d.objectStoreNames.contains('messages')){
         const ms=d.createObjectStore('messages',{keyPath:'id',autoIncrement:true});
         ms.createIndex('chatId','chatId',{unique:false});
@@ -771,7 +778,7 @@ function escapeHtml(text){
 }
 
 // ==================== STATE ====================
-let myProfile = {username:'', nick:'', avatar:''};
+let myProfile = {uuid:'', nickname:'', avatar:''};
 let contacts = [];
 let activeChat = null;
 let activeTab = 'media';
@@ -787,21 +794,19 @@ async function init(){
   const saved = localStorage.getItem('cipherAuth');
   if(saved){
     try{
-      const {username, password, server} = JSON.parse(saved);
-      if(server) serverAddress = server;
+      const {uuid, password} = JSON.parse(saved);
       setHint('Восстановление сессии...');
 
       try {
         await connectWebSocket();
 
-        // ВАЖНО: Ждем server-ready перед отправкой auth
+        // Ждём server-ready
         console.log('⏳ Ожидаю server-ready от сервера...');
         serverReadyReceived = false;
 
-        // Ждём server-ready с timeout
         await new Promise((resolve) => {
           const timeout = setTimeout(() => {
-            console.warn('⚠️ server-ready timeout, отправляю auth всё равно');
+            console.warn('⚠️ server-ready timeout');
             resolve();
           }, 1500);
 
@@ -815,24 +820,23 @@ async function init(){
           }, 50);
         });
 
-        // Отправляем auth информацию
+        // Отправляем login
         if (ws && ws.readyState === WebSocket.OPEN) {
-          console.log('📤 Отправляю auth с username:', username);
+          console.log('🔐 Отправляю login с uuid:', uuid.substring(0, 8) + '...');
           ws.send(JSON.stringify({
-            type: 'auth',
-            username: username,
-            nick: username,
-            avatar: '',
+            type: 'login',
+            uuid: uuid,
+            password: password,
             timestamp: Date.now()
           }));
         }
 
-        startApp(username);
+        startApp(uuid);
       } catch (err) {
         console.warn('⚠️ Подключение не удалось, используется автономный режим');
         console.error('Ошибка:', err.message);
-        myProfile.username = username;
-        startApp(username); // Запускаем в автономном режиме
+        myProfile.uuid = uuid;
+        startApp(uuid);
       }
     } catch(e){
       console.error('❌ Ошибка восстановления сессии:', e);
@@ -876,28 +880,27 @@ function setupReg(){
   };
 
   regBtn.onclick=async()=>{
-    const username=regNick.value.trim().toLowerCase();
+    const nickname=regNick.value.trim();
     const password=regPass.value;
 
-    if(!username || username.length<3){showToast('Username минимум 3 символа');return;}
+    if(!nickname || nickname.length<1){showToast('Никнейм обязателен');return;}
     if(!password || password.length<4){showToast('Пароль минимум 4 символа');return;}
 
     regBtn.disabled=true;
-    regBtn.textContent='Подключение...';
-    setHint('Попытка подключения к серверу...');
+    regBtn.textContent='Регистрация...';
+    setHint('Регистрация на сервере...');
 
     try {
-      // Пытаемся подключиться к серверу
+      // Подключаемся к серверу
       await connectWebSocket();
 
-      // ВАЖНО: Ждем server-ready перед отправкой auth
+      // Ждём server-ready
       console.log('⏳ Ожидаю server-ready от сервера...');
       serverReadyReceived = false;
 
-      // Ждём server-ready с timeout
       await new Promise((resolve) => {
         const timeout = setTimeout(() => {
-          console.warn('⚠️ server-ready timeout, отправляю auth всё равно');
+          console.warn('⚠️ server-ready timeout');
           resolve();
         }, 1500);
 
@@ -911,64 +914,65 @@ function setupReg(){
         }, 50);
       });
 
-      // Отправляем auth сообщение с полными данными
-      console.log('📤 Отправляю auth:', username);
+      // Отправляем register запрос
+      console.log('📝 Отправляю register:', nickname);
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
-          type: 'auth',
-          username,
-          nick: username,
+          type: 'register',
+          password: password,
+          nickname: nickname,
           avatar: regAvatar,
           timestamp: Date.now()
         }));
       }
 
-      // Ждём подтверждение от сервера (с timeout)
-      const authPromise = new Promise((resolve) => {
-        setTimeout(() => {
+      // Ждём ответ register-ok с UUID
+      let receivedUuid = null;
+      await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          console.warn('⚠️ register-ok timeout');
           resolve();
-        }, 2000);
+        }, 3000);
+
+        const origHandler = ws.onmessage;
+        ws.onmessage = (e) => {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'register-ok') {
+            receivedUuid = msg.uuid;
+            clearTimeout(timeout);
+            console.log('✅ Регистрация успешна, UUID:', receivedUuid.substring(0, 8) + '...');
+            resolve();
+          }
+          if (origHandler) origHandler(e);
+        };
       });
 
-      await authPromise;
+      if (!receivedUuid) {
+        throw new Error('Не получен UUID от сервера');
+      }
 
-      // Сохраняем сессию
-      const auth = {username, password};
+      // Сохраняем UUID + пароль в localStorage
+      const auth = {uuid: receivedUuid, password};
       localStorage.setItem('cipherAuth', JSON.stringify(auth));
 
-      myProfile = {username, nick: username, avatar: regAvatar};
+      myProfile = {uuid: receivedUuid, nickname: nickname, avatar: regAvatar};
       await dbPut('profile', {key: 'profile', ...myProfile});
 
-      // Скрываем регистрацию
+      // Скрываем регистрацию и показываем приложение
       document.getElementById('regOverlay').style.display='none';
       document.getElementById('app').style.display='flex';
       renderSidebar();
       showNoChatView();
       setupEvents();
 
-      // Отправляем профиль на сервер
-      sendToServer('profile-update', {nick: myProfile.nick, avatar: myProfile.avatar});
-      showToast('✓ Вы подключены!');
+      showToast('✓ Вы зарегистрированы!');
 
     } catch(e){
-      console.error('❌ Ошибка подключения:', e.message);
-
-      // Используем OFFLINE режим
-      myProfile = {username, nick: username, avatar: regAvatar};
-      await dbPut('profile', {key: 'profile', ...myProfile});
-
-      const auth = {username, password};
-      localStorage.setItem('cipherAuth', JSON.stringify(auth));
-
-      document.getElementById('regOverlay').style.display='none';
-      document.getElementById('app').style.display='flex';
-      renderSidebar();
-      showNoChatView();
-      setupEvents();
-
-      showToast('⚠️ Автономный режим (нет соединения с сервером)');
+      console.error('❌ Ошибка регистрации:', e.message);
+      showToast('❌ Ошибка: ' + e.message);
       regBtn.disabled=false;
-      regBtn.textContent='Войти / Зарегистрироваться';
+      regBtn.textContent='Зарегистрироваться';
+      setHint('Введите никнейм и пароль');
     }
   };
 }
@@ -976,7 +980,7 @@ function setupReg(){
 // ==================== NET HANDLERS ====================
 async function handleIncomingMessage(msg) {
   const {from, to, type, content, ts} = msg;
-  if(from === myProfile.username) return;
+  if(from === myProfile.uuid) return;
 
   const chatId = from;
   const localMsg = {chatId, from, to, type, content, ts, read: activeChat === chatId};
@@ -990,7 +994,7 @@ async function handleIncomingMessage(msg) {
 
   updateLastMessage(chatId, content, ts);
 
-  const contact = contacts.find(c => c.username === chatId);
+  const contact = contacts.find(c => c.uuid === chatId);
   if(contact && activeChat !== chatId) {
     contact.unread = (contact.unread || 0) + 1;
     await dbPut('contacts', contact);
@@ -999,7 +1003,7 @@ async function handleIncomingMessage(msg) {
 }
 
 function handleUserOnline(username) {
-  const contact = contacts.find(c => c.username === username);
+  const contact = contacts.find(c => c.uuid === username);
   if(contact) {
     contact.online = true;
     dbPut('contacts', contact);
@@ -1009,7 +1013,7 @@ function handleUserOnline(username) {
 }
 
 function handleUserOffline(username) {
-  const contact = contacts.find(c => c.username === username);
+  const contact = contacts.find(c => c.uuid === username);
   if(contact) {
     contact.online = false;
     dbPut('contacts', contact);
@@ -1019,17 +1023,17 @@ function handleUserOffline(username) {
 }
 
 function handleUserProfile(data) {
-  const {username, nick, avatar} = data;
-  const contact = contacts.find(c => c.username === username);
+  const {uuid, nickname, avatar} = data;
+  const contact = contacts.find(c => c.uuid === uuid);
   if(contact) {
-    if(nick) contact.nick = nick;
+    if(nickname) contact.nickname = nickname;
     if(avatar) contact.avatar = avatar;
     dbPut('contacts', contact);
   }
   renderSidebar();
-  if(activeChat === username) {
+  if(activeChat === uuid) {
     renderChatHeader();
-    renderInfoPanel(username);
+    renderInfoPanel(uuid);
   }
 }
 
@@ -1037,7 +1041,7 @@ function handleUserProfile(data) {
 async function startApp(username){
   console.log('🚀 Cipher запущен для:', username);
 
-  myProfile.username = username;
+  myProfile.uuid = username;
   const saved = await dbGet('profile', 'profile');
   if(saved) {
     myProfile = saved;
@@ -1053,7 +1057,7 @@ async function startApp(username){
   setupEvents();
 
   if(ws && ws.readyState === WebSocket.OPEN) {
-    sendToServer('profile-update', {nick: myProfile.nick, avatar: myProfile.avatar});
+    sendToServer('profile-update', {nick: myProfile.nickname, avatar: myProfile.avatar});
   }
 }
 
@@ -1062,7 +1066,7 @@ async function sendMessage(type, content){
   if(!activeChat) return;
 
   const message = {
-    from: myProfile.username,
+    from: myProfile.uuid,
     to: activeChat,
     type,
     content,
@@ -1086,9 +1090,9 @@ async function sendMessage(type, content){
 // ==================== RENDER ====================
 function renderSidebar(){
   const myAv=document.getElementById('myAvSidebar');
-  if(myAv) renderAvatar(myAv, myProfile.avatar, myProfile.nick||myProfile.username);
+  if(myAv) renderAvatar(myAv, myProfile.avatar, myProfile.nickname||myProfile.uuid);
   const nickEl=document.getElementById('myNickSidebar');
-  if(nickEl) nickEl.textContent=myProfile.nick||myProfile.username||'Вы';
+  if(nickEl) nickEl.textContent=myProfile.nickname||myProfile.uuid||'Вы';
 
   const list=document.getElementById('chatList');
   if(!list) return;
@@ -1098,11 +1102,11 @@ function renderSidebar(){
   
   contacts.forEach(c=>{
     const item=document.createElement('div');
-    item.className='chat-item'+(activeChat===c.username?' active':'');
-    item.dataset.id=c.username;
+    item.className='chat-item'+(activeChat===c.uuid?' active':'');
+    item.dataset.id=c.uuid;
     const av=document.createElement('div');
     av.className='av';
-    renderAvatar(av, c.avatar, c.nick||c.username);
+    renderAvatar(av, c.avatar, c.nickname||c.uuid);
     if(c.online){
       const dot=document.createElement('div');
       dot.className='online-dot';
@@ -1112,7 +1116,7 @@ function renderSidebar(){
     info.className='info';
     const name=document.createElement('div');
     name.className='name';
-    name.textContent=c.nick||c.username;
+    name.textContent=c.nickname||c.uuid;
     const last=document.createElement('div');
     last.className='last';
     last.textContent=c.lastMsg||'Нет сообщений';
@@ -1133,8 +1137,8 @@ function renderSidebar(){
     item.appendChild(av);
     item.appendChild(info);
     item.appendChild(meta);
-    item.onclick=()=>openChat(c.username);
-    item.oncontextmenu=e=>{e.preventDefault();showChatCtxMenu(e,c.username);};
+    item.onclick=()=>openChat(c.uuid);
+    item.oncontextmenu=e=>{e.preventDefault();showChatCtxMenu(e,c.uuid);};
     list.appendChild(item);
   });
 }
@@ -1169,7 +1173,7 @@ async function openChat(username){
   activeChat=username;
   renderedMsgIds = new Set();
 
-  const contact=contacts.find(c=>c.username===username);
+  const contact=contacts.find(c=>c.uuid===username);
   document.getElementById('noChatView').style.display='none';
   const cv=document.getElementById('chatView');
   cv.style.display='flex';
@@ -1189,12 +1193,12 @@ async function openChat(username){
 }
 
 function renderChatHeader(){
-  const contact=contacts.find(c=>c.username===activeChat);
+  const contact=contacts.find(c=>c.uuid===activeChat);
   if(!contact) return;
   const av=document.getElementById('headerAv');
-  if(av) renderAvatar(av, contact.avatar, contact.nick||contact.username);
+  if(av) renderAvatar(av, contact.avatar, contact.nickname||contact.uuid);
   const nameEl=document.getElementById('headerName');
-  if(nameEl) nameEl.textContent=contact.nick||contact.username;
+  if(nameEl) nameEl.textContent=contact.nickname||contact.uuid;
   const statusEl=document.getElementById('headerStatus');
   if(statusEl){
     statusEl.textContent=contact.online?'в сети':'не в сети';
@@ -1226,8 +1230,8 @@ async function loadMessages(){
 
 function appendMessage(msg){
   const area=document.getElementById('messagesArea');
-  const isOut=msg.from===myProfile.username;
-  const contact=contacts.find(c=>c.username===activeChat)||{};
+  const isOut=msg.from===myProfile.uuid;
+  const contact=contacts.find(c=>c.uuid===activeChat)||{};
   const wrapper=document.createElement('div');
   wrapper.className='msg'+(isOut?' out':'');
   if(msg.id) wrapper.dataset.msgId=msg.id;
@@ -1235,7 +1239,7 @@ function appendMessage(msg){
   if(!isOut){
     const mav=document.createElement('div');
     mav.className='mavatar';
-    renderAvatar(mav, contact.avatar, contact.nick||contact.username);
+    renderAvatar(mav, contact.avatar, contact.nickname||contact.uuid);
     wrapper.appendChild(mav);
   }
   
@@ -1360,7 +1364,7 @@ function scrollBottom(){
 }
 
 function updateLastMessage(chatId, content, ts){
-  const c=contacts.find(c=>c.username===chatId);
+  const c=contacts.find(c=>c.uuid===chatId);
   if(c){
     let preview=content;
     if(content&&content.startsWith('data:image')) preview='📷 Фото';
@@ -1374,11 +1378,11 @@ function updateLastMessage(chatId, content, ts){
 }
 
 async function renderInfoPanel(username){
-  const contact=contacts.find(c=>c.username===username);
+  const contact=contacts.find(c=>c.uuid===username);
   if(!contact) return;
   const bigAv=document.getElementById('infoBigAv');
-  renderAvatar(bigAv, contact.avatar, contact.nick||contact.username);
-  document.getElementById('infoName').textContent=contact.nick||contact.username;
+  renderAvatar(bigAv, contact.avatar, contact.nickname||contact.uuid);
+  document.getElementById('infoName').textContent=contact.nickname||contact.uuid;
   document.getElementById('infoStatus').textContent=contact.online?'в сети':'не в сети';
   document.getElementById('infoStatus').style.color=contact.online?'var(--green)':'var(--text3)';
   document.getElementById('infoId').textContent=username;
@@ -1475,10 +1479,10 @@ function setupEvents(){
     const b64=await fileToBase64(stripped);
     myProfile.avatar=b64;
     const av=document.getElementById('settingsAv');
-    renderAvatar(av, b64, myProfile.nick);
+    renderAvatar(av, b64, myProfile.nickname);
   };
   document.getElementById('settingsIdBox').onclick=()=>{
-    navigator.clipboard.writeText(myProfile.username).then(()=>showToast('Username скопирован!'));
+    navigator.clipboard.writeText(myProfile.uuid).then(()=>showToast('Username скопирован!'));
   };
   document.getElementById('exportBtn').onclick=exportData;
   document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
@@ -1583,9 +1587,9 @@ async function addChat(){
   const nick=document.getElementById('addChatName').value.trim()||username;
   
   if(!username){showToast('Введите username');return;}
-  if(username===myProfile.username){showToast('Нельзя добавить себя');return;}
+  if(username===myProfile.uuid){showToast('Нельзя добавить себя');return;}
   
-  if(contacts.find(c=>c.username===username)){
+  if(contacts.find(c=>c.uuid===username)){
     showToast('Уже добавлен');
     document.getElementById('addChatModal').style.display='none';
     openChat(username);
@@ -1623,7 +1627,7 @@ function showNoChatView(){
 
 async function deleteChatLocal(chatId){
   await dbDeleteByIndex('messages','chatId',chatId);
-  const idx=contacts.findIndex(c=>c.username===chatId);
+  const idx=contacts.findIndex(c=>c.uuid===chatId);
   if(idx>-1){
     contacts.splice(idx,1);
     await dbDelete('contacts',chatId);
@@ -1637,20 +1641,20 @@ async function deleteChatLocal(chatId){
 function openSettings(){
   const m=document.getElementById('settingsModal');
   m.style.display='flex';
-  document.getElementById('settingsNick').value=myProfile.nick||'';
-  document.getElementById('settingsIdBox').textContent=myProfile.username;
+  document.getElementById('settingsNick').value=myProfile.nickname||'';
+  document.getElementById('settingsIdBox').textContent=myProfile.uuid;
   const av=document.getElementById('settingsAv');
-  renderAvatar(av, myProfile.avatar, myProfile.nick||myProfile.username);
+  renderAvatar(av, myProfile.avatar, myProfile.nickname||myProfile.uuid);
 }
 
 async function saveSettings(){
   const nick=document.getElementById('settingsNick').value.trim();
-  if(nick) myProfile.nick=nick;
+  if(nick) myProfile.nickname=nick;
 
   await dbPut('profile', {key: 'profile', ...myProfile});
 
   if(ws && ws.readyState === WebSocket.OPEN) {
-    sendToServer('profile-update', {nick: myProfile.nick, avatar: myProfile.avatar});
+    sendToServer('profile-update', {nick: myProfile.nickname, avatar: myProfile.avatar});
   }
 
   renderSidebar();
