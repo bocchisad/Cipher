@@ -928,7 +928,8 @@ function setupReg(){
 
       // Ждём ответ register-ok с UUID
       let receivedUuid = null;
-      await new Promise((resolve) => {
+      let registerError = null;
+      await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           console.warn('⚠️ register-ok timeout');
           resolve();
@@ -942,10 +943,19 @@ function setupReg(){
             clearTimeout(timeout);
             console.log('✅ Регистрация успешна, UUID:', receivedUuid.substring(0, 8) + '...');
             resolve();
+          } else if (msg.type === 'error') {
+            registerError = msg.error;
+            clearTimeout(timeout);
+            console.error('❌ Ошибка сервера при регистрации:', msg.error);
+            resolve();
           }
           if (origHandler) origHandler(e);
         };
       });
+
+      if (registerError) {
+        throw new Error(registerError);
+      }
 
       if (!receivedUuid) {
         throw new Error('Не получен UUID от сервера');
