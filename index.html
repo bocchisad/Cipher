@@ -855,6 +855,17 @@ let regAvatar='';
 function setupReg(){
   const pick=document.getElementById('regAvatarPick');
   const fileInput=document.getElementById('regAvatarFile');
+  const regBtn=document.getElementById('regBtn');
+  const regNick=document.getElementById('regNick');
+  const regPass=document.getElementById('regPass');
+
+  // Проверяем что все элементы найдены
+  if(!pick || !fileInput || !regBtn || !regNick || !regPass){
+    console.error('❌ Registration elements not found in DOM');
+    showToast('❌ Ошибка загрузки страницы');
+    return;
+  }
+
   pick.onclick=()=>fileInput.click();
   fileInput.onchange=async()=>{
     if(!fileInput.files[0]) return;
@@ -864,16 +875,15 @@ function setupReg(){
     pick.innerHTML=`<img src="${b64}" alt="">`;
   };
 
-  document.getElementById('regBtn').onclick=async()=>{
-    const username=document.getElementById('regNick').value.trim().toLowerCase();
-    const password=document.getElementById('regPass').value;
+  regBtn.onclick=async()=>{
+    const username=regNick.value.trim().toLowerCase();
+    const password=regPass.value;
 
     if(!username || username.length<3){showToast('Username минимум 3 символа');return;}
     if(!password || password.length<4){showToast('Пароль минимум 4 символа');return;}
 
-    const btn=document.getElementById('regBtn');
-    btn.disabled=true;
-    btn.textContent='Подключение...';
+    regBtn.disabled=true;
+    regBtn.textContent='Подключение...';
     setHint('Попытка подключения к серверу...');
 
     try {
@@ -957,8 +967,8 @@ function setupReg(){
       setupEvents();
 
       showToast('⚠️ Автономный режим (нет соединения с сервером)');
-      btn.disabled=false;
-      btn.textContent='Войти / Зарегистрироваться';
+      regBtn.disabled=false;
+      regBtn.textContent='Войти / Зарегистрироваться';
     }
   };
 }
@@ -1755,7 +1765,12 @@ function openLightbox(src){
 }
 
 // ==================== BOOT ====================
-init();
+// Убеждаемся что DOM полностью загружен перед инициализацией
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
 </script>
 </body>
 </html>
