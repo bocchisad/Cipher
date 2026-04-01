@@ -22,10 +22,32 @@ function generateUUID() {
 const users = new Map(); // uuid -> {ws, uuid, nickname, avatar, lastSeen, password}
 const messageQueue = new Map(); // uuid -> [{from, to, content, ts}, ...]
 
-// ==================== SERVER ====================
+// ==================== PERSISTENCE ====================
 const fs = require('fs');
 const path = require('path');
+const USERS_FILE = path.join(__dirname, 'users.json');
 
+function saveUsers() {
+  const data = {};
+  for (const [uuid, user] of users) {
+    data[uuid] = { uuid: user.uuid, nickname: user.nickname, avatar: user.avatar, password: user.password, lastSeen: user.lastSeen };
+  }
+  try { fs.writeFileSync(USERS_FILE, JSON.stringify(data, null, 2)); } catch(e) { console.error('Save error:', e.message); }
+}
+
+function loadUsers() {
+  try {
+    if (fs.existsSync(USERS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+      for (const [uuid, user] of Object.entries(data)) {
+        users.set(uuid, { ...user, ws: null });
+      }
+      console.log(`✓ Loaded ${users.size} users from disk`);
+    }
+  } catch(e) { console.error('Load error:', e.message); }
+}
+
+// ==================== SERVER ====================
 const app = http.createServer((req, res) => {
   const filePath = path.join(__dirname, 'index.html');
   fs.readFile(filePath, (err, data) => {
@@ -104,6 +126,9 @@ async function handleMessage(ws, msg, setUserId) {
     case 'register':
       handleRegister(ws, msg);
       break;
+    case 'reregister':
+      handleReregister(ws, msg, setUserId);
+      break;
     case 'login':
       handleLogin(ws, msg, setUserId);
       break;
@@ -149,16 +174,45 @@ function handleRegister(ws, msg) {
   };
 
   users.set(uuid, user);
+  saveUsers();
 
   console.log(`✅ Registration successful: ${nickname} (${uuid.substring(0, 8)}...)`);
 
-  // Отправляем UUID клиенту
-  ws.send(JSON.stringify({
-    type: 'register-ok',
-    uuid: uuid,
-    nickname: user.nickname,
-    avatar: user.avatar
-  }));
+  ws.send(JSON.stringify({ type: 'register-ok', uuid, nickname: user.nickname, avatar: user.avatar }));
+}
+
+// ==================== REREGISTER (restore after server restart) ====================
+function handleReregister(ws, msg, setUserId) {
+  const {uuid, password, nickname, avatar} = msg || {};
+
+  if (!uuid || !password) {
+    ws.send(JSON.stringify({type: 'error', error: 'Missing credentials'}));
+    return;
+  }
+
+  // If user already exists (loaded from disk), just do a login
+  if (users.has(uuid)) {
+    handleLogin(ws, msg, setUserId);
+    return;
+  }
+
+  // Restore user with their existing UUID
+  const user = {
+    ws,
+    uuid,
+    nickname: nickname || uuid.substring(0, 8),
+    avatar: avatar || '',
+    password: hashPassword(password),
+    lastSeen: Date.now()
+  };
+
+  users.set(uuid, user);
+  setUserId(uuid);
+  saveUsers();
+
+  console.log(`♻️ Reregistered: ${user.nickname} (${uuid.substring(0, 8)}...)`);
+  ws.send(JSON.stringify({ type: 'login-ok', uuid, nickname: user.nickname, avatar: user.avatar, users: [] }));
+  broadcast({type: 'user-online', data: {uuid, nickname: user.nickname, avatar: user.avatar}}, uuid);
 }
 
 // ==================== LOGIN ====================
@@ -298,6 +352,7 @@ process.on('SIGINT', () => {
 });
 
 // ==================== START ====================
+loadUsers();
 app.listen(PORT, HOST, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════╗

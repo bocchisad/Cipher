@@ -614,8 +614,13 @@ function handleServerMessage(msg) {
       console.log('✅ Login successful');
       break;
     case 'error':
-      console.error('❌ Server error:', data?.error || msg.error);
-      showToast('❌ Ошибка: ' + (data?.error || msg.error));
+      const errText = data?.error || msg.error;
+      console.error('❌ Server error:', errText);
+      if (errText === 'User not found') {
+        handleUserNotFound();
+      } else {
+        showToast('❌ Ошибка: ' + errText);
+      }
       break;
     case 'message':
       handleIncomingMessage(data);
@@ -631,6 +636,27 @@ function handleServerMessage(msg) {
       break;
     default:
       console.log('📨 Неизвестный тип сообщения:', type);
+  }
+}
+
+async function handleUserNotFound() {
+  console.warn('⚠️ User not found on server, attempting reregister...');
+  try {
+    const saved = localStorage.getItem('cipherAuth');
+    if (!saved) { setupReg(); return; }
+    const {uuid, password} = JSON.parse(saved);
+    if (!uuid || !password) { setupReg(); return; }
+    const profile = await dbGet('profile', 'profile');
+    const nickname = profile?.nickname || uuid.substring(0, 8);
+    const avatar = profile?.avatar || '';
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'reregister', uuid, password, nickname, avatar }));
+      console.log('♻️ Sent reregister request');
+    }
+  } catch(e) {
+    console.error('Reregister failed:', e.message);
+    localStorage.removeItem('cipherAuth');
+    location.reload();
   }
 }
 
