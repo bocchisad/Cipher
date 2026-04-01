@@ -38,9 +38,14 @@ const app = http.createServer((req, res) => {
   res.end(`Cipher Messenger Relay Server\n${users.size} users connected`);
 });
 
-const wss = new WebSocket.Server({ server: app });
+const wss = new WebSocket.Server({ server: app, perMessageDeflate: false });
 
-wss.on('connection', (ws) => {
+app.on('upgrade', (req, socket, head) => {
+  console.log(`🔌 WS upgrade attempt from origin: ${req.headers.origin || 'unknown'} path: ${req.url}`);
+});
+
+wss.on('connection', (ws, req) => {
+  console.log(`🟢 New WS connection from origin: ${req.headers.origin || 'unknown'}`);
   let username = null;
   let isAlive = true;
 
