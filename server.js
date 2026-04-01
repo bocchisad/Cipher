@@ -10,7 +10,7 @@ const WebSocket = require('ws');
 const http = require('http');
 const crypto = require('crypto');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 
 // ==================== HELPERS ====================

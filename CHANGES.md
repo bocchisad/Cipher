@@ -12,14 +12,14 @@ Error: Lost connection to server
 ### 1️⃣ **Исправили сервер** (`server.js`)
 ```javascript
 // БЫЛО: const PORT = process.env.PORT || 443
-// СТАЛО: const PORT = process.env.PORT || 3000
+// СТАЛО: const PORT = process.env.PORT || 5000
 
 // Причина: На Replit нут слушать на динамическом порту
 // Replit сам проксирует через HTTPS/WSS
 ```
 
 **Ключевые изменения:**
-- ✓ Порт: 443 → 3000 (динамический)
+- ✓ Порт: 443 → 5000 (динамический)
 - ✓ Отправляем `server-ready` при подключении
 - ✓ Лучше логирование с IP адресами
 - ✓ Добавлен `perMessageDeflate: false` для стабильности
@@ -129,7 +129,7 @@ pkill -f "node server.js"
 
 | Файл | Изменения | Статус |
 |------|-----------|--------|
-| `server.js` | PORT 443→3000, логирование, server-ready | ✅ |
+| `server.js` | PORT 443→5000, логирование, server-ready | ✅ |
 | `index.html` | 10 попыток, exponential backoff, artico | ✅ |
 | `package.json` | Добавлен artico | ✅ |
 | `DEPLOYMENT.md` | Новый файл - гайд развертывания | ✅ |

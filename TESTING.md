@@ -25,7 +25,7 @@ npm start
 ╔═══════════════════════════════════════════════════════╗
 ║  Cipher Server v3.0 - UUID-based Authentication      ║
 ║═══════════════════════════════════════════════════════║
-║ 🚀 Running on: 0.0.0.0:3000
+║ 🚀 Running on: 0.0.0.0:5000
 │ 🔐 Auth: Register/Login with UUID + Password         │
 ...
 ```
