@@ -637,9 +637,12 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 
 <script>
 // ==================== GUN INIT ====================
+// Artico: https://github.com/matallui/artico
 const gun = Gun([
   'https://gun-manhattan.herokuapp.com/gun',
-  'https://gundb-relay-mlc.glitch.me/gun'
+  'https://gundb-relay-mlc.glitch.me/gun',
+  'https://gun-relay.herokuapp.com/gun',
+  'https://gun.eco/gun'
 ]);
 console.log('✓ Gun.js инициализирована');
 window.gun = gun;
@@ -921,6 +924,8 @@ async function startApp(username, isNew){
       });
     }
     renderSidebar();
+    // Сохраняем локально в IndexedDB
+    await dbPut('profile', { key: 'profile', ...myProfile });
   });
 
   // Загружаем контакты из локальной БД
@@ -1580,6 +1585,8 @@ async function saveSettings(){
   renderSidebar();
   if(activeChat) renderChatHeader();
   document.getElementById('settingsModal').style.display='none';
+  // Сохраняем локально в IndexedDB
+  await dbPut('profile', { key: 'profile', ...myProfile });
   showToast('Сохранено');
 }
 
