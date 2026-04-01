@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "ws": "^8.13.0",
-    "peerjs": "^1.5.2"
+    "artico": "^1.0.0"
   },
   "devDependencies": {},
   "preferGlobal": false,

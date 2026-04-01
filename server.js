@@ -9,90 +9,241 @@
  * - Синхронизация статуса онлайн/офлайн
  */
 
-const { PeerServer } = require('peerjs');
+const WebSocket = require('ws');
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 
-const PORT = process.env.PORT || 9000;
-const USE_HTTPS = process.env.HTTPS === '1' || process.env.USE_WSS === '1';
+const PORT = process.env.PORT || 3000;
+const HOST = '0.0.0.0';
+
+// ==================== STORAGE ====================
+const users = new Map(); // username -> {ws, nick, avatar, lastSeen}
+const messageQueue = new Map(); // username -> [{from, to, content, ts}, ...]
 
 // ==================== SERVER ====================
 let app;
 
-if (USE_HTTPS && fs.existsSync('cert.pem') && fs.existsSync('key.pem')) {
-  // HTTPS режим (для WSS)
-  app = https.createServer({
-    cert: fs.readFileSync('cert.pem'),
-    key: fs.readFileSync('key.pem')
-  }, (req, res) => {
-    res.writeHead(200, {'Content-Type': 'text/plain'});
-    res.end('Cipher PeerJS Server\nReady for connections');
+// На Replit HTTPS автоматический через фронтенд
+// Мы просто используем HTTP локально, а Replit обрабатывает SSL/TLS
+app = http.createServer((req, res) => {
+  res.writeHead(200, {'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*'});
+  res.end(`Cipher Messenger Server\n${users.size} users connected\nUptime: ${process.uptime().toFixed(0)}s`);
+});
+
+const wss = new WebSocket.Server({server: app, perMessageDeflate: false});
+
+wss.on('connection', (ws, req) => {
+  let username = null;
+  let isAlive = true;
+  const ip = req.socket.remoteAddress;
+
+  console.log(`📡 New connection from ${ip}`);
+
+  // Отправляем сразу сигнал что сервер готов
+  ws.send(JSON.stringify({type: 'server-ready', timestamp: Date.now()}));
+
+  ws.on('pong', () => {
+    isAlive = true;
   });
-} else {
-  // HTTP режим (локально)
-  app = http.createServer((req, res) => {
-    res.writeHead(200, {'Content-Type': 'text/plain'});
-    res.end('Cipher PeerJS Server\nReady for connections');
+
+  ws.on('message', async (data) => {
+    try {
+      const msg = JSON.parse(data);
+      await handleMessage(ws, msg, (username_) => username = username_);
+    } catch (err) {
+      console.error('Message error:', err.message);
+    }
+  });
+
+  ws.on('close', () => {
+    if (username) {
+      const user = users.get(username);
+      if (user && user.ws === ws) {
+        users.delete(username);
+        broadcast({type: 'user-offline', data: username});
+        console.log(`✗ ${username} disconnected`);
+      }
+    }
+  });
+
+  ws.on('error', (err) => {
+    console.error('WS error:', err.message);
+  });
+});
+
+// Heartbeat
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+// ==================== MESSAGE HANDLERS ====================
+async function handleMessage(ws, msg, setUsername) {
+  const {type, data, username} = msg;
+
+  switch(type) {
+    case 'auth':
+      handleAuth(ws, data, setUsername);
+      break;
+    case 'message':
+      handleSendMessage(username, data);
+      break;
+    case 'profile-update':
+      handleProfileUpdate(username, data);
+      break;
+  }
+}
+
+function handleAuth(ws, data, setUsername) {
+  const {username, nick, avatar} = data;
+  
+  if (!username || username.length < 3) {
+    ws.send(JSON.stringify({type: 'error', error: 'Invalid username'}));
+    return;
+  }
+
+  // Удаляем старое соединение
+  if (users.has(username)) {
+    const old = users.get(username);
+    if (old.ws && old.ws.readyState === WebSocket.OPEN) {
+      old.ws.close();
+    }
+  }
+
+  const user = {
+    ws,
+    username,
+    nick: nick || username,
+    avatar: avatar || '',
+    lastSeen: Date.now()
+  };
+
+  users.set(username, user);
+  setUsername(username);
+
+  console.log(`✓ ${username} connected (${users.size} total)`);
+
+  // Отправляем список онлайн пользователей
+  const onlineUsers = Array.from(users.values()).map(u => ({
+    username: u.username,
+    nick: u.nick,
+    avatar: u.avatar
+  }));
+
+  // Отправляем сохранённые сообщения
+  if (messageQueue.has(username)) {
+    const pending = messageQueue.get(username);
+    pending.forEach(msg => {
+      ws.send(JSON.stringify({type: 'message', data: msg}));
+    });
+    messageQueue.delete(username);
+    console.log(`  📨 Доставлено ${pending.length} сообщений для ${username}`);
+  }
+
+  ws.send(JSON.stringify({type: 'auth-ok', users: onlineUsers}));
+
+  // Уведомляем всех о новом пользователе
+  broadcast({type: 'user-online', data: {username, nick: user.nick, avatar: user.avatar}});
+}
+
+function handleSendMessage(from, data) {
+  const {to, content, ts} = data;
+  const message = {from, to, content, ts};
+
+  const toUser = users.get(to);
+  
+  if (toUser && toUser.ws.readyState === WebSocket.OPEN) {
+    // Пользователь онлайн - отправляем сразу
+    toUser.ws.send(JSON.stringify({type: 'message', data: message}));
+  } else {
+    // Пользователь офлайн - сохраняем в очередь
+    if (!messageQueue.has(to)) {
+      messageQueue.set(to, []);
+    }
+    messageQueue.get(to).push(message);
+    console.log(`  ⏸️  Сообщение от ${from} → ${to} в очереди (${messageQueue.get(to).length} ожидают)`);
+  }
+}
+
+function handleProfileUpdate(username, data) {
+  const user = users.get(username);
+  if (!user) return;
+
+  if (data.nick) user.nick = data.nick;
+  if (data.avatar) user.avatar = data.avatar;
+
+  // Уведомляем всех об обновлении профиля
+  broadcast({
+    type: 'user-profile',
+    data: {username, nick: user.nick, avatar: user.avatar}
   });
 }
 
-// PeerJS сервер
-const peerServer = PeerServer({
-  port: PORT,
-  http: app
-});
+// ==================== BROADCAST ====================
+function broadcast(msg, excludeUser = null) {
+  const data = JSON.stringify(msg);
+  for (const [username, user] of users) {
+    if (excludeUser && username === excludeUser) continue;
+    if (user.ws.readyState === WebSocket.OPEN) {
+      user.ws.send(data);
+    }
+  }
+}
 
-peerServer.on('connection', (client) => {
-  console.log(`✓ ${client.getId()} connected`);
-});
-
-peerServer.on('disconnect', (client) => {
-  console.log(`✗ ${client.getId()} disconnected`);
-});
-
-// Stats
+// ==================== STATS ====================
 setInterval(() => {
-  console.log(`[${new Date().toLocaleTimeString()}] Server is running on port ${PORT}`);
+  console.log(`[${new Date().toLocaleTimeString()}] 👥 Пользователей: ${users.size}, 📋 В очереди: ${messageQueue.size}`);
 }, 30000);
 
 // ==================== GRACEFUL SHUTDOWN ====================
 process.on('SIGINT', () => {
-  console.log('\n👋 Shutting down...');
+  console.log('\n👋 Выключение сервера...');
+  wss.clients.forEach(ws => ws.close());
   app.close(() => {
-    console.log('✅ Server stopped');
+    console.log('✅ Сервер остановлен');
     process.exit(0);
   });
 });
 
 // ==================== START ====================
-app.listen(PORT, () => {
-  const proto = USE_HTTPS ? 'wss' : 'ws';
-  const getLocalIP = () => {
-    const {networkInterfaces} = require('os');
-    const interfaces = networkInterfaces();
-
-    for (const name of Object.keys(interfaces)) {
-      for (const iface of interfaces[name]) {
-        if (iface.family === 'IPv4' && !iface.internal) {
-          return iface.address;
-        }
-      }
-    }
-    return 'localhost';
-  };
-
-  const localIP = getLocalIP();
+app.listen(PORT, HOST, () => {
+  const proto = 'wss';
+  // На Replit URL генерируется автоматически и доступен через переменную окружения
+  // Формат: https://projectname.randomstring.repl.co
+  const replitUrl = process.env.REPLIT_OUTAGE_URL || process.env.REPL_SLUG || 'localhost';
+  const domain = replitUrl.replace('https://', '').replace('http://', '');
 
   console.log(`
-╔═══════════════════════════════════════════════════╗
-║      Cipher PeerJS Server v1.0                    ║
-║═══════════════════════════════════════════════════║
-║ 🚀 Running on port: ${PORT}${' '.repeat(26 - String(PORT).length)}║
-║ 🌐 Local: ${proto}://localhost:${PORT}${' '.repeat(24 - String(PORT).length)}║
-║ 📱 Network: ${proto}://${localIP}:${PORT}${' '.repeat(20 - String(localIP).length - String(PORT).length)}║
-║                                                   ║
-║ Ready for P2P connections...${' '.repeat(14)}║
-╚═══════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════╗
+║     Cipher Messenger Server v2.1 - WebSocket Relay    ║
+║═══════════════════════════════════════════════════════║
+║ 🚀 Запущен на: 0.0.0.0:${PORT}${' '.repeat(18 - String(PORT).length)}║
+║ 🌐 WebSocket URL:                                     ║
+║    ${proto}://${domain}${' '.repeat(30 - domain.length)}║
+║ 📊 Статус: Готово к подключению${' '.repeat(16)}║
+║ 🔐 Поддерживает WSS (Secure WebSocket)${' '.repeat(8)}║
+╚═══════════════════════════════════════════════════════╝
   `);
+
+  console.log(`\n✓ Сервер готов к подключениям`);
+  console.log(`✓ Используйте этот URL в клиенте: wss://${domain}`);
+  console.log(`✓ Ожидаю соединения на порту ${PORT}\n`);
 });
+
+function getLocalIP() {
+  const {networkInterfaces} = require('os');
+  const interfaces = networkInterfaces();
+  
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
