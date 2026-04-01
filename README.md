@@ -1,6 +1,6 @@
-# Nexus P2P: Decentralized Encrypted Communication Framework
+# Cipher P2P: Decentralized Encrypted Communication Framework
 
-Nexus P2P is a serverless, single-file communication application designed for secure, peer-to-peer (P2P) data and media exchange. By utilizing WebRTC technology, the platform facilitates direct browser-to-browser connectivity, eliminating the need for centralized databases or intermediate message storage.
+Cipher P2P is a serverless, single-file communication application designed for secure, peer-to-peer (P2P) data and media exchange. By utilizing WebRTC technology, the platform facilitates direct browser-to-browser connectivity, eliminating the need for centralized databases or intermediate message storage.
 
 ## 1. Technical Architecture
 
