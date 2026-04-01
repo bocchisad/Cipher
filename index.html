@@ -426,6 +426,18 @@ let ws = null;
 
 
 let serverAddress = 'wss://14c2ea08-1afb-4dc5-9edb-b94c045d76d7-00-2kg3pg08pn0v4.pike.replit.dev';
+
+function normalizeWsUrl(addr) {
+  if (!addr) return addr;
+  addr = addr.trim();
+  if (addr.startsWith('https://')) addr = 'wss://' + addr.slice(8);
+  else if (addr.startsWith('http://')) addr = 'ws://' + addr.slice(7);
+  if (!addr.startsWith('ws://') && !addr.startsWith('wss://')) {
+    addr = (location.protocol === 'https:' ? 'wss://' : 'ws://') + addr;
+  }
+  return addr;
+}
+
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
@@ -715,7 +727,7 @@ async function init(){
   if(saved){
     try{
       const {username, password, server} = JSON.parse(saved);
-      if(server) serverAddress = server;
+      if(server) serverAddress = normalizeWsUrl(server);
       setHint('Восстановление сессии...');
       
       try {
@@ -767,7 +779,7 @@ function setupReg(){
   document.getElementById('regBtn').onclick=async()=>{
     const username=document.getElementById('regNick').value.trim().toLowerCase();
     const password=document.getElementById('regPass').value;
-    const server=document.getElementById('regServer').value.trim();
+    const server=normalizeWsUrl(document.getElementById('regServer').value.trim());
     
     if(!username || username.length<3){showToast('Username минимум 3 символа');return;}
     if(!password || password.length<4){showToast('Пароль минимум 4 символа');return;}
