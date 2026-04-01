@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cipher — P2P Messenger</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/trystero@0.20.1/dist/trystero-torrent.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -809,6 +810,7 @@ let peer=null;
 let connections={};// peerId -> DataConnection
 let mediaConnections={};// peerId -> MediaConnection
 let aesKeys={};// peerId -> CryptoKey
+let torrentRooms={};// Хранилище комнат Trystero
 let activeTab='media';
 let mediaRecorder=null;
 let isRecording=false;
@@ -945,31 +947,71 @@ function schedulePeerReconnect(){
 }
 
 function connectToPeer(peerId){
-  if(!peer||peer.destroyed||peer.disconnected){
-    console.warn('Cannot connect: peer not ready');
-    return;
-  }
-  // If existing conn is still open, skip
+  if(!peer||peer.destroyed||peer.disconnected) return;
   if(connections[peerId]&&connections[peerId].open) return;
-  // Clean up stale
   if(connections[peerId]) delete connections[peerId];
+  
   let conn;
   try{
     conn=peer.connect(peerId,{reliable:true});
   }catch(e){
-    console.warn('connect failed:',e);
-    schedulePeerReconnect();
+    console.warn('PeerJS connect failed', e);
     return;
   }
-  if(!conn){
-    schedulePeerReconnect();
+  
+  // ФИКС: Проверяем, отдался ли объект соединения
+  if(!conn) {
+    console.warn('Соединение с ' + peerId + ' не создано (сервер недоступен).');
+    connectViaTrystero(peerId);
     return;
   }
+
   conn.on('open',()=>onConnOpen(conn));
   conn.on('data',d=>onConnData(conn,d));
   conn.on('close',()=>onConnClose(conn));
   conn.on('error',()=>onConnClose(conn));
   connections[peerId]=conn;
+  
+  // Пытаемся подключиться через Trystero как резервный канал
+  connectViaTrystero(peerId);
+}
+
+function connectViaTrystero(peerId) {
+  if (!window.trystero) return;
+  if (torrentRooms[peerId]) return; // Уже слушаем комнату
+
+  // Генерируем уникальное имя комнаты для двух пользователей (сортируем ID)
+  const roomName = [myProfile.id, peerId].sort().join('_');
+  const room = window.trystero.joinRoom({appId: 'cipher-messenger'}, roomName);
+  torrentRooms[peerId] = room;
+
+  const [sendData, getTargetData] = room.makeAction('p2p-data');
+
+  room.onPeerJoin(id => {
+    console.log('Trystero подключен:', id);
+    setOnline(peerId, true);
+    
+    // Отправляем handshake через DHT
+    exportPublicKey(keyPair.publicKey).then(pubKey => {
+      sendData({type: 'HANDSHAKE', pubKey, nick: myProfile.nick, avatar: myProfile.avatar}, id);
+    });
+  });
+
+  getTargetData(async (data, id) => {
+    // Бесшовно прокидываем данные из торрента в существующую криптографию Cipher
+    // Имитируем объект соединения (pseudo-conn) для onConnData
+    const pseudoConn = { 
+      peer: peerId, 
+      open: true,
+      send: (payload) => sendData(payload, id) 
+    };
+    
+    // Записываем этот псевдо-коннект в общую базу соединений мессенджера
+    connections[peerId] = pseudoConn; 
+    onConnData(pseudoConn, data);
+  });
+
+  room.onPeerLeave(id => setOnline(peerId, false));
 }
 
 function handleIncomingConn(conn){
@@ -1296,29 +1338,16 @@ function scrollBottom(){
 
 function scrollToMessage(msgId){
   if(!msgId) return;
-  // Make sure we're in chat view
-  if(!activeChat){
-    console.warn('No active chat');
-    return;
-  }
-  // Switch back to chat view from files/media tabs
-  document.getElementById('chatView').style.display='flex';
-  document.getElementById('noChatView').style.display='none';
+  // Явно приводим msgId к строке для корректной работы querySelector
+  const el=document.querySelector(`[data-msg-id="${String(msgId)}"]`);
+  if(!el) return;
   
-  // Give DOM time to update
-  setTimeout(()=>{
-    const el=document.querySelector(`[data-msg-id="${msgId}"]`);
-    if(!el){
-      console.warn('Message element not found:',msgId);
-      return;
-    }
-    el.scrollIntoView({behavior:'smooth',block:'center'});
-    // flash highlight
-    el.style.transition='background .2s';
-    el.style.background='rgba(79,142,247,0.18)';
-    el.style.borderRadius='12px';
-    setTimeout(()=>{el.style.background='';el.style.borderRadius='';},1200);
-  },0);
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  // Визуальная подсветка нужного файла
+  el.style.transition='background .2s';
+  el.style.background='rgba(79,142,247,0.18)';
+  el.style.borderRadius='12px';
+  setTimeout(()=>{el.style.background='';el.style.borderRadius='';},1200);
 }
 
 function updateLastMessage(chatId,content,ts){
@@ -1480,65 +1509,46 @@ function setupEvents(){
 // ==================== DRAG & DROP ====================
 function setupDragDrop(){
   const chatView=document.getElementById('chatView');
-  let dragCounter=0;
+  let dragTimer;
 
-  document.addEventListener('dragover',e=>{
-    e.preventDefault();
-    e.dataTransfer.dropEffect='copy';
-  });
-  
-  document.addEventListener('drop',e=>{
-    e.preventDefault();
-  });
+  document.addEventListener('dragover', e => e.preventDefault());
 
-  chatView.addEventListener('dragenter',e=>{
+  chatView.addEventListener('dragenter', e => {
     e.preventDefault();
-    e.dataTransfer.dropEffect='copy';
-    if(!activeChat){
-      showToast('Выберите чат для отправки файлов');
-      return;
-    }
-    dragCounter++;
+    if(!activeChat) return;
     chatView.classList.add('drag-over');
   });
 
-  chatView.addEventListener('dragleave',e=>{
-    dragCounter--;
-    if(dragCounter<=0){dragCounter=0;chatView.classList.remove('drag-over');}
+  chatView.addEventListener('dragover', e => {
+    e.preventDefault();
+    clearTimeout(dragTimer); // Сбрасываем таймер, пока мышь двигается над окном
   });
 
-  chatView.addEventListener('drop',async e=>{
+  chatView.addEventListener('dragleave', e => {
+    // Убираем оверлей только если мышь реально покинула зону (избавляет от мерцания)
+    dragTimer = setTimeout(() => chatView.classList.remove('drag-over'), 50);
+  });
+
+  chatView.addEventListener('drop', async e => {
     e.preventDefault();
-    e.stopPropagation();
-    dragCounter=0;
+    clearTimeout(dragTimer);
     chatView.classList.remove('drag-over');
-    if(!activeChat){showToast('Выберите чат для отправки файлов');return;}
+    if(!activeChat) return;
+    
     const files=[...e.dataTransfer.files];
-    if(!files.length) return;
-    showToast(`Отправка ${files.length} файл(ов)...`);
-    let successCount=0;
     for(const f of files){
-      try{
-        if(f.type.startsWith('image/')){
-          const stripped=await stripExif(f);
-          const b64=await fileToBase64(stripped);
-          await sendMessage('image',b64);
-          successCount++;
-        } else if(f.type.startsWith('video/')){
-          if(f.size>100*1024*1024){showToast(`Видео "${f.name}" слишком большое (макс 100МБ)`);continue;}
-          const b64=await fileToBase64(f);
-          await sendMessage('video',b64);
-          successCount++;
-        } else {
-          if(f.size>50*1024*1024){showToast(`Файл "${f.name}" слишком большой (макс 50МБ)`);continue;}
-          const b64=await fileToBase64(f);
-          const fd=JSON.stringify({name:f.name,size:f.size,data:b64});
-          await sendMessage('file',fd);
-          successCount++;
-        }
-      }catch(err){console.error('Error:',f.name,err);showToast(`Ошибка при отправке "${f.name}"`);}
+      if(f.type.startsWith('image/')){
+        const stripped=await stripExif(f);
+        const b64=await fileToBase64(stripped);
+        await sendMessage('image',b64);
+      } else {
+        if(f.size>50*1024*1024){showToast('Файл слишком большой (макс 50МБ)');continue;}
+        const b64=await fileToBase64(f);
+        const fd=JSON.stringify({name:f.name,size:f.size,data:b64});
+        await sendMessage('file',fd);
+      }
     }
-    if(successCount>0){showToast(`✓ Отправлено ${successCount}/${files.length}`);}
+    if(files.length>1) showToast(`Отправлено файлов: ${files.length}`);
   });
 }
 
