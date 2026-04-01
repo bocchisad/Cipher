@@ -5,7 +5,38 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cipher — P2P Messenger</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/trystero@0.20.1/dist/trystero-torrent.min.js"></script>
+<script>
+  // Загружаем Trystero с fallback на другие CDN
+  (function() {
+    const scripts = [
+      'https://unpkg.com/trystero@0.20.1/dist/trystero-torrent.min.js',
+      'https://cdn.jsdelivr.net/npm/trystero@0.20.1/dist/trystero-torrent.min.js'
+    ];
+    
+    function loadScript(src) {
+      return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.head.appendChild(script);
+      });
+    }
+    
+    async function loadTrystero() {
+      for (const src of scripts) {
+        const success = await loadScript(src);
+        if (success) {
+          console.log('✓ Trystero загружена с:', src);
+          return;
+        }
+      }
+      console.warn('⚠️ Не удалось загрузить Trystero - будет использован только PeerJS');
+    }
+    
+    loadTrystero();
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -900,31 +931,62 @@ let peerReconnectTimer=null;
 
 function setupPeer(){
   if(peer && !peer.destroyed) peer.destroy();
-  peer=new Peer(myProfile.id,{
-    host:'0.peerjs.com',port:443,secure:true,
-    config:{iceServers:[
-      {urls:'stun:stun.l.google.com:19302'},
-      {urls:'stun:stun1.l.google.com:19302'},
-      {urls:'stun:global.stun.twilio.com:3478'}
-    ]}
+  
+  // Конфигурация PeerJS с резервными сигнальными серверами
+  const peerConfig = {
+    host: '0.peerjs.com',
+    port: 443,
+    secure: true,
+    path: '/',
+    config: {
+      iceServers: [
+        {urls: 'stun:stun.l.google.com:19302'},
+        {urls: 'stun:stun1.l.google.com:19302'},
+        {urls: 'stun:global.stun.twilio.com:3478'},
+        {urls: 'stun:stun2.l.google.com:19302'},
+        {urls: 'stun:stun3.l.google.com:19302'},
+        {urls: 'stun:stun4.l.google.com:19302'}
+      ]
+    }
+  };
+  
+  peer = new Peer(myProfile.id, peerConfig);
+  
+  peer.on('open', id => {
+    console.log('✓ Peer открыт:', id);
+    if(peerReconnectTimer) {
+      clearTimeout(peerReconnectTimer);
+      peerReconnectTimer = null;
+    }
+    // Переподключаемся к известным контактам
+    contacts.forEach(c => connectToPeer(c.id));
   });
-  peer.on('open',id=>{
-    console.log('Peer open:',id);
-    if(peerReconnectTimer){clearTimeout(peerReconnectTimer);peerReconnectTimer=null;}
-    // reconnect to known contacts
-    contacts.forEach(c=>connectToPeer(c.id));
-  });
-  peer.on('connection',conn=>handleIncomingConn(conn));
-  peer.on('call',call=>handleIncomingCall(call));
-  peer.on('disconnected',()=>{
-    console.warn('Peer disconnected, reconnecting...');
-    if(!peer.destroyed){
-      try{peer.reconnect();}catch(e){schedulePeerReconnect();}
+  
+  peer.on('connection', conn => handleIncomingConn(conn));
+  peer.on('call', call => handleIncomingCall(call));
+  
+  peer.on('disconnected', () => {
+    console.warn('⚠️ Peer отключен, попытка переподключения...');
+    if(!peer.destroyed) {
+      try{
+        peer.reconnect();
+      } catch(e) {
+        console.warn('Ошибка reconnect:', e.message);
+        schedulePeerReconnect();
+      }
     }
   });
-  peer.on('error',e=>{
-    console.warn('Peer error:',e.type,e);
-    if(e.type==='network'||e.type==='server-error'||e.type==='socket-error'||e.type==='socket-closed'||e.type==='unavailable-id'){
+  
+  peer.on('error', e => {
+    console.error('❌ Peer ошибка:', e.type, '-', e.message || e);
+    
+    // Критические ошибки требуют перестройки peer
+    if(e.type === 'network' || 
+       e.type === 'server-error' || 
+       e.type === 'socket-error' || 
+       e.type === 'socket-closed' || 
+       e.type === 'unavailable-id' ||
+       e.type === 'peer-unavailable') {
       schedulePeerReconnect();
     }
   });
@@ -947,69 +1009,95 @@ function schedulePeerReconnect(){
 }
 
 function connectToPeer(peerId){
-  if(!peer||peer.destroyed||peer.disconnected) return;
+  if(!peer||peer.destroyed||peer.disconnected) {
+    console.warn('Peer не готов, планируем переподключение');
+    return;
+  }
+  
+  // Если уже есть открытое соединение - пропускаем
   if(connections[peerId]&&connections[peerId].open) return;
+  
+  // Очищаем мертвое соединение
   if(connections[peerId]) delete connections[peerId];
   
   let conn;
   try{
     conn=peer.connect(peerId,{reliable:true});
   }catch(e){
-    console.warn('PeerJS connect failed', e);
+    console.warn('❌ PeerJS connect ошибка:', e.message);
     return;
   }
   
   // Проверяем, отдался ли объект соединения
   if(!conn) {
-    console.warn('Соединение с ' + peerId + ' не создано (сервер недоступен).');
+    console.warn('❌ Соединение с ' + peerId + ' не создано');
     return;
   }
 
   conn.on('open',()=>onConnOpen(conn));
   conn.on('data',d=>onConnData(conn,d));
   conn.on('close',()=>onConnClose(conn));
-  conn.on('error',()=>onConnClose(conn));
+  conn.on('error',e=>{
+    console.warn('❌ Ошибка соединения с', peerId, ':', e);
+    onConnClose(conn);
+  });
+  
   connections[peerId]=conn;
   
+  // Пытаемся подключить Trystero как резервный канал
   connectViaTrystero(peerId);
 }
 
 function connectViaTrystero(peerId) {
-  if (!window.trystero) return;
+  if (!window.trystero) {
+    console.log('Trystero не доступна, используется только PeerJS');
+    return;
+  }
+  
   if (torrentRooms[peerId]) return; // Уже слушаем комнату
 
-  // Генерируем уникальное имя комнаты для двух пользователей (сортируем ID)
-  const roomName = [myProfile.id, peerId].sort().join('_');
-  const room = window.trystero.joinRoom({appId: 'cipher-messenger'}, roomName);
-  torrentRooms[peerId] = room;
+  try {
+    // Генерируем уникальное имя комнаты для двух пользователей (сортируем ID)
+    const roomName = [myProfile.id, peerId].sort().join('_');
+    const room = window.trystero.joinRoom({appId: 'cipher-messenger'}, roomName);
+    torrentRooms[peerId] = room;
 
-  const [sendData, getTargetData] = room.makeAction('p2p-data');
+    const [sendData, getTargetData] = room.makeAction('p2p-data');
 
-  room.onPeerJoin(id => {
-    console.log('Trystero подключен:', id);
-    setOnline(peerId, true);
-    
-    // Отправляем handshake через DHT
-    exportPublicKey(keyPair.publicKey).then(pubKey => {
-      sendData({type: 'HANDSHAKE', pubKey, nick: myProfile.nick, avatar: myProfile.avatar}, id);
+    room.onPeerJoin(id => {
+      console.log('✓ Trystero подключен:', id);
+      setOnline(peerId, true);
+      
+      // Отправляем handshake через DHT
+      exportPublicKey(keyPair.publicKey).then(pubKey => {
+        sendData({type: 'HANDSHAKE', pubKey, nick: myProfile.nick, avatar: myProfile.avatar}, id);
+      }).catch(e => console.warn('Trystero handshake ошибка:', e));
     });
-  });
 
-  getTargetData(async (data, id) => {
-    // Бесшовно прокидываем данные из торрента в существующую криптографию Cipher
-    // Имитируем объект соединения (pseudo-conn) для onConnData
-    const pseudoConn = { 
-      peer: peerId, 
-      open: true,
-      send: (payload) => sendData(payload, id) 
-    };
-    
-    // Записываем этот псевдо-коннект в общую базу соединений мессенджера
-    connections[peerId] = pseudoConn; 
-    onConnData(pseudoConn, data);
-  });
+    getTargetData(async (data, id) => {
+      try {
+        // Бесшовно прокидываем данные из торрента в существующую криптографию Cipher
+        // Имитируем объект соединения (pseudo-conn) для onConnData
+        const pseudoConn = { 
+          peer: peerId, 
+          open: true,
+          send: (payload) => sendData(payload, id) 
+        };
+        
+        // Записываем этот псевдо-коннект в общую базу соединений мессенджера
+        connections[peerId] = pseudoConn; 
+        onConnData(pseudoConn, data);
+      } catch(e) {
+        console.warn('Ошибка обработки Trystero данных:', e);
+      }
+    });
 
-  room.onPeerLeave(id => setOnline(peerId, false));
+    room.onPeerLeave(id => setOnline(peerId, false));
+  } catch(e) {
+    console.warn('⚠️ Ошибка инициализации Trystero:', e);
+    // Fallback на PeerJS-only режим
+    if(torrentRooms[peerId]) delete torrentRooms[peerId];
+  }
 }
 
 function handleIncomingConn(conn){
