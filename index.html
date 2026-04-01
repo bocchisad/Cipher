@@ -538,25 +538,39 @@ function setupWSHandlers() {
 function attemptReconnect() {
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
     console.error('❌ Не удалось подключиться после', MAX_RECONNECT_ATTEMPTS, 'попыток');
-    showToast('❌ Проблема с подключением. Используется автономный режим.');
-    // Пытаемся инициализировать artico как fallback
-    if (myProfile.uuid && !articoConnected) {
-      console.log('🔄 Пробую artico как fallback...');
-      initArticoFallback();
-    }
+    showToast('❌ Нет соединения с сервером. Работаю офлайн.');
     return;
   }
 
   reconnectAttempts++;
-  const delay = RECONNECT_DELAY * (1 + reconnectAttempts * 0.5); // Exponential backoff
+  const delay = RECONNECT_DELAY * (1 + reconnectAttempts * 0.5);
   console.log(`⏳ Переподключение... попытка ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} через ${delay}ms`);
 
-  setTimeout(() => {
-    connectWebSocket()
-      .catch(e => {
-        console.warn(`⚠️ Попытка ${reconnectAttempts} не удалась:`, e.message);
-        attemptReconnect();
-      });
+  setTimeout(async () => {
+    try {
+      await connectWebSocket();
+      // После переподключения — повторно авторизуемся
+      if (myProfile.uuid) {
+        serverReadyReceived = false;
+        await new Promise((resolve) => {
+          const timeout = setTimeout(resolve, 2000);
+          const check = setInterval(() => {
+            if (serverReadyReceived) { clearTimeout(timeout); clearInterval(check); resolve(); }
+          }, 50);
+        });
+        const saved = localStorage.getItem('cipherAuth');
+        if (saved && ws && ws.readyState === WebSocket.OPEN) {
+          const {uuid, password} = JSON.parse(saved);
+          if (uuid) {
+            ws.send(JSON.stringify({ type: 'login', uuid, password, timestamp: Date.now() }));
+            console.log('🔐 Повторная авторизация после переподключения');
+          }
+        }
+      }
+    } catch(e) {
+      console.warn(`⚠️ Попытка ${reconnectAttempts} не удалась:`, e.message);
+      attemptReconnect();
+    }
   }, delay);
 }
 
@@ -803,7 +817,17 @@ async function init(){
   const saved = localStorage.getItem('cipherAuth');
   if(saved){
     try{
-      const {uuid, password, server} = JSON.parse(saved);
+      const parsed = JSON.parse(saved);
+      const {uuid, password, server} = parsed;
+
+      // Если нет uuid — старый формат данных, сбрасываем
+      if (!uuid) {
+        console.warn('⚠️ Устаревший формат сессии, сбрасываем...');
+        localStorage.removeItem('cipherAuth');
+        setupReg();
+        return;
+      }
+
       if (server) serverAddress = server;
       setHint('Восстановление сессии...');
 
@@ -811,34 +835,18 @@ async function init(){
         await connectWebSocket();
 
         // Ждём server-ready
-        console.log('⏳ Ожидаю server-ready от сервера...');
         serverReadyReceived = false;
-
         await new Promise((resolve) => {
-          const timeout = setTimeout(() => {
-            console.warn('⚠️ server-ready timeout');
-            resolve();
-          }, 1500);
-
-          const checkInterval = setInterval(() => {
-            if (serverReadyReceived) {
-              clearTimeout(timeout);
-              clearInterval(checkInterval);
-              console.log('✓ server-ready получен');
-              resolve();
-            }
+          const timeout = setTimeout(resolve, 2000);
+          const check = setInterval(() => {
+            if (serverReadyReceived) { clearTimeout(timeout); clearInterval(check); resolve(); }
           }, 50);
         });
 
         // Отправляем login
         if (ws && ws.readyState === WebSocket.OPEN) {
           console.log('🔐 Отправляю login с uuid:', uuid.substring(0, 8) + '...');
-          ws.send(JSON.stringify({
-            type: 'login',
-            uuid: uuid,
-            password: password,
-            timestamp: Date.now()
-          }));
+          ws.send(JSON.stringify({ type: 'login', uuid, password, timestamp: Date.now() }));
         }
 
         startApp(uuid);
