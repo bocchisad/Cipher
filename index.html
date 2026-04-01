@@ -248,8 +248,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
     <input type="file" id="regAvatarFile" accept="image/*" style="display:none">
     <input class="reg-input" id="regNick" type="text" placeholder="Username (минимум 3 символа)" maxlength="32">
     <input class="reg-input" id="regPass" type="password" placeholder="Пароль" maxlength="64">
-    <input class="reg-input" id="regServer" type="text" placeholder="Адрес сервера (IP:PORT или оставить пусто)" maxlength="64">
-    <div class="reg-hint" id="regHint">Введите username, пароль и адрес сервера координации.</div>
+    <div class="reg-hint" id="regHint">Введите username и пароль</div>
     <button class="btn-primary" id="regBtn">Войти / Зарегистрироваться</button>
   </div>
 </div>
@@ -375,11 +374,6 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
       <input id="settingsNick" type="text" placeholder="Ваш никнейм">
     </div>
     <div class="settings-section">
-      <h3>Адрес сервера</h3>
-      <input id="settingsServer" type="text" placeholder="wss://example.com или ws://localhost:9000" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg3);font-size:12px">
-      <div class="copy-hint" style="font-size:10px;margin-top:6px">Введите адрес без ws://, с ws:// или с wss://</div>
-    </div>
-    <div class="settings-section">
       <h3>Ваш Username</h3>
       <div class="settings-id" id="settingsIdBox">...</div>
       <div class="copy-hint">Нажмите, чтобы скопировать</div>
@@ -457,7 +451,7 @@ function getDefaultServerAddress() {
   return `${defaultProto}://localhost:9000`;
 }
 
-let serverAddress = getDefaultServerAddress();
+let serverAddress = 'wss://53163457-1fda-4050-a8be-bcbf554d38ca-00-35o9h5km464v0.kirk.replit.dev';
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
@@ -1523,7 +1517,6 @@ function openSettings(){
   const m=document.getElementById('settingsModal');
   m.style.display='flex';
   document.getElementById('settingsNick').value=myProfile.nick||'';
-  document.getElementById('settingsServer').value=serverAddress;
   document.getElementById('settingsIdBox').textContent=myProfile.username;
   const av=document.getElementById('settingsAv');
   renderAvatar(av, myProfile.avatar, myProfile.nick||myProfile.username);
@@ -1532,20 +1525,6 @@ function openSettings(){
 async function saveSettings(){
   const nick=document.getElementById('settingsNick').value.trim();
   if(nick) myProfile.nick=nick;
-  
-  const newServer = document.getElementById('settingsServer').value.trim();
-  const serverChanged = newServer && newServer !== serverAddress;
-  
-  if(serverChanged) {
-    serverAddress = newServer;
-    localStorage.setItem('cipherServer', serverAddress);
-    // Reconnect to new server
-    if(ws) ws.close();
-    connectWebSocket().catch(e => {
-      console.error('Failed to connect to new server:', e);
-      showToast('Не удалось подключиться к новому серверу');
-    });
-  }
 
   await dbPut('profile', {key: 'profile', ...myProfile});
 
