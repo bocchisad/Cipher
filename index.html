@@ -719,12 +719,21 @@ async function init(){
       
       try {
             await connectWebSocket();
+            
+            // "Представляемся" серверу, чтобы он добавил нас в Map(users) и начал слать сообщения
+            if (typeof ws !== 'undefined' && ws.readyState === 1) {
+              ws.send(JSON.stringify({ 
+                type: 'auth', // ВНИМАНИЕ: если твой сервер ждет 'login' или 'join', впиши нужное слово
+                username: username 
+              }));
+            }
+            
             startApp(username);
           } catch (err) {
-            console.warn('Connection failed, using offline mode');
-            startApp(username);
-          }
-          
+        console.warn('Connection failed, using offline mode');
+        gunUser = {username, password};
+        startApp(username);
+      }
     } catch(e){
       localStorage.removeItem('cipherAuth');
       setupReg();
@@ -757,8 +766,7 @@ function setupReg(){
   document.getElementById('regBtn').onclick=async()=>{
     const username=document.getElementById('regNick').value.trim().toLowerCase();
     const password=document.getElementById('regPass').value;
-    const serverNode=document.getElementById('regServer');
-    const server=serverNode ? serverNode.value.trim() : '';
+    const server=document.getElementById('regServer').value.trim();
     
     if(!username || username.length<3){showToast('Username минимум 3 символа');return;}
     if(!password || password.length<4){showToast('Пароль минимум 4 символа');return;}
