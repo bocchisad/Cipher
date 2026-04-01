@@ -506,6 +506,53 @@ function setupWSHandlers() {
   };
 }
 
+// ==================== HTTP POLLING FALLBACK ====================
+let usePolling = false;
+let pollingInterval = null;
+
+function getHttpBase() {
+  return serverAddress.replace(/^wss?:\/\//, (m) => m === 'wss://' ? 'https://' : 'http://');
+}
+
+async function connectHTTP(username, nick, avatar) {
+  const base = getHttpBase();
+  console.log('📡 Switching to HTTP polling mode:', base);
+  const res = await fetch(`${base}/api/auth`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username, nick, avatar})
+  });
+  if (!res.ok) throw new Error('HTTP auth failed: ' + res.status);
+  const data = await res.json();
+  usePolling = true;
+  updateConnStatus(true);
+  if (data.users) data.users.forEach(u => handleServerMessage({type:'user-online',data:u}));
+  if (data.pending) data.pending.forEach(e => handleServerMessage(e));
+  startPolling(username);
+  return data;
+}
+
+function startPolling(username) {
+  if (pollingInterval) clearInterval(pollingInterval);
+  pollingInterval = setInterval(async () => {
+    if (!usePolling) { clearInterval(pollingInterval); return; }
+    try {
+      const base = getHttpBase();
+      const res = await fetch(`${base}/api/poll?username=${encodeURIComponent(username)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.events) data.events.forEach(e => handleServerMessage(e));
+    } catch (e) {
+      console.warn('Poll error:', e.message);
+    }
+  }, 2000);
+}
+
+function stopPolling() {
+  usePolling = false;
+  if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+}
+
 function attemptReconnect() {
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
     showToast('Не удалось подключиться к серверу');
@@ -519,6 +566,23 @@ function attemptReconnect() {
 }
 
 function sendToServer(type, data) {
+  if (usePolling) {
+    const base = getHttpBase();
+    if (type === 'message') {
+      fetch(`${base}/api/send`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({from: myProfile.username, ...data})
+      }).catch(e => console.warn('Send error:', e));
+    } else if (type === 'profile-update') {
+      fetch(`${base}/api/profile`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({username: myProfile.username, ...data})
+      }).catch(e => console.warn('Profile error:', e));
+    }
+    return;
+  }
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     console.warn('WS not connected');
     return;
@@ -731,20 +795,19 @@ async function init(){
       setHint('Восстановление сессии...');
       
       try {
-            await connectWebSocket();
-            
-            // "Представляемся" серверу, чтобы он добавил нас в Map(users) и начал слать сообщения
-            if (typeof ws !== 'undefined' && ws.readyState === 1) {
-              ws.send(JSON.stringify({ 
-                type: 'auth', // ВНИМАНИЕ: если твой сервер ждет 'login' или 'join', впиши нужное слово
-                username: username 
-              }));
-            }
-            
-            startApp(username);
-          } catch (err) {
+        try {
+          await connectWebSocket();
+          if (typeof ws !== 'undefined' && ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'auth', username }));
+          }
+        } catch (wsErr) {
+          console.warn('WS failed on init, trying HTTP polling:', wsErr.message || wsErr);
+          const profile = await dbGet('profile', 'profile');
+          await connectHTTP(username, profile?.nick || username, profile?.avatar || '');
+        }
+        startApp(username);
+      } catch (err) {
         console.warn('Connection failed, using offline mode');
-        gunUser = {username, password};
         startApp(username);
       }
     } catch(e){
@@ -792,26 +855,19 @@ function setupReg(){
     setHint('Попытка подключения...');
 
     try {
-      await connectWebSocket();
-      
-      sendToServer('auth', {username, password, nick: username, avatar: regAvatar});
-      
-      // Ждём ответ аутентификации
-      const authPromise = new Promise((resolve) => {
-        const checkAuth = setInterval(() => {
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            clearInterval(checkAuth);
-            resolve();
-          }
-        }, 100);
-        setTimeout(() => {
-          clearInterval(checkAuth);
-          resolve();
-        }, 3000);
-      });
+      // Try WebSocket first, fallback to HTTP polling
+      let connected = false;
+      try {
+        await connectWebSocket();
+        sendToServer('auth', {username, password, nick: username, avatar: regAvatar});
+        await new Promise(r => setTimeout(r, 1500));
+        connected = true;
+      } catch (wsErr) {
+        console.warn('WS failed, trying HTTP polling:', wsErr.message || wsErr);
+        await connectHTTP(username, username, regAvatar);
+        connected = true;
+      }
 
-      await authPromise;
-      
       const auth = {username, password};
       if(server) auth.server = server;
       localStorage.setItem('cipherAuth', JSON.stringify(auth));
@@ -825,7 +881,6 @@ function setupReg(){
       showNoChatView();
       setupEvents();
 
-      // Отправляем свой профиль на сервер
       sendToServer('profile-update', {nick: myProfile.nick, avatar: myProfile.avatar});
 
     } catch(e){
