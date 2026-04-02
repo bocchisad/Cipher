@@ -603,50 +603,52 @@ function handleServerMessage(msg) {
       break;
     case 'login-ok':
       console.log('✅ Login successful');
-      // Update online users list and ensure all users are in contacts
+      // FIX: Only update online status for EXISTING contacts
+      // DO NOT auto-add all server users to contacts!
       if (msg.users && Array.isArray(msg.users)) {
-        msg.users.forEach(u => {
-          // Validate uuid exists
-          if (!u.uuid || typeof u.uuid !== 'string') {
-            console.warn('⚠️ Invalid user object, missing uuid:', u);
-            return;
+        // Build a map of online users from server
+        const onlineUsers = new Map(msg.users.map(u => [u.uuid, u]));
+        
+        // Update ONLY existing contacts with fresh data from server
+        contacts.forEach(contact => {
+          if (contact.uuid === '_metadata') return; // Skip metadata
+          
+          const serverUser = onlineUsers.get(contact.uuid);
+          if (serverUser) {
+            contact.online = true;
+            if (serverUser.nickname) contact.nickname = serverUser.nickname;
+            if (serverUser.avatar && isValidAvatar(serverUser.avatar)) {
+              contact.avatar = serverUser.avatar;
+            }
+          } else {
+            // User not on server right now, mark as offline
+            contact.online = false;
           }
           
-          let contact = contacts.find(c => c.uuid === u.uuid);
-          if (contact) {
-            contact.online = true;
-            if (u.nickname) contact.nickname = u.nickname;
-            // Validate avatar before setting
-            if (u.avatar && isValidAvatar(u.avatar)) {
-              contact.avatar = u.avatar;
-            }
-            const cleaned = sanitizeContact(contact);
-            if(cleaned) {
-              dbPut('contacts', cleaned).catch(err => 
-                console.error('❌ Failed to update contact in DB:', err)
-              );
-            }
-          } else if (u.uuid !== myProfile.uuid) {
-            // Add new contact if not exists
-            const newContact = {
-              uuid: u.uuid,
-              nickname: u.nickname || '',
-              avatar: (u.avatar && isValidAvatar(u.avatar)) ? u.avatar : '',
-              online: true,
-              unread: 0,
-              lastMsg: '',
-              lastTs: 0
-            };
-            const cleaned = sanitizeContact(newContact);
-            if(cleaned) {
-              contacts.push(cleaned);
-              dbPut('contacts', cleaned).catch(err => 
-                console.error('❌ Failed to save new contact in DB:', err)
-              );
-            }
+          const cleaned = sanitizeContact(contact);
+          if(cleaned) {
+            dbPut('contacts', cleaned).catch(err => 
+              console.error('❌ Failed to update contact status in DB:', err)
+            );
           }
         });
+        
+        // FIX: Sync our own profile nickname/avatar if server has it
+        const ownServerUser = onlineUsers.get(myProfile.uuid);
+        if (ownServerUser && ownServerUser.nickname) {
+          myProfile.nickname = ownServerUser.nickname;
+          if (ownServerUser.avatar && isValidAvatar(ownServerUser.avatar)) {
+            myProfile.avatar = ownServerUser.avatar;
+          }
+          dbPut('profile', { key: 'profile', ...myProfile }).catch(err => 
+            console.error('❌ Failed to sync profile:', err)
+          );
+        }
+        
         renderSidebar();
+        if (activeChat && contacts.find(c => c.uuid === activeChat)) {
+          renderChatHeader();
+        }
       }
       break;
     case 'error':
@@ -1087,15 +1089,67 @@ function setupReg(){
       if (registerError) throw new Error(registerError);
       if (!receivedUuid) throw new Error('Не получен UUID от сервера');
 
-      // FIX (Недочёт #1): store passwordHash, not plaintext password
+      // FIX: store passwordHash, not plaintext password
       const auth = { uuid: receivedUuid, passwordHash, server: serverAddress };
       localStorage.setItem('cipherAuth', JSON.stringify(auth));
 
-      myProfile = { uuid: receivedUuid, nickname: nickname, avatar: regAvatar };
+      myProfile = { 
+        uuid: receivedUuid, 
+        nickname: nickname, 
+        avatar: regAvatar,
+        isLocal: true // Mark as locally created
+      };
       await dbPut('profile', { key: 'profile', ...myProfile });
+      
+      // FIX: Initialize empty contacts array for local DB (only friends we added)
+      // Don't auto-add server users!
+      contacts = []; 
+      await dbPut('contacts', {
+        uuid: '_metadata',
+        nickname: 'METADATA',
+        avatar: '',
+        online: false,
+        type: 'system',
+        unread: 0,
+        lastMsg: '',
+        lastTs: 0
+      }).catch(() => {}); // Metadata for future use
 
+      // FIX: Show UI but WAIT for proper login before showing app content
       document.getElementById('regOverlay').style.display='none';
       document.getElementById('app').style.display='flex';
+      
+      // FIX: Properly login after registration to sync with server
+      setHint('Входим в аккаунт...');
+      
+      await connectWebSocket();
+      serverReadyReceived = false;
+      await waitForServerReady();
+      
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        // FIX: Send login after register so server knows who we are
+        await new Promise((resolve) => {
+          const timeout = setTimeout(resolve, 3000);
+          const origHandler = ws.onmessage;
+          ws.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'login-ok') {
+              clearTimeout(timeout);
+              resolve();
+            }
+            if (origHandler) origHandler(e);
+          };
+          
+          ws.send(JSON.stringify({
+            type: 'login',
+            uuid: receivedUuid,
+            password: passwordHash,
+            timestamp: Date.now()
+          }));
+        });
+      }
+
+      // FIX: NOW show the app after proper login
       renderSidebar();
       showNoChatView();
       setupEvents();
@@ -1187,6 +1241,11 @@ function sanitizeContact(contact) {
   contact.unread = Number(contact.unread) || 0;
   contact.lastTs = Number(contact.lastTs) || 0;
   contact.online = Boolean(contact.online);
+  
+  // FIX: Ensure type field exists (friend = we added them, stranger = only saw online)
+  if (!contact.type || !['friend', 'stranger', 'blocked', 'system'].includes(contact.type)) {
+    contact.type = 'friend'; // Default to friend for backward compat
+  }
   
   return contact;
 }
@@ -1298,7 +1357,13 @@ async function startApp(uuid){
   }
 
   const savedContacts = await dbGetAll('contacts');
-  contacts = savedContacts;
+  // FIX: Filter out metadata and ensure all have type='friend'
+  contacts = savedContacts
+    .filter(c => c.uuid !== '_metadata') // Remove metadata record
+    .map(c => ({
+      ...c,
+      type: c.type || 'friend' // Ensure type is set
+    }));
 
   renderSidebar();
   showNoChatView();
@@ -1874,11 +1939,13 @@ async function addChat(){
     online: false,
     lastMsg: '',
     lastTs: 0,
-    unread: 0
+    unread: 0,
+    type: 'friend'  // FIX: Mark as explicitly added friend
   };
 
   contacts.push(contact);
-  await dbPut('contacts', contact);
+  const cleaned = sanitizeContact(contact);
+  if(cleaned) await dbPut('contacts', cleaned);
   renderSidebar();
   document.getElementById('addChatModal').style.display='none';
   openChat(uuid);
@@ -1935,8 +2002,10 @@ async function saveSettings(){
 // ==================== EXPORT/IMPORT ====================
 async function exportData(){
   const contacts_=await dbGetAll('contacts');
+  // FIX: Filter out metadata
+  const filteredContacts = contacts_.filter(c => c.uuid !== '_metadata');
   const messages=await dbGetAll('messages');
-  const data={profile:myProfile, contacts:contacts_, messages, exportedAt:Date.now()};
+  const data={profile:myProfile, contacts:filteredContacts, messages, exportedAt:Date.now()};
   const json=JSON.stringify(data);
   const pass=prompt('Пароль для шифрования резервной копии:');
   if(!pass) return;
@@ -1971,7 +2040,13 @@ async function importData(){
     const ctArr=Uint8Array.from(atob(data),c=>c.charCodeAt(0));
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:ivArr},keyMat,ctArr);
     const json=JSON.parse(new TextDecoder().decode(pt));
-    for(const c of json.contacts) await dbPut('contacts',c);
+    // FIX: Ensure all imported contacts have type='friend' and are sanitized
+    for(const c of json.contacts) {
+      if (c.uuid && c.uuid !== '_metadata') {
+        const sanitized = sanitizeContact({...c, type: c.type || 'friend'});
+        if(sanitized) await dbPut('contacts', sanitized);
+      }
+    }
     for(const m of json.messages){const {id:_,...rest}=m;await dbPut('messages',rest);}
     showToast('Данные восстановлены. Перезагрузите страницу.');
   }catch(e){
