@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: cipher-relay
+    env: docker
+    dockerfilePath: ./Dockerfile
+    port: 5000
+    envVars:
+      - key: PORT
+        value: "5000"
+      - key: DB_PATH
+        value: "/tmp/cipher.db"
+      - key: DB_ENCRYPTION_KEY
+        generateValue: true
