@@ -616,25 +616,34 @@ function handleServerMessage(msg) {
           if (contact) {
             contact.online = true;
             if (u.nickname) contact.nickname = u.nickname;
-            if (u.avatar) contact.avatar = u.avatar;
-            dbPut('contacts', contact).catch(err => 
-              console.error('❌ Failed to update contact in DB:', err)
-            );
+            // Validate avatar before setting
+            if (u.avatar && isValidAvatar(u.avatar)) {
+              contact.avatar = u.avatar;
+            }
+            const cleaned = sanitizeContact(contact);
+            if(cleaned) {
+              dbPut('contacts', cleaned).catch(err => 
+                console.error('❌ Failed to update contact in DB:', err)
+              );
+            }
           } else if (u.uuid !== myProfile.uuid) {
             // Add new contact if not exists
             const newContact = {
               uuid: u.uuid,
               nickname: u.nickname || '',
-              avatar: u.avatar || '',
+              avatar: (u.avatar && isValidAvatar(u.avatar)) ? u.avatar : '',
               online: true,
               unread: 0,
               lastMsg: '',
               lastTs: 0
             };
-            contacts.push(newContact);
-            dbPut('contacts', newContact).catch(err => 
-              console.error('❌ Failed to save new contact in DB:', err)
-            );
+            const cleaned = sanitizeContact(newContact);
+            if(cleaned) {
+              contacts.push(cleaned);
+              dbPut('contacts', cleaned).catch(err => 
+                console.error('❌ Failed to save new contact in DB:', err)
+              );
+            }
           }
         });
         renderSidebar();
@@ -1151,16 +1160,62 @@ async function handleIncomingMessage(msg) {
   renderSidebar();
 }
 
+// ==================== Data Validation Helpers ====================
+function isValidAvatar(avatar) {
+  if (!avatar) return true; // null/undefined is ok
+  if (typeof avatar !== 'string') return false;
+  // Check if it looks like valid base64 data URL
+  if (avatar.startsWith('data:')) {
+    return avatar.includes('base64,') && avatar.length > 50;
+  }
+  return false;
+}
+
+function sanitizeContact(contact) {
+  if (!contact || typeof contact !== 'object') return null;
+  if (!contact.uuid || typeof contact.uuid !== 'string') return null;
+  
+  // Ensure avatar is valid, otherwise clear it
+  if (contact.avatar && !isValidAvatar(contact.avatar)) {
+    console.warn(`⚠️ Invalid avatar for ${contact.uuid}, clearing...`);
+    contact.avatar = '';
+  }
+  
+  // Ensure required fields are safe strings/numbers
+  contact.nickname = String(contact.nickname || '');
+  contact.lastMsg = String(contact.lastMsg || '');
+  contact.unread = Number(contact.unread) || 0;
+  contact.lastTs = Number(contact.lastTs) || 0;
+  contact.online = Boolean(contact.online);
+  
+  return contact;
+}
+
+// ==================== User Event Handlers ====================
 // FIX #3: handleUserOnline — data is an object {uuid, nickname, avatar}, not a string
 function handleUserOnline(userInfo) {
   if (!userInfo || typeof userInfo !== 'object') return;
   const { uuid, nickname, avatar } = userInfo;
+  if (!uuid) {
+    console.warn('⚠️ handleUserOnline: missing uuid');
+    return;
+  }
+  
   const contact = contacts.find(c => c.uuid === uuid);
   if(contact) {
     contact.online = true;
     if(nickname) contact.nickname = nickname;
-    if(avatar) contact.avatar = avatar;
-    dbPut('contacts', contact);
+    // Validate avatar before setting
+    if(avatar && isValidAvatar(avatar)) {
+      contact.avatar = avatar;
+    }
+    
+    const cleaned = sanitizeContact(contact);
+    if(cleaned) {
+      dbPut('contacts', cleaned).catch(err => {
+        console.error(`❌ Failed to save online status for ${uuid}:`, err);
+      });
+    }
   }
   renderSidebar();
   if(activeChat === uuid) renderChatHeader();
@@ -1168,22 +1223,50 @@ function handleUserOnline(userInfo) {
 
 // handleUserOffline: data is the uuid string (correct as-is)
 function handleUserOffline(uuid) {
+  if (!uuid) {
+    console.warn('⚠️ handleUserOffline: missing uuid');
+    return;
+  }
   const contact = contacts.find(c => c.uuid === uuid);
   if(contact) {
     contact.online = false;
-    dbPut('contacts', contact);
+    const cleaned = sanitizeContact(contact);
+    if(cleaned) {
+      dbPut('contacts', cleaned).catch(err => {
+        console.error(`❌ Failed to save offline status for ${uuid}:`, err);
+      });
+    }
   }
   renderSidebar();
   if(activeChat === uuid) renderChatHeader();
 }
 
 function handleUserProfile(data) {
+  if (!data || typeof data !== 'object') return;
   const {uuid, nickname, avatar} = data;
+  if (!uuid) {
+    console.warn('⚠️ handleUserProfile: missing uuid');
+    return;
+  }
+  
   const contact = contacts.find(c => c.uuid === uuid);
   if(contact) {
     if(nickname) contact.nickname = nickname;
-    if(avatar !== undefined) contact.avatar = avatar;
-    dbPut('contacts', contact);
+    // Validate avatar before setting
+    if(avatar !== undefined) {
+      if(isValidAvatar(avatar)) {
+        contact.avatar = avatar;
+      } else if(avatar === '') {
+        contact.avatar = ''; // Allow clearing avatar
+      }
+    }
+    
+    const cleaned = sanitizeContact(contact);
+    if(cleaned) {
+      dbPut('contacts', cleaned).catch(err => {
+        console.error(`❌ Failed to save profile update for ${uuid}:`, err);
+      });
+    }
   }
   renderSidebar();
   if(activeChat === uuid) {
