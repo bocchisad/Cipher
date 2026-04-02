@@ -1357,11 +1357,6 @@ function renderChatHeader(){
   if(av) renderAvatar(av, contact.avatar, contact.nickname||contact.uuid);
   const nameEl=document.getElementById('headerName');
   if(nameEl) nameEl.textContent=contact.nickname||contact.uuid;
-  const statusEl=document.getElementById('headerStatus');
-  if(statusEl){
-    statusEl.textContent=contact.online?'в сети':'не в сети';
-    statusEl.style.color=contact.online?'var(--green)':'var(--text3)';
-  }
 }
 
 async function loadMessages(){
