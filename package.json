@@ -1,39 +1,23 @@
 {
   "name": "cipher-relay",
-  "version": "1.0.0",
+  "version": "4.0.0",
   "description": "Cipher P2P Messenger - WebSocket Relay Server",
   "main": "server.js",
-  "bin": {
-    "cipher": "server.js"
-  },
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "mobile": "MOBILE=1 node server.js",
-    "secure": "SECURE=1 node server.js",
-    "port-8080": "PORT=8080 node server.js"
+    "start:sqlite": "USE_SQLITE=1 node server.js"
   },
-  "keywords": [
-    "p2p",
-    "messenger",
-    "websocket",
-    "cipher",
-    "relay",
-    "secure-chat"
-  ],
+  "keywords": ["p2p", "messenger", "websocket", "cipher", "relay", "secure-chat"],
   "author": "Cipher",
   "license": "MIT",
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "ws": "^8.13.0",
-    "artico": "^1.0.0"
+    "dotenv": "^16.3.1",
+    "better-sqlite3-sqlcipher": "^9.4.3"
   },
-  "devDependencies": {},
-  "preferGlobal": false,
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yourusername/cipher.git"
-  }
+  "devDependencies": {}
 }
