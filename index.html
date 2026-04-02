@@ -456,6 +456,13 @@ function connectWebSocket() {
       }
 
       if (!addr.startsWith('ws://') && !addr.startsWith('wss://')) {
+        // Remove any http:// or https:// prefix if present
+        if (addr.startsWith('https://')) {
+          addr = addr.substring(8); // Remove 'https://'
+        } else if (addr.startsWith('http://')) {
+          addr = addr.substring(7); // Remove 'http://'
+        }
+        
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
         addr = `${protocol}://${addr}`;
       } else if (window.location.protocol === 'https:' && addr.startsWith('ws://')) {
@@ -596,14 +603,28 @@ function handleServerMessage(msg) {
       break;
     case 'login-ok':
       console.log('✅ Login successful');
-      // Update online users list
+      // Update online users list and ensure all users are in contacts
       if (msg.users && Array.isArray(msg.users)) {
         msg.users.forEach(u => {
-          const contact = contacts.find(c => c.uuid === u.uuid);
+          let contact = contacts.find(c => c.uuid === u.uuid);
           if (contact) {
             contact.online = true;
             if (u.nickname) contact.nickname = u.nickname;
             if (u.avatar) contact.avatar = u.avatar;
+            dbPut('contacts', contact);
+          } else if (u.uuid !== myProfile.uuid) {
+            // Add new contact if not exists
+            const newContact = {
+              uuid: u.uuid,
+              nickname: u.nickname || '',
+              avatar: u.avatar || '',
+              online: true,
+              unread: 0,
+              lastMsg: '',
+              lastTs: 0
+            };
+            contacts.push(newContact);
+            dbPut('contacts', newContact);
           }
         });
         renderSidebar();
@@ -790,16 +811,32 @@ function initials(name){
 }
 
 function renderAvatar(el, av, name){
-  if(av && av.length > 10){
-    el.innerHTML='';
+  el.innerHTML='';
+  // Check if avatar is a valid base64 data URL (starts with 'data:' or is a long valid string)
+  if(av && typeof av === 'string' && av.length > 10 && (av.startsWith('data:') || av.startsWith('/9j/'))){
     const img=document.createElement('img');
     img.src=av;
     img.alt='';
-    img.onerror=()=>{ el.innerHTML=''; el.textContent=initials(name); };
+    img.onerror=()=>{ 
+      el.innerHTML='';
+      el.textContent=initials(name);
+      el.style.display='flex';
+      el.style.alignItems='center';
+      el.style.justifyContent='center';
+      el.style.fontSize='12px';
+      el.style.fontWeight='bold';
+    };
+    img.onload=()=>{
+      el.style.display='block';
+    };
     el.appendChild(img);
   } else {
-    el.innerHTML='';
     el.textContent=initials(name);
+    el.style.display='flex';
+    el.style.alignItems='center';
+    el.style.justifyContent='center';
+    el.style.fontSize='12px';
+    el.style.fontWeight='bold';
   }
 }
 
@@ -876,7 +913,45 @@ async function init(){
 
         if (ws && ws.readyState === WebSocket.OPEN) {
           console.log('🔐 Logging in, uuid:', uuid.substring(0, 8) + '...');
-          ws.send(JSON.stringify({ type: 'login', uuid, password: passwordHash, timestamp: Date.now() }));
+          
+          // FIX: Wait for login-ok response before starting app
+          let loginSuccess = false;
+          let loginErrorMsg = null;
+          await new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+              console.warn('⚠️ Login timeout, proceeding offline');
+              resolve();
+            }, 4000);
+            
+            const origHandler = ws.onmessage;
+            ws.onmessage = (e) => {
+              const msg = JSON.parse(e.data);
+              if (msg.type === 'login-ok') {
+                loginSuccess = true;
+                clearTimeout(timeout);
+                resolve();
+              } else if (msg.type === 'error') {
+                loginErrorMsg = msg.error || msg.data?.error;
+                clearTimeout(timeout);
+                resolve();
+              }
+              if (origHandler) origHandler(e);
+            };
+            
+            ws.send(JSON.stringify({ 
+              type: 'login', 
+              uuid, 
+              password: passwordHash, 
+              timestamp: Date.now() 
+            }));
+          });
+          
+          if (loginErrorMsg === 'User not found') {
+            console.error('❌ Login failed: user not found');
+            localStorage.removeItem('cipherAuth');
+            setupReg();
+            return;
+          }
         }
 
         startApp(uuid);
@@ -1271,6 +1346,13 @@ async function openChat(uuid){
 function renderChatHeader(){
   const contact=contacts.find(c=>c.uuid===activeChat);
   if(!contact) return;
+  
+  // Update online status indicator
+  const statusEl = document.getElementById('headerStatus');
+  if(statusEl) {
+    statusEl.textContent = contact.online ? '🟢 онлайн' : '⚫ офлайн';
+    statusEl.style.color = contact.online ? 'var(--green)' : 'var(--text3)';
+  }
   const av=document.getElementById('headerAv');
   if(av) renderAvatar(av, contact.avatar, contact.nickname||contact.uuid);
   const nameEl=document.getElementById('headerName');
