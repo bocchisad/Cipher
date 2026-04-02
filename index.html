@@ -526,6 +526,7 @@ function setupWSHandlers() {
   };
 
   ws.onclose = () => {
+    console.error('❌ WebSocket closed:', ws.code, ws.reason || '(no reason)');
     serverReadyReceived = false;
     connectionState = 'disconnected';
     updateConnStatus(false);
@@ -536,6 +537,7 @@ function setupWSHandlers() {
   };
 
   ws.onerror = (err) => {
+    console.error('❌ WebSocket error:', err);
     connectionState = 'disconnected';
     updateConnStatus(false);
   };
@@ -1224,6 +1226,16 @@ async function handleIncomingMessage(msg) {
   renderSidebar();
 }
 
+// ==================== GLOBAL ERROR HANDLING ====================
+// Catch any uncaught errors that might be closing WebSocket
+window.addEventListener('error', (e) => {
+  console.error('❌ GLOBAL ERROR:', e.error || e.message);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('❌ UNHANDLED PROMISE REJECTION:', e.reason);
+});
+
 // ==================== Data Validation Helpers ====================
 const MAX_AVATAR_SIZE = 500000; // 500KB absolute limit to prevent memory freeze
 
@@ -1373,37 +1385,56 @@ async function handleDeleteForBothReceived(data) {
 
 // ==================== START APP ====================
 async function startApp(uuid){
-  console.log('🚀 Cipher started for:', uuid.substring(0, 8) + '...');
-  myProfile.uuid = uuid;
+  try {
+    console.log('🚀 Cipher started for:', uuid.substring(0, 8) + '...');
+    myProfile.uuid = uuid;
 
-  const saved = await dbGet('profile', 'profile');
-  if(saved) {
-    myProfile = saved;
-  } else {
-    await dbPut('profile', {key: 'profile', ...myProfile});
-  }
+    console.log('📦 Loading profile from DB...');
+    const saved = await dbGet('profile', 'profile');
+    if(saved) {
+      myProfile = saved;
+      console.log('✓ Profile loaded');
+    } else {
+      await dbPut('profile', {key: 'profile', ...myProfile});
+      console.log('✓ Profile created');
+    }
 
-  const savedContacts = await dbGetAll('contacts');
-  // FIX: Filter out metadata and ensure all have type='friend'
-  contacts = savedContacts
-    .filter(c => c.uuid !== '_metadata') // Remove metadata record
-    .map(c => ({
-      ...c,
-      type: c.type || 'friend' // Ensure type is set
-    }));
+    console.log('📋 Loading contacts from DB...');
+    const savedContacts = await dbGetAll('contacts');
+    contacts = savedContacts
+      .filter(c => c.uuid !== '_metadata')
+      .map(c => ({
+        ...c,
+        type: c.type || 'friend'
+      }));
+    console.log(`✓ Loaded ${contacts.length} contacts`);
 
-  renderSidebar();
-  showNoChatView();
-  setupEvents();
+    console.log('🎨 Rendering sidebar...');
+    renderSidebar();
+    console.log('✓ Sidebar rendering scheduled');
 
-  // FIX: correct field name 'nickname' not 'nick'
-  if(ws && ws.readyState === WebSocket.OPEN) {
-    sendToServer('profile-update', { nickname: myProfile.nickname, avatar: myProfile.avatar });
-  }
+    console.log('📄 Showing empty chat view...');
+    showNoChatView();
+    
+    console.log('🔧 Setting up events...');
+    setupEvents();
+    console.log('✓ Events set up');
 
-  // FIX (Недочёт #4): Request browser notification permission
-  if ('Notification' in window && Notification.permission === 'default') {
-    setTimeout(() => Notification.requestPermission(), 2000);
+    // FIX: correct field name 'nickname' not 'nick'
+    if(ws && ws.readyState === WebSocket.OPEN) {
+      console.log('📤 Sending profile update...');
+      sendToServer('profile-update', { nickname: myProfile.nickname, avatar: myProfile.avatar });
+    }
+
+    // FIX (Недочёт #4): Request browser notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      setTimeout(() => Notification.requestPermission(), 2000);
+    }
+    
+    console.log('✅ App fully initialized');
+  } catch (err) {
+    console.error('❌ startApp error:', err);
+    throw err;
   }
 }
 
@@ -1450,61 +1481,70 @@ function renderSidebar(){
 
   // FIX: Render contacts in batches to avoid freezing browser with too many large avatars
   let renderIndex = 0;
+  let batchCount = 0;
   function renderBatch() {
-    const BATCH_SIZE = 3; // Render 3 contacts at a time
-    const endIndex = Math.min(renderIndex + BATCH_SIZE, contacts.length);
-    
-    for (let i = renderIndex; i < endIndex; i++) {
-      const c = contacts[i];
-      const item=document.createElement('div');
-      item.className='chat-item'+(activeChat===c.uuid?' active':'');
-      item.dataset.id=c.uuid;
-      const av=document.createElement('div');
-      av.className='av';
-      renderAvatar(av, c.avatar, c.nickname||c.uuid);
-      if(c.online){
-        const dot=document.createElement('div');
-        dot.className='online-dot';
-        av.appendChild(dot);
+    try {
+      batchCount++;
+      const BATCH_SIZE = 3; // Render 3 contacts at a time
+      const endIndex = Math.min(renderIndex + BATCH_SIZE, contacts.length);
+      
+      for (let i = renderIndex; i < endIndex; i++) {
+        const c = contacts[i];
+        const item=document.createElement('div');
+        item.className='chat-item'+(activeChat===c.uuid?' active':'');
+        item.dataset.id=c.uuid;
+        const av=document.createElement('div');
+        av.className='av';
+        renderAvatar(av, c.avatar, c.nickname||c.uuid);
+        if(c.online){
+          const dot=document.createElement('div');
+          dot.className='online-dot';
+          av.appendChild(dot);
+        }
+        const info=document.createElement('div');
+        info.className='info';
+        const name=document.createElement('div');
+        name.className='name';
+        name.textContent=c.nickname||c.uuid;
+        const last=document.createElement('div');
+        last.className='last';
+        last.textContent=c.lastMsg||'Нет сообщений';
+        info.appendChild(name);
+        info.appendChild(last);
+        const meta=document.createElement('div');
+        meta.className='meta';
+        const time=document.createElement('div');
+        time.className='time';
+        time.textContent=c.lastTs?fmtTime(c.lastTs):'';
+        meta.appendChild(time);
+        if(c.unread>0){
+          const u=document.createElement('div');
+          u.className='unread';
+          u.textContent=c.unread>9?'9+':c.unread;
+          meta.appendChild(u);
+        }
+        item.appendChild(av);
+        item.appendChild(info);
+        item.appendChild(meta);
+        item.onclick=()=>openChat(c.uuid);
+        item.oncontextmenu=e=>{e.preventDefault();showChatCtxMenu(e,c.uuid);};
+        list.appendChild(item);
       }
-      const info=document.createElement('div');
-      info.className='info';
-      const name=document.createElement('div');
-      name.className='name';
-      name.textContent=c.nickname||c.uuid;
-      const last=document.createElement('div');
-      last.className='last';
-      last.textContent=c.lastMsg||'Нет сообщений';
-      info.appendChild(name);
-      info.appendChild(last);
-      const meta=document.createElement('div');
-      meta.className='meta';
-      const time=document.createElement('div');
-      time.className='time';
-      time.textContent=c.lastTs?fmtTime(c.lastTs):'';
-      meta.appendChild(time);
-      if(c.unread>0){
-        const u=document.createElement('div');
-        u.className='unread';
-        u.textContent=c.unread>9?'9+':c.unread;
-        meta.appendChild(u);
+      
+      renderIndex = endIndex;
+      if (renderIndex < contacts.length) {
+        // Schedule next batch for next animation frame to avoid blocking
+        requestAnimationFrame(renderBatch);
+      } else {
+        console.log(`✓ Sidebar render complete (${batchCount} batches, ${contacts.length} contacts)`);
       }
-      item.appendChild(av);
-      item.appendChild(info);
-      item.appendChild(meta);
-      item.onclick=()=>openChat(c.uuid);
-      item.oncontextmenu=e=>{e.preventDefault();showChatCtxMenu(e,c.uuid);};
-      list.appendChild(item);
-    }
-    
-    renderIndex = endIndex;
-    if (renderIndex < contacts.length) {
-      // Schedule next batch for next animation frame to avoid blocking
-      requestAnimationFrame(renderBatch);
+    } catch (err) {
+      console.error('❌ Error in renderBatch:', err);
     }
   }
   
   // Start rendering in batches
+  console.log(`📊 Starting sidebar render for ${contacts.length} contacts (batches of 3)...`);
   renderBatch();
 }
 
