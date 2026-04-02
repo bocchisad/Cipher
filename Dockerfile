@@ -1,6 +1,6 @@
 FROM node:20-alpine
 
-# Build deps needed for better-sqlite3-sqlcipher native compilation
+# Build deps needed for better-sqlite3 native compilation
 RUN apk add --no-cache python3 make g++ sqlite-dev openssl-dev
 
 WORKDIR /app

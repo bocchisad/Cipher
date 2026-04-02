@@ -27,7 +27,7 @@
 ```json
 {
   "name": "cipher-relay",
-  "version": "2.0.0",
+  "version": "4.0.0",
   "description": "Cipher P2P Messenger - WebSocket Relay Server",
   "main": "server.js",
   "scripts": {
@@ -38,8 +38,7 @@
   },
   "dependencies": {
     "ws": "^8.13.0",
-    "better-sqlite3-sqlcipher": "^9.4.3",
-    "bcrypt": "^5.1.1",
+    "better-sqlite3": "^9.0.0",
     "dotenv": "^16.3.1"
   }
 }
@@ -108,7 +107,7 @@ EXPOSE 5000
 CMD ["node", "server.js"]
 ```
 
-> **Важно:** На бесплатном уровне Render не имеет постоянного хранилища. Данные SQLite будут теряться при перезагрузке сервера. Если нужна постоянной хранение — используйте платный план (есть пробный период) или переключитесь на Fly.io.
+| **Важно:** На бесплатном уровне Render не имеет постоянного хранилища. Данные SQLite будут теряться при перезагрузке сервера. Если нужно постоянное хранилище — используйте платный план (есть пробный период) или переключитесь на Fly.io.
 
 ### Шаг 1.7 — Создать файл для Render (`render.yaml`)
 
@@ -467,7 +466,7 @@ const DEFAULT_SERVER = 'wss://chat.yourdomain.com';
 [ ] 2. database.js создан с SQLCipher
 [ ] 3. server.js обновлён (использует database.js)
 [ ] 4. Dockerfile создан с зависимостями
-[ ] 5. package.json обновлён (ws, better-sqlite3-sqlcipher, dotenv)
+[ ] 5. package.json обновлён (ws, better-sqlite3, dotenv)
 [ ] 6. .gitignore содержит .env и data/
 [ ] 7. render.yaml создан (опционально)
 [ ] 8. Зарегистрирован на render.com через GitHub

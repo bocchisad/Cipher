@@ -17,7 +17,7 @@
   "dependencies": {
     "ws": "^8.13.0",
     "dotenv": "^16.3.1",
-    "better-sqlite3-sqlcipher": "^9.4.3"
+    "better-sqlite3": "^9.0.0"
   },
   "devDependencies": {}
 }
