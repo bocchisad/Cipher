@@ -853,7 +853,8 @@ function initials(name){
 
 function renderAvatar(el, av, name){
   el.innerHTML='';
-  // Only render avatar if it's safe (valid format AND size <= 500KB)
+  // FIX: Only render avatar if it's safe (valid format AND size <= 500KB)
+  // This prevents memory freeze from large data URLs
   if(isAvatarSafe(av)){
     const img=document.createElement('img');
     img.src=av;
@@ -1447,47 +1448,64 @@ function renderSidebar(){
 
   contacts.sort((a,b) => (b.lastTs || 0) - (a.lastTs || 0));
 
-  contacts.forEach(c=>{
-    const item=document.createElement('div');
-    item.className='chat-item'+(activeChat===c.uuid?' active':'');
-    item.dataset.id=c.uuid;
-    const av=document.createElement('div');
-    av.className='av';
-    renderAvatar(av, c.avatar, c.nickname||c.uuid);
-    if(c.online){
-      const dot=document.createElement('div');
-      dot.className='online-dot';
-      av.appendChild(dot);
+  // FIX: Render contacts in batches to avoid freezing browser with too many large avatars
+  let renderIndex = 0;
+  function renderBatch() {
+    const BATCH_SIZE = 3; // Render 3 contacts at a time
+    const endIndex = Math.min(renderIndex + BATCH_SIZE, contacts.length);
+    
+    for (let i = renderIndex; i < endIndex; i++) {
+      const c = contacts[i];
+      const item=document.createElement('div');
+      item.className='chat-item'+(activeChat===c.uuid?' active':'');
+      item.dataset.id=c.uuid;
+      const av=document.createElement('div');
+      av.className='av';
+      renderAvatar(av, c.avatar, c.nickname||c.uuid);
+      if(c.online){
+        const dot=document.createElement('div');
+        dot.className='online-dot';
+        av.appendChild(dot);
+      }
+      const info=document.createElement('div');
+      info.className='info';
+      const name=document.createElement('div');
+      name.className='name';
+      name.textContent=c.nickname||c.uuid;
+      const last=document.createElement('div');
+      last.className='last';
+      last.textContent=c.lastMsg||'Нет сообщений';
+      info.appendChild(name);
+      info.appendChild(last);
+      const meta=document.createElement('div');
+      meta.className='meta';
+      const time=document.createElement('div');
+      time.className='time';
+      time.textContent=c.lastTs?fmtTime(c.lastTs):'';
+      meta.appendChild(time);
+      if(c.unread>0){
+        const u=document.createElement('div');
+        u.className='unread';
+        u.textContent=c.unread>9?'9+':c.unread;
+        meta.appendChild(u);
+      }
+      item.appendChild(av);
+      item.appendChild(info);
+      item.appendChild(meta);
+      item.onclick=()=>openChat(c.uuid);
+      item.oncontextmenu=e=>{e.preventDefault();showChatCtxMenu(e,c.uuid);};
+      list.appendChild(item);
     }
-    const info=document.createElement('div');
-    info.className='info';
-    const name=document.createElement('div');
-    name.className='name';
-    name.textContent=c.nickname||c.uuid;
-    const last=document.createElement('div');
-    last.className='last';
-    last.textContent=c.lastMsg||'Нет сообщений';
-    info.appendChild(name);
-    info.appendChild(last);
-    const meta=document.createElement('div');
-    meta.className='meta';
-    const time=document.createElement('div');
-    time.className='time';
-    time.textContent=c.lastTs?fmtTime(c.lastTs):'';
-    meta.appendChild(time);
-    if(c.unread>0){
-      const u=document.createElement('div');
-      u.className='unread';
-      u.textContent=c.unread>9?'9+':c.unread;
-      meta.appendChild(u);
+    
+    renderIndex = endIndex;
+    if (renderIndex < contacts.length) {
+      // Schedule next batch for next animation frame to avoid blocking
+      requestAnimationFrame(renderBatch);
     }
-    item.appendChild(av);
-    item.appendChild(info);
-    item.appendChild(meta);
-    item.onclick=()=>openChat(c.uuid);
-    item.oncontextmenu=e=>{e.preventDefault();showChatCtxMenu(e,c.uuid);};
-    list.appendChild(item);
-  });
+  }
+  
+  // Start rendering in batches
+  renderBatch();
 }
 
 function showChatCtxMenu(e,chatId){
