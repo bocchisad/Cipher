@@ -606,12 +606,20 @@ function handleServerMessage(msg) {
       // Update online users list and ensure all users are in contacts
       if (msg.users && Array.isArray(msg.users)) {
         msg.users.forEach(u => {
+          // Validate uuid exists
+          if (!u.uuid || typeof u.uuid !== 'string') {
+            console.warn('⚠️ Invalid user object, missing uuid:', u);
+            return;
+          }
+          
           let contact = contacts.find(c => c.uuid === u.uuid);
           if (contact) {
             contact.online = true;
             if (u.nickname) contact.nickname = u.nickname;
             if (u.avatar) contact.avatar = u.avatar;
-            dbPut('contacts', contact);
+            dbPut('contacts', contact).catch(err => 
+              console.error('❌ Failed to update contact in DB:', err)
+            );
           } else if (u.uuid !== myProfile.uuid) {
             // Add new contact if not exists
             const newContact = {
@@ -624,7 +632,9 @@ function handleServerMessage(msg) {
               lastTs: 0
             };
             contacts.push(newContact);
-            dbPut('contacts', newContact);
+            dbPut('contacts', newContact).catch(err => 
+              console.error('❌ Failed to save new contact in DB:', err)
+            );
           }
         });
         renderSidebar();
@@ -730,10 +740,22 @@ function dbGet(store,key){
 
 function dbPut(store,val){
   return new Promise((res,rej)=>{
-    const tx=db.transaction(store,'readwrite');
-    const req=tx.objectStore(store).put(val);
-    req.onsuccess=()=>res(req.result);
-    req.onerror=rej;
+    try {
+      // Validate key field exists for stores that require it
+      if (store === 'contacts' && !val.uuid) {
+        throw new Error(`contacts store requires 'uuid' key field. Got: ${JSON.stringify(val)}`);
+      }
+      if (store === 'profile' && !val.key) {
+        throw new Error(`profile store requires 'key' field. Got: ${JSON.stringify(val)}`);
+      }
+      
+      const tx=db.transaction(store,'readwrite');
+      const req=tx.objectStore(store).put(val);
+      req.onsuccess=()=>res(req.result);
+      req.onerror=()=>rej(new Error(`dbPut error in ${store}: ${req.error?.message || 'unknown error'}`));
+    } catch(e) {
+      rej(e);
+    }
   });
 }
 
