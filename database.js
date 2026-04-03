@@ -126,6 +126,14 @@ function enqueueMessage(message) {
   `).run(message.from, message.to, JSON.stringify(message), message.ts || Date.now());
 }
 
+/** Очередь для получателя: to_uuid = recipient, в JSON сохраняется полный message (to может быть roomId) */
+function enqueueMessageForUser(recipientUuid, message) {
+  db.prepare(`
+    INSERT INTO message_queue (from_uuid, to_uuid, content, ts)
+    VALUES (?, ?, ?, ?)
+  `).run(message.from, recipientUuid, JSON.stringify(message), message.ts || Date.now());
+}
+
 function dequeueMessages(toUuid) {
   const msgs = db.prepare(`
     SELECT * FROM message_queue WHERE to_uuid = ? ORDER BY ts ASC
@@ -163,6 +171,7 @@ module.exports = {
   updateUserProfile,
   updateLastSeen,
   enqueueMessage,
+  enqueueMessageForUser,
   dequeueMessages,
   getPendingCount
 };
