@@ -80,7 +80,9 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 #chatList{flex:1;overflow-y:auto;padding:8px}
 .chat-item{display:flex;align-items:center;gap:10px;padding:10px 10px;border-radius:var(--r);cursor:pointer;transition:background .15s;position:relative;}
 .chat-item:hover{background:var(--bg3)}
-.chat-item.active{background:var(--bg4)}
+.chat-item.active{background:var(--bg4);box-shadow:inset 3px 0 0 var(--accent)}
+.chat-item{animation:chatIn .22s ease both}
+@keyframes chatIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
 .chat-item .av{width:42px;height:42px;min-width:42px;border-radius:50%;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--accent);position:relative;}
 .chat-item .av img{width:100%;height:100%;object-fit:cover}
 .online-dot{width:10px;height:10px;border-radius:50%;background:var(--green);border:2px solid var(--bg1);position:absolute;bottom:1px;right:1px;}
@@ -109,7 +111,8 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 #chatHeader .av img{width:100%;height:100%;object-fit:cover}
 #chatHeader .hinfo{flex:1;min-width:0}
 #chatHeader .hname{font-size:14px;font-weight:600}
-#chatHeader .hstatus{font-size:11px;color:var(--green)}
+#chatHeader .hstatus{font-size:11px;color:var(--green);transition:opacity .2s}
+#chatHeader .hstatus.is-hidden{display:none}
 .hbtns{display:flex;gap:6px}
 
 /* MESSAGES */
@@ -181,7 +184,10 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .empty-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;color:var(--text3);font-size:12px;gap:8px;}
 
 /* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);animation:overlayIn .2s ease}
+@keyframes overlayIn{from{opacity:0}to{opacity:1}}
+.modal{animation:modalPop .24s cubic-bezier(.2,.9,.2,1)}
+@keyframes modalPop{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:none}}
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r2);padding:24px 22px;width:min(420px,94vw);max-height:min(90dvh,800px);overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.5);}
 .modal h2{font-size:18px;font-weight:700;margin-bottom:20px}
 .modal label{font-size:12px;color:var(--text2);display:block;margin-bottom:6px;margin-top:14px}
@@ -258,14 +264,37 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .pick-member-row{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;cursor:pointer;border:1px solid transparent}
 .pick-member-row:hover{background:var(--bg3)}
 .pick-member-row input{accent-color:var(--accent)}
-.pick-member-av{flex-shrink:0;width:36px;height:36px;border-radius:50%;overflow:hidden;background:var(--bg3)}
-.pick-member-av .av{width:100%;height:100%;font-size:13px}
+.pick-member-av{flex-shrink:0;width:40px;height:40px;border-radius:50%;overflow:hidden;background:var(--bg4);border:1px solid var(--border)}
+.pick-member-av .av{width:100%;height:100%;min-height:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent);overflow:hidden;border-radius:50%}
+.pick-member-av .av img{width:100%;height:100%;object-fit:cover;display:block}
+.pick-member-row span{flex:1;min-width:0;font-size:14px}
 .room-settings-members{max-height:160px;overflow-y:auto;font-size:12px;color:var(--text2);margin-top:8px;padding:8px;background:var(--bg2);border-radius:8px}
 .room-settings-members div{padding:4px 0;border-bottom:1px solid var(--border)}
 .room-settings-members div:last-child{border-bottom:none}
 .info-actions{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
 .info-actions button{width:100%;justify-content:center}
-.info-member-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.info-member-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+.info-member-row span{flex:1;min-width:0;text-align:left}
+.room-settings-toolbar{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.room-settings-toolbar .btn-ghost{text-align:center;justify-content:center}
+.msg-call-log{align-self:center;max-width:90%!important;margin:4px 0}
+.msg-call-log .bubble{background:var(--bg2)!important;border-style:dashed!important;color:var(--text2);font-size:12px;padding:8px 14px!important}
+#voiceRecordBar{display:none;align-items:center;gap:10px;padding:8px 12px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
+#voiceRecordBar.active{display:flex}
+.voice-rec-pulse{width:10px;height:10px;border-radius:50%;background:var(--red);animation:pulse .9s infinite}
+.voice-rec-time{font-variant-numeric:tabular-nums;font-size:13px;color:var(--text2);min-width:48px}
+#attachQueue{display:none;flex-wrap:wrap;gap:6px;padding:8px 12px;border-top:1px solid var(--border);background:var(--bg1)}
+#attachQueue.active{display:flex}
+.attach-chip{position:relative;width:52px;height:52px;border-radius:10px;overflow:hidden;border:1px solid var(--border);flex-shrink:0}
+.attach-chip img{width:100%;height:100%;object-fit:cover}
+.attach-chip .rm{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:12px;line-height:20px;text-align:center;cursor:pointer;border:none;padding:0}
+.call-controls-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;padding:8px 0 4px}
+.call-ctrl-btn{width:52px;height:52px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;color:var(--text);transition:background .15s,transform .1s}
+.call-ctrl-btn:hover{background:var(--bg3)}
+.call-ctrl-btn:active{transform:scale(.94)}
+.call-ctrl-btn.off{opacity:.45;background:var(--bg2)}
+.call-ctrl-btn svg{width:22px;height:22px}
+#callRemoteAudio{display:none}
 
 /* CONNECTION STATUS */
 .conn-status{position:fixed;bottom:10px;right:10px;font-size:11px;color:var(--text3);z-index:100;padding:6px 12px;background:var(--bg3);border-radius:var(--r);border:1px solid var(--border);}
@@ -288,11 +317,12 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 @media (max-width:900px){
   .mobile-only{display:flex!important}
   #app{flex-direction:row;align-items:stretch;height:100dvh;min-height:0}
-  /* 1 список чатов | 2 профиль внизу — узкая колонка слева; справа шапка+чат */
+  /* Telegram-like: список на весь экран ИЛИ чат на весь экран */
+  #app:not(.app-chat-open) #mainChat{display:none!important}
+  #app:not(.app-chat-open) #sidebar{width:100%!important;min-width:0!important;max-width:none!important;border-right:none}
+  #app.app-chat-open #sidebar{display:none!important}
+  #app.app-chat-open #mainChat{display:flex!important;width:100%!important;flex:1!important;min-width:0!important}
   #sidebar{
-    width:min(38vw,200px);
-    min-width:112px;
-    max-width:240px;
     flex-shrink:0;
     display:flex!important;
     height:100%;
@@ -340,6 +370,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
     <!-- LOGIN FORM -->
     <div id="loginForm" style="text-align:center;">
       <p style="margin-bottom:16px;color:var(--text2);font-size:13px">Введите свой UUID и пароль для входа</p>
+      <p style="color:var(--text3);font-size:11px;margin:-8px 0 12px;line-height:1.35">Первый коннект к облаку может занять до 50 с (cold start).</p>
       <input type="text" id="loginUuidInput" class="reg-input" placeholder="Ваш UUID" autofocus>
       <input type="password" id="loginPassInput" class="reg-input" placeholder="Пароль">
       <button type="button" class="btn-primary" style="margin-top:8px" id="quickLoginBtn">Вход</button>
@@ -420,12 +451,21 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
       </div>
       <!-- Messages -->
       <div id="messagesArea"></div>
+      <div id="voiceRecordBar">
+        <div class="voice-rec-pulse" aria-hidden="true"></div>
+        <span class="voice-rec-time" id="voiceRecTime">0:00</span>
+        <span style="flex:1;font-size:13px;color:var(--text2)">Запись…</span>
+        <button type="button" class="btn-ghost" id="voiceRecPauseBtn" style="width:auto;padding:8px 12px">Пауза</button>
+        <button type="button" class="btn-danger" id="voiceRecCancelBtn" style="width:auto;padding:8px 12px">Отмена</button>
+        <button type="button" class="btn-primary" id="voiceRecSendBtn" style="width:auto;padding:8px 14px">Отправить</button>
+      </div>
+      <div id="attachQueue"></div>
       <!-- Input -->
       <div id="inputArea">
         <button class="icon-btn" id="attachBtn" title="Прикрепить файл">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
-        <input type="file" id="fileInput" style="display:none">
+        <input type="file" id="fileInput" style="display:none" multiple accept="image/*,video/*,*/*">
         <button class="icon-btn" id="recordBtn" title="Голосовое сообщение">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10a7 7 0 01-14 0M12 19v3M8 22h8"/></svg>
         </button>
@@ -524,27 +564,34 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 </div>
 
 <div class="modal-overlay" id="roomSettingsModal" style="display:none">
-  <div class="modal" style="width:min(440px,94vw);max-height:min(90dvh,620px);display:flex;flex-direction:column">
+  <div class="modal" style="width:min(440px,94vw);max-height:min(90dvh,640px);display:flex;flex-direction:column">
     <h2 id="roomSettingsTitle">Настройки чата</h2>
     <div style="overflow-y:auto;flex:1;padding-right:4px">
-      <label>Название</label>
-      <input type="text" id="roomSettingsName" class="reg-input" maxlength="64" autocomplete="off">
-      <div id="roomSettingsUsernameBlock" style="display:none;margin-top:10px">
-        <label>Юзернейм канала (@)</label>
-        <input type="text" id="roomSettingsUsername" class="reg-input" maxlength="32" placeholder="latin_123" autocomplete="off">
+      <div id="roomSettingsToolbar" class="room-settings-toolbar">
+        <button type="button" class="btn-ghost" id="roomSettingsAddMembers">Добавить участников</button>
+        <button type="button" class="btn-ghost" id="roomSettingsAssignAdmin" style="display:none">Назначить администратора</button>
       </div>
-      <div class="settings-section" style="margin-top:12px">
-        <h3 style="font-size:13px;margin-bottom:6px">Аватар чата</h3>
-        <div class="pick-member-av" id="roomSettingsAvWrap" style="width:72px;height:72px;cursor:pointer" title="Загрузить">
-          <div class="av" id="roomSettingsAvPh"></div>
+      <div id="roomSettingsMeta">
+        <label>Название</label>
+        <input type="text" id="roomSettingsName" class="reg-input" maxlength="64" autocomplete="off">
+        <div id="roomSettingsUsernameBlock" style="display:none;margin-top:10px">
+          <label>Юзернейм канала (@)</label>
+          <input type="text" id="roomSettingsUsername" class="reg-input" maxlength="32" placeholder="latin_123" autocomplete="off">
         </div>
-        <input type="file" id="roomSettingsAvatarFile" accept="image/*" style="display:none">
+        <div class="settings-section" style="margin-top:12px">
+          <h3 style="font-size:13px;margin-bottom:6px">Аватар чата</h3>
+          <div class="pick-member-av" id="roomSettingsAvWrap" style="width:72px;height:72px;cursor:pointer" title="Загрузить">
+            <div class="av" id="roomSettingsAvPh"></div>
+          </div>
+          <input type="file" id="roomSettingsAvatarFile" accept="image/*" style="display:none">
+        </div>
       </div>
-      <p class="add-chat-hint" id="roomSettingsHint" style="margin-top:10px">Подписчики и админы — список ниже. Сохраните изменения кнопкой.</p>
+      <p class="add-chat-hint" id="roomSettingsHint" style="margin-top:10px">Участники ниже. Права администратора — через «Назначить администратора».</p>
       <div id="roomSettingsMembers" class="room-settings-members"></div>
+      <button type="button" class="btn-danger" id="roomSettingsDelete" style="display:none;width:100%;margin-top:14px">Удалить канал / группу навсегда</button>
     </div>
     <div class="modal-btns" style="margin-top:12px;flex-shrink:0">
-      <button type="button" class="btn-ghost" id="roomSettingsCancel">Отмена</button>
+      <button type="button" class="btn-ghost" id="roomSettingsCancel">Закрыть</button>
       <button type="button" class="btn-primary" style="width:auto;padding:9px 20px" id="roomSettingsSave">Сохранить</button>
     </div>
   </div>
@@ -617,6 +664,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
   <div class="call-overlay-sheet">
     <div class="call-video-stage">
       <video id="callRemoteVideo" autoplay playsinline></video>
+      <audio id="callRemoteAudio" autoplay playsinline></audio>
       <video id="callLocalVideo" autoplay playsinline muted></video>
     </div>
     <div class="call-peer-block">
@@ -632,7 +680,18 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
         <svg width="28" height="28" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 11.5 19.79 19.79 0 01.22 2.84 2 2 0 012.2 1h3a2 2 0 012 1.72c.127.96.362 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.19a16 16 0 006.9 6.9l1.56-1.55a2 2 0 012.11-.45c.907.339 1.85.574 2.81.7A2 2 0 0122 16.92z"/></svg>
       </button>
     </div>
-    <div id="callActiveRow" class="call-bar-active" style="display:none">
+    <div id="callActiveRow" class="call-bar-active" style="display:none;flex-direction:column;gap:12px;width:100%;max-width:400px">
+      <div class="call-controls-row" id="callControlsRow">
+        <button type="button" class="call-ctrl-btn" id="callToggleMic" title="Микрофон">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
+        </button>
+        <button type="button" class="call-ctrl-btn" id="callToggleCam" title="Камера">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+        </button>
+        <button type="button" class="call-ctrl-btn" id="callToggleScreen" title="Экран">
+          <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </button>
+      </div>
       <button type="button" class="call-pill call-decline wide" id="callHangupBtn">
         <svg width="24" height="24" fill="none" stroke="#fff" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
         <span>Завершить</span>
@@ -773,8 +832,8 @@ function connectWebSocket() {
       const timeout = setTimeout(() => {
         if (session !== wsConnectSession) return;
         try { wsTemp.close(); } catch (_) {}
-        reject(new Error('Connection timeout (25s)'));
-      }, 25000);
+        reject(new Error('Connection timeout (52s)'));
+      }, 52000);
 
       wsTemp.onopen = () => {
         if (session !== wsConnectSession) {
@@ -898,9 +957,7 @@ function waitForServerReady(timeoutMs = 8000) {
   });
 }
 
-/** Типы, которые нельзя откладывать (сессия звонка протухнет) */
-const WS_NO_QUEUE_TYPES = new Set(['rtc-offer', 'rtc-answer', 'rtc-ice', 'rtc-hangup']);
-/** Очередь до появления сокета + login (Render sleep / плохая сеть) */
+/** Очередь до появления сокета + login (Render sleep / плохая сеть). Включает rtc — после connect лучше перезвонить, если сессия протухла. */
 let pendingOutbound = [];
 
 function flushPendingOutbound() {
@@ -928,15 +985,11 @@ function sendToServer(type, data) {
       ws.send(JSON.stringify(msg));
     } catch (e) {
       console.warn('ws.send error', e);
-      if (!WS_NO_QUEUE_TYPES.has(type)) pendingOutbound.push({ type, data });
+      pendingOutbound.push({ type, data });
     }
   } else {
-    if (WS_NO_QUEUE_TYPES.has(type)) {
-      console.warn(`⚠️ "${type}" — нет соединения (звонок отмените и повторите после подключения)`);
-      return;
-    }
     pendingOutbound.push({ type, data });
-    console.warn(`⚠️ "${type}" в очереди (${pendingOutbound.length}), отправим после входа на сервер`);
+    console.warn(`⚠️ "${type}" в очереди (${pendingOutbound.length}), отправим при подключении`);
   }
 }
 
@@ -1081,6 +1134,9 @@ function handleServerMessage(msg) {
     case 'room-updated':
       handleRoomUpdatedClient(data?.room);
       break;
+    case 'room-deleted':
+      handleRoomDeletedClient(data?.roomId);
+      break;
     case 'message-reaction':
       handleIncomingReaction(data);
       break;
@@ -1126,6 +1182,24 @@ async function handleRoomUpdatedClient(room) {
     await renderInfoPanel(activeChat);
     applyChatComposerVisibility();
   }
+}
+
+async function handleRoomDeletedClient(roomId) {
+  const rid = normUid(roomId || '');
+  if (!rid) return;
+  await dbDeleteByIndex('messages', 'chatId', rid);
+  const idx = contacts.findIndex((c) => normUid(c.uuid) === rid);
+  if (idx > -1) {
+    const row = contacts[idx];
+    contacts.splice(idx, 1);
+    try { await dbDelete('contacts', row.uuid); } catch (_) {}
+  }
+  if (activeChat === rid) {
+    activeChat = null;
+    showNoChatView();
+  }
+  renderSidebar();
+  showToast('Канал или группа удалены');
 }
 
 async function upsertRoomContact(room) {
@@ -1428,9 +1502,11 @@ let myProfile = {uuid:'', nickname:'', avatar:''};
 let contacts = [];
 let activeChat = null;
 let activeTab = 'media';
-let mediaRecorder = null;
-let isRecording = false;
-let audioChunks = [];
+let voiceSession = null;
+let attachmentQueue = [];
+let attachmentIdSeq = 0;
+let rtcScreenStream = null;
+let rtcCamTrack = null;
 let renderedMsgIds = new Set();
 
 const EMOJI_PRESET = ['😀','😃','😄','😁','😅','😂','🤣','😊','😍','🥰','😘','😜','🤔','😎','😢','😭','😡','👍','👎','🙏','👋','🔥','✨','❤️','💯','🎉','✅','❌','⭐','📎','🎵','📷'];
@@ -1960,7 +2036,7 @@ function sanitizeContact(contact) {
   if (!contact.type || !['friend', 'stranger', 'blocked', 'system'].includes(contact.type)) {
     contact.type = 'friend'; // Default to friend for backward compat
   }
-  const kinds = ['friend', 'group', 'channel', 'stranger'];
+  const kinds = ['friend', 'group', 'channel', 'stranger', 'saved'];
   if (!contact.kind || !kinds.includes(contact.kind)) contact.kind = 'friend';
   if (contact.channelUsername !== undefined) contact.channelUsername = String(contact.channelUsername || '');
   if (contact.roomOwner !== undefined) contact.roomOwner = String(contact.roomOwner || '');
@@ -2106,6 +2182,7 @@ async function startApp(uuid) {
     if (cleaned) contacts.push(cleaned);
   }
   dedupeContacts();
+  await ensureFavoriteContact();
   contacts.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
   console.log('✓ Loaded', contacts.length, 'contacts');
 
@@ -2221,6 +2298,9 @@ function renderSidebar() {
 
   const pinned = getPinnedSet();
   contacts.sort((a, b) => {
+    const fa = a.kind === 'saved' ? 1 : 0;
+    const fb = b.kind === 'saved' ? 1 : 0;
+    if (fa !== fb) return fb - fa;
     const ap = pinned.has(a.uuid) ? 1 : 0;
     const bp = pinned.has(b.uuid) ? 1 : 0;
     if (ap !== bp) return bp - ap;
@@ -2236,7 +2316,7 @@ function renderSidebar() {
     const av = document.createElement('div');
     av.className = 'av';
     renderAvatar(av, c.avatar, c.nickname || c.uuid);
-    if (c.online) {
+    if (c.online && c.kind !== 'saved') {
       const dot = document.createElement('div');
       dot.className = 'online-dot';
       av.appendChild(dot);
@@ -2245,7 +2325,7 @@ function renderSidebar() {
     info.className = 'info';
     const name = document.createElement('div');
     name.className = 'name';
-    const prefix = c.kind === 'channel' ? '📢 ' : (c.kind === 'group' ? '👥 ' : '');
+    const prefix = c.kind === 'saved' ? '⭐ ' : (c.kind === 'channel' ? '📢 ' : (c.kind === 'group' ? '👥 ' : ''));
     name.textContent = prefix + (c.nickname || c.uuid);
     const last = document.createElement('div');
     last.className = 'last';
@@ -2381,17 +2461,27 @@ async function openChat(uuid){
 function renderChatHeader(){
   const contact = contacts.find((c) => normUid(c.uuid) === activeChat);
   if(!contact) return;
-  
-  // Update online status indicator
+
   const statusEl = document.getElementById('headerStatus');
-  if(statusEl) {
-    statusEl.textContent = contact.online ? '🟢 онлайн' : '⚫ офлайн';
-    statusEl.style.color = contact.online ? 'var(--green)' : 'var(--text3)';
+  if (statusEl) {
+    if (contact.kind === 'channel') {
+      statusEl.classList.add('is-hidden');
+    } else {
+      statusEl.classList.remove('is-hidden');
+      statusEl.textContent = contact.online ? '🟢 онлайн' : '⚫ офлайн';
+      statusEl.style.color = contact.online ? 'var(--green)' : 'var(--text3)';
+    }
   }
   const av=document.getElementById('headerAv');
   if(av) renderAvatar(av, contact.avatar, contact.nickname||contact.uuid);
   const nameEl=document.getElementById('headerName');
   if(nameEl) nameEl.textContent=contact.nickname||contact.uuid;
+
+  const allowCalls = (!contact.kind || contact.kind === 'friend' || contact.kind === 'stranger');
+  const ab = document.getElementById('audioCallBtn');
+  const vb = document.getElementById('videoCallBtn');
+  if (ab) ab.style.display = allowCalls ? '' : 'none';
+  if (vb) vb.style.display = allowCalls ? '' : 'none';
 }
 
 async function loadMessages(){
@@ -2418,6 +2508,20 @@ async function loadMessages(){
 
 function appendMessage(msg){
   const area=document.getElementById('messagesArea');
+  if (msg.type === 'call-log') {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'msg msg-call-log';
+    wrapper.dataset.ts = msg.ts;
+    const stack = document.createElement('div');
+    stack.className = 'msg-stack';
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = msg.content || '';
+    stack.appendChild(bubble);
+    wrapper.appendChild(stack);
+    area.appendChild(wrapper);
+    return;
+  }
   const isOut = normUid(msg.from) === normUid(myProfile.uuid);
   const contact = contacts.find((c) => normUid(c.uuid) === activeChat) || {};
   const wrapper=document.createElement('div');
@@ -2632,6 +2736,8 @@ function updateLastMessage(chatId, content, ts, type){
     else if(type==='video') preview='🎬 Видео';
     else if(type==='file'){
       try { preview='📎 ' + JSON.parse(content).name; } catch { preview='📎 Файл'; }
+    } else if (type === 'call-log') {
+      preview = String(content || '').slice(0, 40);
     } else {
       preview = content && content.length > 50 ? content.slice(0,50)+'...' : (content||'');
     }
@@ -2658,8 +2764,9 @@ function renderInfoActions(contact) {
   const isMember = members.some((x) => normUid(x) === meN);
   const isGroupMod = isGroup && (ownerN === meN || (contact.roomAdmins || []).some((a) => normUid(a) === meN));
   const isChannelMod = isChannel && admins.has(meN);
+  const canOpenSettings = isOwner || isGroupMod || isChannelMod;
 
-  if ((isGroup || isChannel) && isOwner) {
+  if ((isGroup || isChannel) && canOpenSettings) {
     const st = document.createElement('button');
     st.type = 'button';
     st.className = 'btn-primary';
@@ -2667,16 +2774,6 @@ function renderInfoActions(contact) {
     st.textContent = 'Настройки чата';
     st.onclick = () => openRoomSettingsModal(uid);
     ia.appendChild(st);
-  }
-
-  if (isGroup && isGroupMod) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = isOwner ? 'btn-ghost' : 'btn-primary';
-    b.style.width = '100%';
-    b.textContent = 'Добавить участников';
-    b.onclick = () => openPickMembersModal({ roomId: uid, mode: 'group-add' });
-    ia.appendChild(b);
   }
 
   if (isChannel) {
@@ -2698,54 +2795,48 @@ function renderInfoActions(contact) {
       };
       ia.appendChild(sub);
     }
-    if (isChannelMod) {
-      const addm = document.createElement('button');
-      addm.type = 'button';
-      addm.className = 'btn-ghost';
-      addm.style.width = '100%';
-      addm.textContent = 'Добавить участников';
-      addm.onclick = () => openPickMembersModal({ roomId: uid, mode: 'group-add' });
-      ia.appendChild(addm);
-    }
-    if (isOwner) {
-      const adm = document.createElement('button');
-      adm.type = 'button';
-      adm.className = 'btn-ghost';
-      adm.style.width = '100%';
-      adm.textContent = 'Назначить администратора';
-      adm.onclick = () => openPickMembersModal({ roomId: uid, mode: 'channel-admin' });
-      ia.appendChild(adm);
-    }
     const list = document.createElement('div');
     list.style.marginTop = '8px';
     list.style.fontSize = '11px';
     list.style.color = 'var(--text3)';
-    members.slice(0, 12).forEach((mid) => {
+    members.slice(0, 16).forEach((mid) => {
       const row = document.createElement('div');
       row.className = 'info-member-row';
       const short = mid.slice(0, 8) + '…';
       const c = contactByUuidLoose(mid);
       const mN = normUid(mid);
       const isAdm = admins.has(mN);
-      const label = (c ? (c.nickname || short) : short) + (isAdm ? ' · админ' : '');
       const span = document.createElement('span');
-      span.textContent = label;
+      span.textContent = (c ? (c.nickname || short) : short) + (isAdm ? ' · админ' : '');
       row.appendChild(span);
-      if (isOwner && mN !== ownerN) {
-        const dem = document.createElement('button');
-        dem.type = 'button';
-        dem.className = 'btn-ghost';
-        dem.style.padding = '4px 8px';
-        dem.style.fontSize = '11px';
-        dem.textContent = isAdm ? 'Снять' : 'Админ';
-        dem.onclick = () => sendToServer('room-admin', { roomId: uid, memberUuid: mid, add: !isAdm });
-        row.appendChild(dem);
-      }
       list.appendChild(row);
     });
-    if (members.length > 12) {
+    if (members.length > 16) {
       const more = document.createElement('div');
-      more.textContent = '… и ещё ' + (members.length - 12);
+      more.textContent = '… и ещё ' + (members.length - 16);
+      list.appendChild(more);
+    }
+    ia.appendChild(list);
+  }
+
+  if (isGroup && members.length) {
+    const list = document.createElement('div');
+    list.style.marginTop = '8px';
+    list.style.fontSize = '11px';
+    list.style.color = 'var(--text3)';
+    members.slice(0, 16).forEach((mid) => {
+      const row = document.createElement('div');
+      row.className = 'info-member-row';
+      const short = mid.slice(0, 8) + '…';
+      const c = contactByUuidLoose(mid);
+      const span = document.createElement('span');
+      span.textContent = (normUid(mid) === ownerN ? '👑 ' : '') + (c ? (c.nickname || short) : short);
+      row.appendChild(span);
+      list.appendChild(row);
+    });
+    if (members.length > 16) {
+      const more = document.createElement('div');
+      more.textContent = '… и ещё ' + (members.length - 16);
       list.appendChild(more);
     }
     ia.appendChild(list);
@@ -2761,8 +2852,14 @@ async function renderInfoPanel(uuid){
   const bigAv=document.getElementById('infoBigAv');
   renderAvatar(bigAv, contact.avatar, contact.nickname||contact.uuid);
   document.getElementById('infoName').textContent=contact.nickname||contact.uuid;
-  document.getElementById('infoStatus').textContent=contact.online?'в сети':'не в сети';
-  document.getElementById('infoStatus').style.color=contact.online?'var(--green)':'var(--text3)';
+  const st = document.getElementById('infoStatus');
+  if (contact.kind === 'channel') {
+    st.style.display = 'none';
+  } else {
+    st.style.display = '';
+    st.textContent = contact.online ? 'в сети' : 'не в сети';
+    st.style.color = contact.online ? 'var(--green)' : 'var(--text3)';
+  }
   document.getElementById('infoId').textContent = uid;
   renderInfoActions(contact);
   await renderTabContent();
@@ -2832,20 +2929,42 @@ let currentAddChatTab = 'dm';
 let pickMembersContext = { roomId: '', mode: 'group-add' };
 let roomSettingsDraft = { roomId: '', avatar: '' };
 
-function refreshRoomSettingsMemberList(contact) {
+function refreshRoomSettingsMemberList(contact, isOwner) {
   const memEl = document.getElementById('roomSettingsMembers');
   if (!memEl || !contact) return;
   const members = contact.roomMembers || [];
   const ownerN = normUid(contact.roomOwner);
   const admins = new Set([ownerN, ...(contact.roomAdmins || []).map(normUid)]);
+  const rid = contact.uuid;
+  const isChannel = contact.kind === 'channel';
   memEl.innerHTML = '';
   members.slice(0, 80).forEach((mid) => {
     const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'space-between';
+    row.style.gap = '10px';
     const cc = contactByUuidLoose(mid);
     const mN = normUid(mid);
     const short = String(mid).slice(0, 8) + '…';
     const tag = admins.has(mN) ? ' · админ' : '';
-    row.textContent = (cc ? (cc.nickname || short) : short) + tag;
+    const label = document.createElement('span');
+    label.style.flex = '1';
+    label.style.minWidth = '0';
+    label.textContent = (cc ? (cc.nickname || short) : short) + tag;
+    row.appendChild(label);
+    if (isOwner && isChannel && mN !== ownerN) {
+      const isAdm = admins.has(mN);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'btn-ghost';
+      b.style.padding = '5px 10px';
+      b.style.fontSize = '11px';
+      b.style.flexShrink = '0';
+      b.textContent = isAdm ? 'Снять' : 'Админ';
+      b.onclick = () => sendToServer('room-admin', { roomId: rid, memberUuid: mid, add: !isAdm });
+      row.appendChild(b);
+    }
     memEl.appendChild(row);
   });
   if (members.length > 80) {
@@ -2859,26 +2978,57 @@ function openRoomSettingsModal(roomId) {
   const rid = normUid(roomId);
   const contact = contacts.find((c) => normUid(c.uuid) === rid);
   if (!contact || (contact.kind !== 'group' && contact.kind !== 'channel')) return;
-  if (normUid(contact.roomOwner) !== normUid(myProfile.uuid)) return;
-  roomSettingsDraft = { roomId: rid, avatar: contact.avatar || '' };
-  document.getElementById('roomSettingsName').value = contact.nickname || '';
-  const ch = contact.kind === 'channel';
-  document.getElementById('roomSettingsUsernameBlock').style.display = ch ? 'block' : 'none';
-  document.getElementById('roomSettingsUsername').value = ch ? (contact.channelUsername || '') : '';
-  const ph = document.getElementById('roomSettingsAvPh');
-  ph.innerHTML = '';
-  renderAvatar(ph, roomSettingsDraft.avatar, contact.nickname || rid);
-  refreshRoomSettingsMemberList(contact);
+  const meN = normUid(myProfile.uuid);
+  const ownerN = normUid(contact.roomOwner);
+  const admins = new Set([ownerN, ...(contact.roomAdmins || []).map(normUid)]);
+  const isOwner = ownerN === meN;
+  const isGroupMod = contact.kind === 'group' && (isOwner || (contact.roomAdmins || []).some((a) => normUid(a) === meN));
+  const isChannelMod = contact.kind === 'channel' && admins.has(meN);
+  if (!isOwner && !isGroupMod && !isChannelMod) return;
+
+  roomSettingsDraft = { roomId: rid, avatar: contact.avatar || '', isOwner };
+
+  const meta = document.getElementById('roomSettingsMeta');
+  const tb = document.getElementById('roomSettingsToolbar');
+  const saveBtn = document.getElementById('roomSettingsSave');
+  const delBtn = document.getElementById('roomSettingsDelete');
+  const addMem = document.getElementById('roomSettingsAddMembers');
+  const addAdm = document.getElementById('roomSettingsAssignAdmin');
+
+  meta.style.display = isOwner ? 'block' : 'none';
+  saveBtn.style.display = isOwner ? 'inline-flex' : 'none';
+  delBtn.style.display = isOwner ? 'block' : 'none';
+  tb.style.display = isGroupMod || isChannelMod ? 'flex' : 'none';
+  addMem.style.display = isGroupMod || isChannelMod ? 'block' : 'none';
+  addAdm.style.display = isOwner && contact.kind === 'channel' ? 'block' : 'none';
+
+  document.getElementById('roomSettingsTitle').textContent = isOwner ? 'Настройки чата' : 'Управление чатом';
+
+  if (isOwner) {
+    document.getElementById('roomSettingsName').value = contact.nickname || '';
+    const ch = contact.kind === 'channel';
+    document.getElementById('roomSettingsUsernameBlock').style.display = ch ? 'block' : 'none';
+    document.getElementById('roomSettingsUsername').value = ch ? (contact.channelUsername || '') : '';
+    const ph = document.getElementById('roomSettingsAvPh');
+    ph.innerHTML = '';
+    renderAvatar(ph, roomSettingsDraft.avatar, contact.nickname || rid);
+  }
+
+  refreshRoomSettingsMemberList(contact, isOwner);
   const hint = document.getElementById('roomSettingsHint');
   if (hint) {
-    hint.textContent = ch
-      ? 'Подписчики и админы — ниже. Назначить админа можно также в панели справа.'
-      : 'Участники — список ниже.';
+    hint.textContent = contact.kind === 'channel'
+      ? 'Участники и права администратора — в списке ниже.'
+      : 'Участники — ниже. Добавить можно кнопкой выше.';
   }
   document.getElementById('roomSettingsModal').style.display = 'flex';
 }
 
 function saveRoomSettingsFromModal() {
+  if (!roomSettingsDraft.isOwner) {
+    document.getElementById('roomSettingsModal').style.display = 'none';
+    return;
+  }
   const title = document.getElementById('roomSettingsName').value.trim();
   if (!title) {
     showToast('Укажите название');
@@ -2893,6 +3043,61 @@ function saveRoomSettingsFromModal() {
   sendToServer('room-update', payload);
   document.getElementById('roomSettingsModal').style.display = 'none';
   showToast('Настройки отправлены на сервер');
+}
+
+async function ensureFavoriteContact() {
+  const sid = normUid(myProfile.uuid);
+  let row = contacts.find((c) => c.kind === 'saved');
+  if (!row) {
+    row = contacts.find((c) => normUid(c.uuid) === sid && c.kind !== 'group' && c.kind !== 'channel');
+    if (row) {
+      row.kind = 'saved';
+      row.nickname = 'Избранное';
+    }
+  }
+  if (row) {
+    row.uuid = sid;
+    row.kind = 'saved';
+    row.nickname = 'Избранное';
+    const cleaned = sanitizeContact(row);
+    if (cleaned) await dbPut('contacts', cleaned).catch(() => {});
+    return;
+  }
+  row = {
+    uuid: sid,
+    nickname: 'Избранное',
+    avatar: '',
+    online: false,
+    lastMsg: '',
+    lastTs: 0,
+    unread: 0,
+    type: 'friend',
+    kind: 'saved'
+  };
+  contacts.unshift(row);
+  const cleaned = sanitizeContact(row);
+  if (cleaned) await dbPut('contacts', cleaned).catch(() => {});
+}
+
+async function appendCallLogToChat(peerUuid, text) {
+  const chatId = normUid(peerUuid);
+  if (!chatId || !text) return;
+  const ts = Date.now();
+  const localMsg = {
+    chatId,
+    from: normUid(myProfile.uuid),
+    type: 'call-log',
+    content: text,
+    ts,
+    read: activeChat === chatId
+  };
+  await dbPut('messages', localMsg);
+  if (activeChat === chatId) {
+    renderedMsgIds.add(String(ts));
+    appendMessage({ ...localMsg, chatId });
+    scrollBottom();
+  }
+  updateLastMessage(chatId, text, ts, 'call-log');
 }
 
 function setAddChatTab(tab) {
@@ -3098,6 +3303,30 @@ function setupEvents(){
     }
   };
 
+  const ram = document.getElementById('roomSettingsAddMembers');
+  if (ram) {
+    ram.onclick = () => {
+      document.getElementById('roomSettingsModal').style.display = 'none';
+      openPickMembersModal({ roomId: roomSettingsDraft.roomId, mode: 'group-add' });
+    };
+  }
+  const raa = document.getElementById('roomSettingsAssignAdmin');
+  if (raa) {
+    raa.onclick = () => {
+      document.getElementById('roomSettingsModal').style.display = 'none';
+      openPickMembersModal({ roomId: roomSettingsDraft.roomId, mode: 'channel-admin' });
+    };
+  }
+  const rdel = document.getElementById('roomSettingsDelete');
+  if (rdel) {
+    rdel.onclick = () => {
+      if (!roomSettingsDraft.isOwner) return;
+      if (!confirm('Удалить канал/группу навсегда для всех?')) return;
+      sendToServer('room-delete', { roomId: roomSettingsDraft.roomId });
+      document.getElementById('roomSettingsModal').style.display = 'none';
+    };
+  }
+
   document.getElementById('profileBtn').onclick=openSettings;
   document.getElementById('settingsCancel').onclick=()=>document.getElementById('settingsModal').style.display='none';
   document.getElementById('settingsSave').onclick=saveSettings;
@@ -3147,6 +3376,12 @@ function setupEvents(){
 
   const mbb = document.getElementById('mobileBackBtn');
   if (mbb) mbb.onclick = () => {
+    if (voiceSession) {
+      voiceSession.cancelled = true;
+      try {
+        voiceSession.recorder.stop();
+      } catch (_) {}
+    }
     activeChat = null;
     showNoChatView();
     renderSidebar();
@@ -3164,6 +3399,15 @@ function setupEvents(){
     this.style.height='auto';
     this.style.height=Math.min(this.scrollHeight,120)+'px';
   };
+  document.getElementById('msgInput').addEventListener('paste', async (e) => {
+    if (!activeChat) return;
+    const fl = e.clipboardData?.files;
+    if (!fl?.length) return;
+    const imgs = [...fl].filter((f) => f.type.startsWith('image/'));
+    if (!imgs.length) return;
+    e.preventDefault();
+    await addFilesToAttachmentQueue(imgs);
+  });
 
   document.getElementById('attachBtn').onclick=()=>document.getElementById('fileInput').click();
   document.getElementById('fileInput').onchange=handleFileAttach;
@@ -3230,46 +3474,29 @@ function setupDragDrop(){
   chatView.addEventListener('dragleave',e=>{
     dragTimer=setTimeout(()=>chatView.classList.remove('drag-over'),50);
   });
-  chatView.addEventListener('drop',async e=>{
+  chatView.addEventListener('drop', async (e) => {
     e.preventDefault();
     clearTimeout(dragTimer);
     chatView.classList.remove('drag-over');
-    if(!activeChat) return;
-
-    const files=[...e.dataTransfer.files];
-    for(const f of files){
-      if(f.type.startsWith('image/')){
-        const stripped=await stripExif(f);
-        const b64=await fileToBase64(stripped);
-        await sendMessage('image',b64);
-      } else if(f.type.startsWith('video/')){
-        if(f.size>50*1024*1024){
-          showToast('Видео слишком большое (макс 50МБ)');
-          continue;
-        }
-        const b64=await fileToBase64(f);
-        await sendMessage('video',b64);
-      } else {
-        if(f.size>50*1024*1024){
-          showToast('Файл слишком большой (макс 50МБ)');
-          continue;
-        }
-        const b64=await fileToBase64(f);
-        const fd=JSON.stringify({name:f.name,size:f.size,data:b64});
-        await sendMessage('file',fd);
-      }
-    }
-    if(files.length>1) showToast(`Отправлено: ${files.length} файлов`);
+    if (!activeChat) return;
+    const files = [...e.dataTransfer.files];
+    if (!files.length) return;
+    await addFilesToAttachmentQueue(files);
+    showToast(`В очереди вложений: ${files.length}`);
   });
 }
 
-function doSend(){
+async function doSend(){
   const inp=document.getElementById('msgInput');
   const text=inp.value.trim();
-  if(!text||!activeChat) return;
-  sendMessage('text',text);
-  inp.value='';
-  inp.style.height='auto';
+  if(!activeChat) return;
+  if(!text && !attachmentQueue.length) return;
+  if(attachmentQueue.length) await flushAttachmentQueue();
+  if(text) {
+    sendMessage('text',text);
+    inp.value='';
+    inp.style.height='auto';
+  }
 }
 
 // FIX: addChat — was using 'nick' field, must be 'nickname'
@@ -3431,55 +3658,225 @@ async function importData(){
   }
 }
 
-// ==================== FILE ATTACH ====================
-async function handleFileAttach(){
-  const f=document.getElementById('fileInput').files[0];
-  if(!f||!activeChat) return;
-
-  if(f.type.startsWith('image/')){
-    // FIX (2.1): processAvatar with 800px cap for chat images — safe size for sending
-    const stripped=await processAvatar(f, 800);
-    const b64=await fileToBase64(stripped);
-    await sendMessage('image',b64);
-  } else if(f.type.startsWith('video/')){
-    const b64=await fileToBase64(f);
-    await sendMessage('video',b64);
-  } else {
-    if(f.size>50*1024*1024){showToast('Файл слишком большой (макс 50МБ)');return;}
-    const b64=await fileToBase64(f);
-    const fd=JSON.stringify({name:f.name,size:f.size,data:b64});
-    await sendMessage('file',fd);
-  }
-  document.getElementById('fileInput').value='';
+// ==================== FILE ATTACH (очередь, порядок, несколько файлов) ====================
+async function handleFileAttach() {
+  const input = document.getElementById('fileInput');
+  const files = input?.files;
+  if (!files?.length || !activeChat) return;
+  await addFilesToAttachmentQueue([...files]);
+  input.value = '';
 }
 
-// ==================== VOICE RECORD ====================
-async function toggleRecord(){
-  if(!activeChat) return;
-
-  if(!isRecording){
-    try{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-      mediaRecorder=new MediaRecorder(stream);
-      audioChunks=[];
-      mediaRecorder.ondataavailable=e=>audioChunks.push(e.data);
-      mediaRecorder.onstop=async()=>{
-        const blob=new Blob(audioChunks,{type:'audio/webm'});
-        const b64=await fileToBase64(blob);
-        await sendMessage('voice',b64);
-        stream.getTracks().forEach(t=>t.stop());
-      };
-      mediaRecorder.start();
-      isRecording=true;
-      document.getElementById('recordBtn').classList.add('recording');
-      showToast('Запись... нажмите снова для отправки');
-    }catch(e){
-      showToast('Нет доступа к микрофону');
+async function addFilesToAttachmentQueue(fileArr) {
+  if (!activeChat || !fileArr.length) return;
+  for (const f of fileArr) {
+    const id = ++attachmentIdSeq;
+    let previewUrl = null;
+    if (f.type.startsWith('image/')) {
+      try {
+        const stripped = await processAvatar(f, 800);
+        previewUrl = URL.createObjectURL(stripped);
+      } catch (_) {
+        previewUrl = URL.createObjectURL(f);
+      }
     }
+    attachmentQueue.push({ id, file: f, previewUrl });
+  }
+  renderAttachQueue();
+}
+
+function renderAttachQueue() {
+  const el = document.getElementById('attachQueue');
+  if (!el) return;
+  el.innerHTML = '';
+  attachmentQueue.forEach((item, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'attach-chip';
+    chip.style.cssText =
+      'position:relative;width:56px;height:56px;border-radius:8px;overflow:hidden;border:1px solid var(--border);flex-shrink:0';
+    if (item.previewUrl) {
+      const img = document.createElement('img');
+      img.src = item.previewUrl;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover';
+      chip.appendChild(img);
+    } else {
+      const lab = document.createElement('div');
+      lab.style.cssText =
+        'display:flex;align-items:center;justify-content:center;font-size:9px;padding:4px;color:var(--text2);height:100%;word-break:break-all;text-align:center';
+      lab.textContent = (item.file.name || 'file').slice(0, 12);
+      chip.appendChild(lab);
+    }
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.textContent = '×';
+    rm.style.cssText =
+      'position:absolute;top:2px;right:2px;width:20px;height:20px;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:14px;line-height:1;cursor:pointer;padding:0';
+    rm.onclick = (e) => {
+      e.stopPropagation();
+      if (item.previewUrl) try { URL.revokeObjectURL(item.previewUrl); } catch (_) {}
+      attachmentQueue.splice(i, 1);
+      renderAttachQueue();
+    };
+    chip.appendChild(rm);
+    const order = document.createElement('div');
+    order.style.cssText = 'position:absolute;bottom:0;left:0;right:0;display:flex;gap:1px';
+    const left = document.createElement('button');
+    left.type = 'button';
+    left.textContent = '◀';
+    left.style.cssText =
+      'flex:1;border:none;background:rgba(0,0,0,.55);color:#fff;font-size:9px;padding:2px;cursor:pointer';
+    left.onclick = (e) => {
+      e.stopPropagation();
+      if (i <= 0) return;
+      const t = attachmentQueue[i];
+      attachmentQueue[i] = attachmentQueue[i - 1];
+      attachmentQueue[i - 1] = t;
+      renderAttachQueue();
+    };
+    const right = document.createElement('button');
+    right.type = 'button';
+    right.textContent = '▶';
+    right.style.cssText = left.style.cssText;
+    right.onclick = (e) => {
+      e.stopPropagation();
+      if (i >= attachmentQueue.length - 1) return;
+      const t = attachmentQueue[i];
+      attachmentQueue[i] = attachmentQueue[i + 1];
+      attachmentQueue[i + 1] = t;
+      renderAttachQueue();
+    };
+    order.appendChild(left);
+    order.appendChild(right);
+    chip.appendChild(order);
+    el.appendChild(chip);
+  });
+  el.classList.toggle('active', attachmentQueue.length > 0);
+}
+
+async function sendOneFileFromQueue(item) {
+  const f = item.file;
+  if (f.type.startsWith('image/')) {
+    const stripped = await processAvatar(f, 800);
+    const b64 = await fileToBase64(stripped);
+    await sendMessage('image', b64);
+  } else if (f.type.startsWith('video/')) {
+    if (f.size > 50 * 1024 * 1024) {
+      showToast('Видео слишком большое (макс 50МБ)');
+      return;
+    }
+    const b64 = await fileToBase64(f);
+    await sendMessage('video', b64);
   } else {
-    mediaRecorder.stop();
-    isRecording=false;
-    document.getElementById('recordBtn').classList.remove('recording');
+    if (f.size > 50 * 1024 * 1024) {
+      showToast('Файл слишком большой (макс 50МБ)');
+      return;
+    }
+    const b64 = await fileToBase64(f);
+    const fd = JSON.stringify({ name: f.name, size: f.size, data: b64 });
+    await sendMessage('file', fd);
+  }
+}
+
+async function flushAttachmentQueue() {
+  const copy = attachmentQueue.slice();
+  for (const item of copy) {
+    if (item.previewUrl) try { URL.revokeObjectURL(item.previewUrl); } catch (_) {}
+    await sendOneFileFromQueue(item);
+  }
+  attachmentQueue = [];
+  renderAttachQueue();
+}
+
+// ==================== VOICE RECORD (пауза / отмена / отправить) ====================
+async function toggleRecord() {
+  if (!activeChat || voiceSession) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size) chunks.push(e.data);
+    };
+    const started = Date.now();
+    let pausedMs = 0;
+    let pauseStarted = 0;
+    const tick = () => {
+      const el = document.getElementById('voiceRecTime');
+      if (!el || !voiceSession) return;
+      let t = Date.now() - started - (voiceSession.pausedMs || 0);
+      if (voiceSession.paused && voiceSession.pauseStarted) {
+        t -= Date.now() - voiceSession.pauseStarted;
+      }
+      const sec = Math.max(0, Math.floor(t / 1000));
+      el.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+    };
+    voiceSession = {
+      stream,
+      recorder,
+      chunks,
+      cancelled: false,
+      paused: false,
+      pauseStarted: 0,
+      pausedMs: 0,
+      tickTimer: setInterval(tick, 400)
+    };
+    tick();
+    recorder.onstop = async () => {
+      const vs = voiceSession;
+      if (vs?.tickTimer) clearInterval(vs.tickTimer);
+      if (vs?.stream) vs.stream.getTracks().forEach((t) => t.stop());
+      document.getElementById('voiceRecordBar')?.classList.remove('active');
+      document.getElementById('recordBtn')?.classList.remove('recording');
+      voiceSession = null;
+      if (!vs || vs.cancelled) return;
+      const blob = new Blob(vs.chunks, { type: 'audio/webm' });
+      const b64 = await fileToBase64(blob);
+      await sendMessage('voice', b64);
+    };
+    recorder.start(400);
+    document.getElementById('voiceRecordBar')?.classList.add('active');
+    document.getElementById('recordBtn')?.classList.add('recording');
+
+    const pauseBtn = document.getElementById('voiceRecPauseBtn');
+    if (pauseBtn) {
+      pauseBtn.textContent = 'Пауза';
+      pauseBtn.onclick = () => {
+        if (!voiceSession?.recorder) return;
+        if (voiceSession.recorder.state === 'recording') {
+          if (typeof voiceSession.recorder.pause !== 'function') {
+            showToast('Пауза не поддерживается в этом браузере');
+            return;
+          }
+          voiceSession.recorder.pause();
+          voiceSession.pauseStarted = Date.now();
+          voiceSession.paused = true;
+          pauseBtn.textContent = 'Дальше';
+        } else if (voiceSession.recorder.state === 'paused') {
+          voiceSession.recorder.resume();
+          if (voiceSession.pauseStarted) {
+            voiceSession.pausedMs = (voiceSession.pausedMs || 0) + (Date.now() - voiceSession.pauseStarted);
+          }
+          voiceSession.pauseStarted = 0;
+          voiceSession.paused = false;
+          pauseBtn.textContent = 'Пауза';
+        }
+      };
+    }
+    document.getElementById('voiceRecCancelBtn').onclick = () => {
+      if (!voiceSession) return;
+      voiceSession.cancelled = true;
+      try {
+        voiceSession.recorder.stop();
+      } catch (_) {}
+    };
+    document.getElementById('voiceRecSendBtn').onclick = () => {
+      if (!voiceSession) return;
+      try {
+        voiceSession.recorder.stop();
+      } catch (_) {}
+    };
+  } catch (e) {
+    showToast('Нет доступа к микрофону');
   }
 }
 
@@ -3491,7 +3888,12 @@ function openLightbox(src){
 }
 
 // ==================== WEBRTC CALLS ====================
-const RTC_CFG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const RTC_CFG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
 let rtcPc = null;
 let rtcLocal = null;
 let rtcVideoOffer = false;
@@ -3514,7 +3916,112 @@ function iceToJSON(c) {
   };
 }
 
+function attachRemoteStream(stream) {
+  const rv = document.getElementById('callRemoteVideo');
+  const ra = document.getElementById('callRemoteAudio');
+  if (!stream || !rv || !ra) return;
+  const vtracks = stream.getVideoTracks().filter((t) => t.readyState === 'live');
+  if (vtracks.length) {
+    rv.srcObject = stream;
+    ra.srcObject = null;
+    rv.muted = false;
+    rv.play().catch(() => {});
+  } else {
+    ra.srcObject = stream;
+    rv.srcObject = null;
+    ra.volume = 1;
+    ra.muted = false;
+    ra.play().catch(() => {});
+  }
+}
+
+async function stopScreenShareInternal() {
+  if (rtcScreenStream) {
+    rtcScreenStream.getTracks().forEach((t) => t.stop());
+    rtcScreenStream = null;
+  }
+  if (!rtcPc) return;
+  const sender = rtcPc.getSenders().find((s) => s.track?.kind === 'video');
+  if (!sender) return;
+  if (rtcCamTrack && rtcCamTrack.readyState === 'live') {
+    await sender.replaceTrack(rtcCamTrack);
+  } else {
+    await sender.replaceTrack(null);
+  }
+}
+
+function onCallToggleMic() {
+  const a = rtcLocal?.getAudioTracks()[0];
+  if (a) a.enabled = !a.enabled;
+  syncCallControlButtons();
+}
+
+async function onCallToggleCam() {
+  if (!rtcPc || !rtcLocal) return;
+  let v = rtcLocal.getVideoTracks()[0];
+  if (v) {
+    v.enabled = !v.enabled;
+    const loc = document.getElementById('callLocalVideo');
+    if (loc) loc.srcObject = v.enabled ? rtcLocal : null;
+    syncCallControlButtons();
+    return;
+  }
+  try {
+    const camOnly = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    v = camOnly.getVideoTracks()[0];
+    rtcLocal.addTrack(v);
+    rtcPc.addTrack(v, rtcLocal);
+    rtcCamTrack = v;
+    const loc = document.getElementById('callLocalVideo');
+    if (loc) loc.srcObject = rtcLocal;
+    syncCallControlButtons();
+  } catch (e) {
+    showToast('Камера недоступна');
+  }
+}
+
+async function onCallToggleScreen() {
+  if (!rtcPc) return;
+  if (rtcScreenStream) {
+    await stopScreenShareInternal();
+    syncCallControlButtons();
+    return;
+  }
+  try {
+    rtcScreenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    const st = rtcScreenStream.getVideoTracks()[0];
+    if (!st) return;
+    st.onended = async () => {
+      rtcScreenStream = null;
+      await stopScreenShareInternal();
+      syncCallControlButtons();
+    };
+    const sender = rtcPc.getSenders().find((s) => s.track?.kind === 'video');
+    if (sender?.track && sender.track.readyState === 'live') {
+      rtcCamTrack = rtcCamTrack || sender.track;
+    }
+    if (sender) await sender.replaceTrack(st);
+    else rtcPc.addTrack(st, rtcScreenStream);
+    syncCallControlButtons();
+  } catch (e) {
+    showToast('Демонстрация отменена');
+  }
+}
+
+function syncCallControlButtons() {
+  const mic = document.getElementById('callToggleMic');
+  const cam = document.getElementById('callToggleCam');
+  const scr = document.getElementById('callToggleScreen');
+  const a = rtcLocal?.getAudioTracks()[0];
+  if (mic) mic.classList.toggle('off', a ? !a.enabled : true);
+  const v = rtcLocal?.getVideoTracks()[0];
+  if (cam) cam.classList.toggle('off', !v || !v.enabled);
+  if (scr) scr.classList.toggle('off', !rtcScreenStream);
+}
+
 function endCall(reason, notifyPeer) {
+  const peer = rtcRemoteUuid ? normUid(rtcRemoteUuid) : null;
+  const logLocalHangup = !!(peer && notifyPeer);
   if (notifyPeer && rtcRemoteUuid && ws && ws.readyState === WebSocket.OPEN) {
     sendToServer('rtc-hangup', { to: rtcRemoteUuid });
   }
@@ -3523,39 +4030,56 @@ function endCall(reason, notifyPeer) {
     if (rtcPc) rtcPc.close();
   } catch (_) {}
   rtcPc = null;
+  if (rtcScreenStream) {
+    rtcScreenStream.getTracks().forEach((t) => t.stop());
+    rtcScreenStream = null;
+  }
+  rtcCamTrack = null;
   if (rtcLocal) {
     rtcLocal.getTracks().forEach((t) => t.stop());
     rtcLocal = null;
   }
   const loc = document.getElementById('callLocalVideo');
   const rem = document.getElementById('callRemoteVideo');
+  const ra = document.getElementById('callRemoteAudio');
   if (loc) loc.srcObject = null;
   if (rem) rem.srcObject = null;
+  if (ra) ra.srcObject = null;
   const ov = document.getElementById('callOverlay');
   if (ov) ov.style.display = 'none';
   const ir = document.getElementById('callIncomingRow');
   const ar = document.getElementById('callActiveRow');
   if (ir) ir.style.display = 'none';
   if (ar) ar.style.display = 'none';
+  if (logLocalHangup) {
+    appendCallLogToChat(peer, '📵 Звонок завершён').catch(() => {});
+  }
   if (reason) showToast(reason);
 }
 
 function handleRtcHangupFromPeer(data) {
   if (!data?.from) return;
-  endCall();
-  showToast('Звонок завершён собеседником');
+  const from = normUid(data.from);
+  if (from === normUid(myProfile.uuid)) return;
+  const peer = rtcRemoteUuid ? normUid(rtcRemoteUuid) : null;
+  endCall(null, false);
+  if (peer && peer === from) {
+    appendCallLogToChat(from, '📵 Собеседник завершил звонок').catch(() => {});
+  }
 }
 
 async function startOutgoingCall(video) {
   if (!activeChat) return;
-  const c = contacts.find((x) => x.uuid === activeChat);
-  if (c && (c.kind === 'group' || c.kind === 'channel')) {
+  const peer = normUid(activeChat);
+  const c = contactByUuidLoose(peer);
+  if (c && (c.kind === 'group' || c.kind === 'channel' || c.kind === 'saved')) {
     showToast('Звонки только в личном чате');
     return;
   }
   try {
-    rtcRemoteUuid = activeChat;
+    rtcRemoteUuid = peer;
     rtcLocal = await navigator.mediaDevices.getUserMedia({ audio: true, video: !!video });
+    rtcCamTrack = rtcLocal.getVideoTracks()[0] || null;
     rtcPc = new RTCPeerConnection(RTC_CFG);
     rtcLocal.getTracks().forEach((t) => rtcPc.addTrack(t, rtcLocal));
     rtcPc.onicecandidate = (e) => {
@@ -3564,24 +4088,25 @@ async function startOutgoingCall(video) {
       }
     };
     rtcPc.ontrack = (e) => {
-      const rv = document.getElementById('callRemoteVideo');
-      if (rv && e.streams[0]) rv.srcObject = e.streams[0];
+      if (e.streams[0]) attachRemoteStream(e.streams[0]);
     };
-    const offer = await rtcPc.createOffer();
+    const offer = await rtcPc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
     await rtcPc.setLocalDescription(offer);
-    sendToServer('rtc-offer', { to: activeChat, sdp: sdpToJSON(offer), video: !!video });
+    sendToServer('rtc-offer', { to: peer, sdp: sdpToJSON(offer), video: !!video });
     rtcVideoOffer = !!video;
     document.getElementById('callOverlay').style.display = 'flex';
-    document.getElementById('callName').textContent = contacts.find((x) => x.uuid === activeChat)?.nickname || activeChat.slice(0, 8);
+    document.getElementById('callName').textContent =
+      contacts.find((x) => normUid(x.uuid) === peer)?.nickname || peer.slice(0, 8);
     document.getElementById('callStatus').textContent = video ? 'Видеозвонок…' : 'Звонок…';
     document.getElementById('callIncomingRow').style.display = 'none';
     document.getElementById('callActiveRow').style.display = 'flex';
     const loc = document.getElementById('callLocalVideo');
     if (loc) loc.srcObject = rtcLocal;
+    syncCallControlButtons();
   } catch (e) {
     console.error(e);
     showToast('Нет доступа к микрофону/камере');
-    endCall();
+    endCall(null, false);
   }
 }
 
@@ -3592,14 +4117,16 @@ async function handleRtcSignalIncoming(kind, data) {
     const sdp = data.sdp;
     if (!sdp || !sdp.sdp) return;
     document.getElementById('callOverlay').style.display = 'flex';
-    document.getElementById('callName').textContent = contacts.find((x) => x.uuid === data.from)?.nickname || data.from.slice(0, 8);
+    document.getElementById('callName').textContent =
+      contacts.find((x) => normUid(x.uuid) === normUid(data.from))?.nickname || String(data.from).slice(0, 8);
     document.getElementById('callStatus').textContent = 'Входящий ' + (video ? 'видео' : 'аудио');
     document.getElementById('callIncomingRow').style.display = 'flex';
     document.getElementById('callActiveRow').style.display = 'none';
     const accept = async () => {
       try {
-        rtcRemoteUuid = data.from;
+        rtcRemoteUuid = normUid(data.from);
         rtcLocal = await navigator.mediaDevices.getUserMedia({ audio: true, video });
+        rtcCamTrack = rtcLocal.getVideoTracks()[0] || null;
         rtcPc = new RTCPeerConnection(RTC_CFG);
         rtcLocal.getTracks().forEach((t) => rtcPc.addTrack(t, rtcLocal));
         rtcPc.onicecandidate = (e) => {
@@ -3608,8 +4135,7 @@ async function handleRtcSignalIncoming(kind, data) {
           }
         };
         rtcPc.ontrack = (e) => {
-          const rv = document.getElementById('callRemoteVideo');
-          if (rv && e.streams[0]) rv.srcObject = e.streams[0];
+          if (e.streams[0]) attachRemoteStream(e.streams[0]);
         };
         await rtcPc.setRemoteDescription(new RTCSessionDescription(sdp));
         const answer = await rtcPc.createAnswer();
@@ -3619,21 +4145,23 @@ async function handleRtcSignalIncoming(kind, data) {
         document.getElementById('callIncomingRow').style.display = 'none';
         document.getElementById('callActiveRow').style.display = 'flex';
         document.getElementById('callStatus').textContent = 'Соединено';
+        syncCallControlButtons();
       } catch (e) {
         console.error(e);
         showToast('Не удалось принять звонок');
         sendToServer('rtc-hangup', { to: data.from });
-        endCall();
+        endCall(null, false);
       }
     };
     document.getElementById('callAcceptBtn').onclick = accept;
     document.getElementById('callRejectBtn').onclick = () => {
       sendToServer('rtc-hangup', { to: data.from });
-      endCall();
+      endCall(null, false);
     };
   } else if (kind === 'rtc-answer' && rtcPc && data.sdp) {
     await rtcPc.setRemoteDescription(new RTCSessionDescription(data.sdp));
     document.getElementById('callStatus').textContent = 'Соединено';
+    syncCallControlButtons();
   } else if (kind === 'rtc-ice' && rtcPc && data.candidate) {
     try {
       await rtcPc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -3646,6 +4174,12 @@ function wireCallUiOnce() {
   window._callUi = true;
   const h = document.getElementById('callHangupBtn');
   if (h) h.onclick = () => endCall(null, true);
+  const m = document.getElementById('callToggleMic');
+  if (m) m.onclick = () => onCallToggleMic();
+  const c = document.getElementById('callToggleCam');
+  if (c) c.onclick = () => onCallToggleCam().catch(() => {});
+  const s = document.getElementById('callToggleScreen');
+  if (s) s.onclick = () => onCallToggleScreen().catch(() => {});
 }
 
 // ==================== BOOT ====================
