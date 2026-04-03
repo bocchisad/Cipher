@@ -74,8 +74,26 @@ function verifyPassword(pwd, stored) {
 // ws connections always in memory; persistent data goes to SQLite or JSON
 const users = new Map(); // uuid -> { ws, uuid, nickname, avatar, lastSeen, password }
 const messageQueue = new Map(); // uuid -> [{ from, to, content, ts, type }, ...]
-/** roomId -> { id, title, kind: 'group'|'channel', owner, members: string[], admins?: string[] } */
+/** roomId -> { id, title, kind: 'group'|'channel', owner, members: string[], admins?: string[], username?: string } */
 const rooms = new Map();
+/** публичный @username канала (нормализованный) -> roomId */
+const channelUsernames = new Map();
+
+function normalizeChannelUsername(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let s = raw.trim().toLowerCase().replace(/^@+/, '');
+  s = s.replace(/[^a-z0-9_]/g, '');
+  return s.slice(0, 32);
+}
+
+function rebuildChannelUsernameIndex() {
+  channelUsernames.clear();
+  for (const [, room] of rooms) {
+    if (room.kind === 'channel' && room.username) {
+      channelUsernames.set(String(room.username).toLowerCase(), room.id);
+    }
+  }
+}
 
 // ==================== STORAGE ABSTRACTION ====================
 function getUserFromStore(uuid) {
@@ -247,9 +265,11 @@ function loadRoomsJSON() {
           kind: room.kind === 'channel' ? 'channel' : 'group',
           owner: room.owner,
           members: Array.isArray(room.members) ? room.members : [],
-          admins: Array.isArray(room.admins) ? room.admins : []
+          admins: Array.isArray(room.admins) ? room.admins : [],
+          username: room.username || undefined
         });
       }
+      rebuildChannelUsernameIndex();
       console.log(`✓ Loaded ${rooms.size} rooms from JSON`);
     }
   } catch (e) {
@@ -403,6 +423,15 @@ async function handleMessage(ws, msg, setUserId, ip) {
       break;
     case 'room-join':
       handleRoomJoin(uuid, data);
+      break;
+    case 'room-add-members':
+      handleRoomAddMembers(uuid, data);
+      break;
+    case 'channel-subscribe':
+      handleChannelSubscribe(uuid, data);
+      break;
+    case 'room-admin':
+      handleRoomAdmin(uuid, data);
       break;
     case 'message-reaction':
       handleMessageReaction(uuid, data);
@@ -633,16 +662,41 @@ function handleSendMessage(fromUuid, data) {
   }
 }
 
+function broadcastRoomToMembers(room) {
+  const payload = { type: 'room-updated', data: { room } };
+  for (const mem of room.members) {
+    const usr = users.get(mem);
+    if (usr?.ws && usr.ws.readyState === WebSocket.OPEN) safeWsSend(usr.ws, payload);
+  }
+}
+
 function handleRoomCreate(fromUuid, data) {
+  const self = users.get(fromUuid);
   if (!fromUuid || !data?.title) {
-    const u = users.get(fromUuid);
-    if (u?.ws) safeWsSend(u.ws, { type: 'error', error: 'Укажите название' });
+    if (self?.ws) safeWsSend(self.ws, { type: 'error', data: { error: 'Укажите название' } });
     return;
   }
   const kind = data.kind === 'channel' ? 'channel' : 'group';
   const memberUuids = Array.isArray(data.memberUuids)
     ? [...new Set(data.memberUuids.map((x) => String(x).trim().toLowerCase()).filter(Boolean))]
     : [];
+  let username = null;
+  if (kind === 'channel') {
+    username = normalizeChannelUsername(data.username || '');
+    if (username.length < 3) {
+      if (self?.ws) {
+        safeWsSend(self.ws, { type: 'error', data: { error: 'Юзернейм канала: минимум 3 символа (латиница, цифры, _)' } });
+      }
+      return;
+    }
+    if (channelUsernames.has(username)) {
+      const suggested = [username + '_2', username + '_3', username + '_' + String(Math.floor(100 + Math.random() * 900))];
+      if (self?.ws) {
+        safeWsSend(self.ws, { type: 'error', data: { error: 'Этот юзернейм занят', channelSuggestions: suggested } });
+      }
+      return;
+    }
+  }
   const id = generateUUID();
   const members = new Set([fromUuid, ...memberUuids]);
   const room = {
@@ -653,6 +707,10 @@ function handleRoomCreate(fromUuid, data) {
     members: [...members],
     admins: kind === 'channel' ? [fromUuid] : []
   };
+  if (kind === 'channel' && username) {
+    room.username = username;
+    channelUsernames.set(username, id);
+  }
   rooms.set(id, room);
   saveRoomsJSON();
   const creator = users.get(fromUuid);
@@ -666,9 +724,83 @@ function handleRoomCreate(fromUuid, data) {
   console.log(`📁 Room: ${room.title} (${id.substring(0, 8)}...)`);
 }
 
+function handleRoomAddMembers(fromUuid, data) {
+  const u = users.get(fromUuid);
+  if (!data?.roomId || !Array.isArray(data.memberUuids)) return;
+  const rid = String(data.roomId).trim().toLowerCase().replace(/-/g, '');
+  const room = rooms.get(rid);
+  if (!room) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Комната не найдена' } });
+    return;
+  }
+  const adminSet = new Set([room.owner, ...(room.admins || [])]);
+  if (!adminSet.has(fromUuid)) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Недостаточно прав' } });
+    return;
+  }
+  for (const raw of data.memberUuids) {
+    const mid = String(raw).trim().toLowerCase();
+    if (!mid || room.members.includes(mid)) continue;
+    room.members.push(mid);
+    const usr = users.get(mid);
+    if (usr?.ws && usr.ws.readyState === WebSocket.OPEN) {
+      safeWsSend(usr.ws, { type: 'room-invite', data: { room } });
+    }
+  }
+  saveRoomsJSON();
+  broadcastRoomToMembers(room);
+}
+
+function handleChannelSubscribe(fromUuid, data) {
+  const u = users.get(fromUuid);
+  let rid = data?.roomId ? String(data.roomId).trim().toLowerCase().replace(/-/g, '') : '';
+  if (!rid && data?.username) {
+    const un = normalizeChannelUsername(data.username);
+    rid = channelUsernames.get(un) || '';
+  }
+  if (!rid || !rooms.has(rid)) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Канал не найден' } });
+    return;
+  }
+  const room = rooms.get(rid);
+  if (room.kind !== 'channel') {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Это не канал' } });
+    return;
+  }
+  if (!room.members.includes(fromUuid)) room.members.push(fromUuid);
+  saveRoomsJSON();
+  if (u?.ws) safeWsSend(u.ws, { type: 'room-joined', data: { room } });
+  broadcastRoomToMembers(room);
+}
+
+function handleRoomAdmin(fromUuid, data) {
+  const u = users.get(fromUuid);
+  if (!data?.roomId || !data?.memberUuid) return;
+  const rid = String(data.roomId).trim().toLowerCase().replace(/-/g, '');
+  const room = rooms.get(rid);
+  if (!room || room.owner !== fromUuid) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Только владелец может менять админов' } });
+    return;
+  }
+  const target = String(data.memberUuid).trim().toLowerCase();
+  if (target === room.owner) return;
+  if (!room.members.includes(target)) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Пользователь не в чате' } });
+    return;
+  }
+  if (!room.admins) room.admins = [];
+  if (data.add) {
+    if (!room.admins.includes(target)) room.admins.push(target);
+  } else {
+    room.admins = room.admins.filter((x) => x !== target);
+  }
+  saveRoomsJSON();
+  broadcastRoomToMembers(room);
+}
+
 function handleRoomJoin(fromUuid, data) {
   if (!fromUuid || !data?.roomId) return;
-  const rid = String(data.roomId).trim().toLowerCase();
+  const rid = String(data.roomId).trim().toLowerCase().replace(/-/g, '');
   const room = rooms.get(rid);
   if (!room) {
     const u = users.get(fromUuid);
