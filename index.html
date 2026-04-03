@@ -41,21 +41,25 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 
 /* REGISTRATION */
 #regOverlay{position:fixed;inset:0;background:var(--bg0);z-index:1000;display:flex;align-items:center;justify-content:center;}
-.reg-box{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r2);padding:48px 40px;width:400px;text-align:center;box-shadow:0 0 80px rgba(79,142,247,0.08);}
-.reg-box h1{font-size:28px;font-weight:700;letter-spacing:-0.5px;margin-bottom:6px}
+.reg-box{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r2);padding:40px;width:min(100%, 420px);text-align:center;box-shadow:0 0 80px rgba(79,142,247,0.08);}
+.reg-box h1{font-size:28px;font-weight:700;margin-bottom:6px}
 .reg-box h1 span{color:var(--accent)}
-.reg-box p{color:var(--text2);font-size:13px;margin-bottom:32px}
+.reg-box p{color:var(--text2);font-size:13px;margin-bottom:24px}
 .avatar-pick{width:96px;height:96px;border-radius:50%;background:var(--bg4);border:2px dashed var(--border2);margin:0 auto 24px;cursor:pointer;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;transition:border-color .2s;}
 .avatar-pick:hover{border-color:var(--accent)}
 .avatar-pick img{width:100%;height:100%;object-fit:cover}
 .avatar-pick .plus{color:var(--text3);font-size:28px}
 .reg-input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;font-size:14px;margin-bottom:12px;transition:border-color .2s;}
 .reg-input:focus{border-color:var(--accent)}
-.reg-hint{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:10px 16px;font-size:11px;font-family:var(--mono);color:var(--text2);margin-bottom:20px;text-align:left;line-height:1.5;}
 .btn-primary{width:100%;background:var(--accent);border-radius:var(--r);padding:13px;font-size:14px;font-weight:600;color:#fff;transition:background .2s,transform .1s;letter-spacing:.3px;}
 .btn-primary:hover{background:var(--accent2)}
 .btn-primary:active{transform:scale(.98)}
 .btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.error-msg{background:rgba(247,86,79,0.1);border:1px solid var(--red);color:var(--red);padding:10px;border-radius:var(--r);font-size:12px;margin-bottom:16px;display:none}
+.error-msg.show{display:block}
+.auth-tabs{display:flex;gap:12px;margin-bottom:24px;border-bottom:1px solid var(--border);overflow:hidden}
+.auth-tab{flex:1;padding:12px;cursor:pointer;font-weight:600;font-size:13px;color:var(--text2);border-bottom:2px solid transparent;transition:all .2s}
+.auth-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 
 /* LAYOUT */
 #app{display:flex;height:100vh;display:none}
@@ -241,18 +245,36 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 <!-- REGISTRATION -->
 <div id="regOverlay">
   <div class="reg-box">
-    <h1><span>Cipher</span> P2P</h1>
-    <p>Зашифрованный P2P мессенджер. Данные хранятся только у вас.</p>
-    <div class="avatar-pick" id="regAvatarPick">
-      <span class="plus">+</span>
+    <h1><span>Cipher</span></h1>
+    <p>P2P-месcенджер с E2E шифрованием</p>
+    
+    <!-- TABS -->
+    <div class="auth-tabs" id="authTabs">
+      <div class="auth-tab active" onclick="switchAuthTab('login')">Вход</div>
+      <div class="auth-tab" onclick="switchAuthTab('register')">Регистрация</div>
     </div>
-    <input type="file" id="regAvatarFile" accept="image/*" style="display:none">
-    <input class="reg-input" id="regNick" type="text" placeholder="Username (минимум 3 символа)" maxlength="32">
-    <input class="reg-input" id="regPass" type="password" placeholder="Пароль (минимум 4 символа)" maxlength="64">
-    <!-- FIX (3.6): Server field hidden — auto-detected from DEFAULT_SERVER. Power users can set via localStorage('cipherServer') -->
-    <input class="reg-input" id="regServer" type="text" placeholder="Сервер (оставьте пустым для авто)" maxlength="200" style="display:none">
-    <div class="reg-hint" id="regHint">Введите username и пароль</div>
-    <button class="btn-primary" id="regBtn">Войти / Зарегистрироваться</button>
+    
+    <!-- LOGIN FORM -->
+    <div id="loginForm" style="text-align:center;">
+      <p style="margin-bottom:16px;color:var(--text2);font-size:13px">Введите свой UUID и пароль для входа</p>
+      <input type="text" id="loginUuidInput" class="reg-input" placeholder="Ваш UUID" autofocus>
+      <input type="password" id="loginPassInput" class="reg-input" placeholder="Пароль">
+      <button class="btn-primary" style="margin-top:8px" onclick="document.getElementById('regOverlay').querySelector('.auth-tabs').parentElement.parentElement.querySelector('#regBtn').parentElement.parentElement.querySelector('button.btn-primary:nth-child(1)').click ? null : location.reload()" id="quickLoginBtn">Вход</button>
+      <p style="color:var(--text3);font-size:11px;margin-top:12px">Нет аккаунта? Нажмите на вкладку "Регистрация"</p>
+    </div>
+    
+    <!-- REGISTER FORM -->
+    <div id="registerForm" style="display:none;">
+      <div class="avatar-pick" id="regAvatarPick">
+        <span class="plus">+</span>
+      </div>
+      <input type="file" id="regAvatarFile" accept="image/*" style="display:none">
+      <input class="reg-input" id="regNick" type="text" placeholder="Никнейм" maxlength="30">
+      <input class="reg-input" id="regPass" type="password" placeholder="Пароль (мин. 6 символов)">
+      <input class="reg-input" id="regPass2" type="password" placeholder="Повтор пароля">
+      <button class="btn-primary" id="regBtn">Регистрация</button>
+      <button class="btn-primary" id="loginBtn" style="background:var(--bg3);color:var(--text);margin-top:8px">Есть аккаунт?</button>
+    </div>
   </div>
 </div>
 
@@ -1069,14 +1091,34 @@ function setHint(text){
 // ==================== REGISTRATION ====================
 let regAvatar='';
 
+function switchAuthTab(tab) {
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+  const tabs = document.querySelectorAll('.auth-tab');
+  
+  tabs.forEach(t => t.classList.remove('active'));
+  
+  if (tab === 'login') {
+    if (loginForm) loginForm.style.display = 'block';
+    if (registerForm) registerForm.style.display = 'none';
+    if (tabs[0]) tabs[0].classList.add('active');
+  } else {
+    if (loginForm) loginForm.style.display = 'none';
+    if (registerForm) registerForm.style.display = 'block';
+    if (tabs[1]) tabs[1].classList.add('active');
+  }
+}
+
 function setupReg(){
   const pick=document.getElementById('regAvatarPick');
   const fileInput=document.getElementById('regAvatarFile');
   const regBtn=document.getElementById('regBtn');
+  const loginBtn=document.getElementById('loginBtn');
   const regNick=document.getElementById('regNick');
   const regPass=document.getElementById('regPass');
+  const regPass2=document.getElementById('regPass2');
 
-  if(!pick || !fileInput || !regBtn || !regNick || !regPass){
+  if(!pick || !fileInput || !regBtn || !regNick || !regPass || !regPass2){
     console.error('❌ Registration elements not found');
     return;
   }
@@ -1084,7 +1126,6 @@ function setupReg(){
   pick.onclick=()=>fileInput.click();
   fileInput.onchange=async()=>{
     if(!fileInput.files[0]) return;
-    // FIX (2.1): processAvatar resizes to 200px JPEG — no freeze on large photos
     const processed=await processAvatar(fileInput.files[0]);
     const b64=await fileToBase64(processed);
     regAvatar=b64;
@@ -1094,22 +1135,18 @@ function setupReg(){
   regBtn.onclick=async()=>{
     const nickname=regNick.value.trim();
     const password=regPass.value;
-    const regServerEl=document.getElementById('regServer');
-    const customServer=regServerEl ? regServerEl.value.trim() : '';
-    if(customServer) serverAddress=customServer;
+    const password2=regPass2.value;
 
     if(!nickname || nickname.length<1){showToast('Никнейм обязателен');return;}
-    if(!password || password.length<4){showToast('Пароль минимум 4 символа');return;}
-    if(!serverAddress){showToast('Укажите адрес сервера');setHint('Введите адрес сервера (wss://...)');return;}
+    if(!password || password.length<6){showToast('Пароль минимум 6 символов');return;}
+    if(password !== password2){showToast('Пароли не совпадают');return;}
 
     regBtn.disabled=true;
     regBtn.textContent='Подключение...';
-    setHint('Подключение к серверу...');
 
     try {
       const passwordHash = await hashClient(password);
 
-      // Подключаемся один раз (если уже подключены — переиспользуем)
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         await connectWebSocket();
         serverReadyReceived = false;
@@ -1117,13 +1154,11 @@ function setupReg(){
       }
 
       regBtn.textContent='Регистрация...';
-      setHint('Регистрация на сервере...');
 
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         throw new Error('Нет подключения к серверу');
       }
 
-      // Слушаем register-ok ИЛИ error одновременно
       const [regOkPromise, errPromise] = [
         waitForMessage('register-ok', 5000),
         waitForMessage('error', 5000)
@@ -1137,7 +1172,6 @@ function setupReg(){
         timestamp: Date.now()
       }));
 
-      // Ждём первый из двух ответов
       const regResp = await Promise.race([regOkPromise, errPromise]);
 
       if (!regResp) throw new Error('Сервер не ответил (timeout). Проверьте соединение.');
@@ -1146,7 +1180,6 @@ function setupReg(){
       const receivedUuid = regResp.uuid;
       if (!receivedUuid) throw new Error('Не получен UUID от сервера');
 
-      // Сохраняем данные сессии
       const auth = { uuid: receivedUuid, passwordHash, server: serverAddress };
       localStorage.setItem('cipherAuth', JSON.stringify(auth));
 
@@ -1159,13 +1192,9 @@ function setupReg(){
       await dbPut('profile', { key: 'profile', ...myProfile });
       contacts = [];
 
-      // Входим в аккаунт на том же соединении (НЕ делаем второй connectWebSocket)
       regBtn.textContent='Вход...';
-      setHint('Авторизация...');
 
-      // Логинимся сразу после регистрации
       waitForMessage('login-ok', 4000).then(() => {
-        // login-ok придёт — handleServerMessage обновит контакты
       }).catch(() => {});
 
       ws.send(JSON.stringify({
@@ -1175,7 +1204,6 @@ function setupReg(){
         timestamp: Date.now()
       }));
 
-      // Не ждём login-ok — сразу показываем UI (оффлайн-режим тоже должен работать)
       await new Promise(r => setTimeout(r, 800));
 
       document.getElementById('regOverlay').style.display='none';
@@ -1192,10 +1220,61 @@ function setupReg(){
       console.error('❌ Registration error:', e.message);
       showToast('❌ ' + e.message);
       regBtn.disabled=false;
-      regBtn.textContent='Войти / Зарегистрироваться';
-      setHint('Ошибка: ' + e.message);
+      regBtn.textContent='Регистрация';
     }
   };
+
+  loginBtn.onclick = async () => {
+    const uuid = prompt('Введите ваш UUID:');
+    if (!uuid) return;
+    
+    const password = prompt('Введите пароль:');
+    if (!password) return;
+    
+    try {
+      const passwordHash = await hashClient(password);
+      
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        setHint('Подключение к серверу...');
+        await connectWebSocket();
+        serverReadyReceived = false;
+        await waitForServerReady(2000);
+      }
+      
+      setHint('Проверка учётных данных...');
+      
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        throw new Error('Нет подключения к серверу');
+      }
+      
+      const [loginOkPromise, errPromise] = [
+        waitForMessage('login-ok', 5000),
+        waitForMessage('error', 5000)
+      ];
+      
+      ws.send(JSON.stringify({
+        type: 'login',
+        uuid: uuid.trim(),
+        password: passwordHash,
+        timestamp: Date.now()
+      }));
+      
+      const loginResp = await Promise.race([loginOkPromise, errPromise]);
+      
+      if (!loginResp) throw new Error('Сервер не ответил (timeout)');
+      if (loginResp.type === 'error') throw new Error(loginResp.error || loginResp.data?.error || 'Ошибка входа');
+      
+      const auth = { uuid: uuid.trim(), passwordHash, server: serverAddress };
+      localStorage.setItem('cipherAuth', JSON.stringify(auth));
+      
+      myProfile.uuid = uuid.trim();
+      startApp(uuid.trim());
+    } catch(e) {
+      showToast('Ошибка: ' + (e.message || 'Неизвестная ошибка'));
+      console.error('Login error:', e);
+    }
+  };
+
 }
 
 // ==================== NET HANDLERS ====================
