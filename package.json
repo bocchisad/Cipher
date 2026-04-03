@@ -1,7 +1,7 @@
 {
   "name": "cipher-relay",
-  "version": "4.0.0",
-  "description": "Cipher P2P Messenger - WebSocket Relay Server",
+  "version": "4.1.0",
+  "description": "Cipher P2P Messenger - WebSocket Relay Server (Audit Fixed)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -18,6 +18,9 @@
     "ws": "^8.13.0",
     "dotenv": "^16.3.1",
     "better-sqlite3": "^9.0.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3-sqlcipher": "^9.1.1"
   },
   "devDependencies": {}
 }

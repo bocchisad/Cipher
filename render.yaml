@@ -4,10 +4,32 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     port: 5000
+
+    # ✅ [FIX-2.3] Persistent Disk — данные не теряются при рестарте/spin-down
+    # Стоимость: ~$1/GB/мес (1GB = ~$1). Без диска — users.json теряется каждые 15 мин.
+    disk:
+      name: cipher-data
+      mountPath: /data
+      sizeGB: 1
+
     envVars:
       - key: PORT
         value: "5000"
+
+      # ✅ Путь к файлам на персистентном диске
+      - key: USERS_FILE
+        value: "/data/users.json"
+
+      - key: QUEUE_FILE
+        value: "/data/queue.json"
+
       - key: DB_PATH
-        value: "/tmp/cipher.db"
+        value: "/data/cipher.db"
+
+      # ✅ Автогенерируемый ключ шифрования БД (Render хранит его безопасно)
       - key: DB_ENCRYPTION_KEY
         generateValue: true
+
+      # Раскомментировать когда готовы переключиться на SQLite:
+      # - key: USE_SQLITE
+      #   value: "1"

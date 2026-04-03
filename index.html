@@ -249,7 +249,8 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
     <input type="file" id="regAvatarFile" accept="image/*" style="display:none">
     <input class="reg-input" id="regNick" type="text" placeholder="Username (минимум 3 символа)" maxlength="32">
     <input class="reg-input" id="regPass" type="password" placeholder="Пароль (минимум 4 символа)" maxlength="64">
-    <input class="reg-input" id="regServer" type="text" placeholder="Сервер (оставьте пустым для авто)" maxlength="200">
+    <!-- FIX (3.6): Server field hidden — auto-detected from DEFAULT_SERVER. Power users can set via localStorage('cipherServer') -->
+    <input class="reg-input" id="regServer" type="text" placeholder="Сервер (оставьте пустым для авто)" maxlength="200" style="display:none">
     <div class="reg-hint" id="regHint">Введите username и пароль</div>
     <button class="btn-primary" id="regBtn">Войти / Зарегистрироваться</button>
   </div>
@@ -322,6 +323,13 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
+      <!-- FIX (3.2): Scroll-down hint — shown when user scrolled up and new message arrives -->
+      <div id="scrollDownHint" style="display:none;position:absolute;bottom:80px;right:20px;z-index:10">
+        <button onclick="scrollBottom();this.parentElement.style.display='none'"
+          style="background:var(--accent);color:#fff;border:none;border-radius:20px;padding:8px 16px;cursor:pointer;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+          ↓ Новое сообщение
+        </button>
+      </div>
     </div>
   </div>
 
@@ -391,6 +399,11 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
         Загрузить данные
       </button>
       <input type="file" id="importFile" accept=".json" style="display:none">
+      <!-- FIX (FIXES_REPORT 2.7): Clear all local data button -->
+      <button class="btn-danger" id="clearDataBtn" style="width:100%;margin-top:8px;padding:10px 14px;font-size:13px;text-align:left;display:flex;align-items:center;gap:8px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        Очистить все чаты и контакты
+      </button>
     </div>
     <div class="modal-btns">
       <button class="btn-ghost" id="settingsCancel">Отмена</button>
@@ -430,6 +443,24 @@ const DEFAULT_SERVER = 'wss://cipher-relay-rqpu.onrender.com';
 // ==================== WebSocket Connection ====================
 let ws = null;
 let articoConnected = false;
+
+// FIX (3.4): pendingHandlers — one-shot message waiters to replace ws.onmessage chain
+// Instead of overwriting ws.onmessage on every login/register, use this map.
+const pendingHandlers = new Map();
+
+function waitForMessage(type, timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingHandlers.delete(type);
+      resolve(null);
+    }, timeoutMs);
+    pendingHandlers.set(type, (msg) => {
+      clearTimeout(timer);
+      pendingHandlers.delete(type);
+      resolve(msg);
+    });
+  });
+}
 
 // FIX #2: Auto-detect server address — external hosts use DEFAULT_SERVER
 const _onExternalHost = !['localhost','127.0.0.1'].includes(window.location.hostname);
@@ -519,6 +550,10 @@ function setupWSHandlers() {
         serverReadyReceived = true;
         console.log('✓ Server ready');
       }
+      // FIX (3.4): Route to one-shot pending handler first, then main router
+      const handler = pendingHandlers.get(msg.type);
+      if (handler) handler(msg);
+
       handleServerMessage(msg);
     } catch (err) {
       console.error('❌ WS message error:', err);
@@ -730,7 +765,8 @@ function updateConnStatus(connected) {
 }
 
 // ==================== DB (IndexedDB) ====================
-const DB_NAME='Cipher', DB_VER=1;
+// FIX (FIXES_REPORT 2.7): Bump DB_VER to 2 — migration clears orphaned contacts store
+const DB_NAME='Cipher', DB_VER=2;
 let db;
 
 async function openDB(){
@@ -738,7 +774,12 @@ async function openDB(){
     const req=indexedDB.open(DB_NAME,DB_VER);
     req.onupgradeneeded=e=>{
       const d=e.target.result;
+      const oldVersion=e.oldVersion;
       if(!d.objectStoreNames.contains('profile')) d.createObjectStore('profile',{keyPath:'key'});
+      // Migration v1→v2: recreate contacts store to clear orphans from old sessions
+      if(oldVersion < 2) {
+        if(d.objectStoreNames.contains('contacts')) d.deleteObjectStore('contacts');
+      }
       if(!d.objectStoreNames.contains('contacts')) d.createObjectStore('contacts',{keyPath:'uuid'});
       if(!d.objectStoreNames.contains('messages')){
         const ms=d.createObjectStore('messages',{keyPath:'id',autoIncrement:true});
@@ -885,19 +926,30 @@ function renderAvatar(el, av, name){
   }
 }
 
-async function stripExif(file){
-  return new Promise(res=>{
-    const img=new Image();
-    const url=URL.createObjectURL(file);
-    img.onload=()=>{
-      const c=document.createElement('canvas');
-      c.width=img.width; c.height=img.height;
-      c.getContext('2d').drawImage(img,0,0);
-      c.toBlob(b=>res(b),file.type||'image/jpeg',0.92);
+// FIX (2.1): processAvatar — resize to 200px JPEG instead of full-res re-draw.
+// Replaces stripExif(). Result: ~5–15 KB instead of 10 MB → no freeze.
+async function processAvatar(file, maxSize = 200) {
+  const QUALITY = 0.82;
+  return new Promise(res => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+      else        { w = Math.round(w * maxSize / h); h = maxSize; }
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      c.toBlob(b => res(b), 'image/jpeg', QUALITY);
       URL.revokeObjectURL(url);
     };
-    img.src=url;
+    img.src = url;
   });
+}
+
+// Kept as alias for drag-drop image sends (uses larger 800px cap)
+async function stripExif(file) {
+  return processAvatar(file, 800);
 }
 
 function fileToBase64(file){
@@ -959,37 +1011,17 @@ async function init(){
         if (ws && ws.readyState === WebSocket.OPEN) {
           console.log('🔐 Logging in, uuid:', uuid.substring(0, 8) + '...');
           
-          // FIX: Wait for login-ok response before starting app
-          let loginSuccess = false;
-          let loginErrorMsg = null;
-          await new Promise((resolve) => {
-            const timeout = setTimeout(() => {
-              console.warn('⚠️ Login timeout, proceeding offline');
-              resolve();
-            }, 4000);
-            
-            const origHandler = ws.onmessage;
-            ws.onmessage = (e) => {
-              const msg = JSON.parse(e.data);
-              if (msg.type === 'login-ok') {
-                loginSuccess = true;
-                clearTimeout(timeout);
-                resolve();
-              } else if (msg.type === 'error') {
-                loginErrorMsg = msg.error || msg.data?.error;
-                clearTimeout(timeout);
-                resolve();
-              }
-              if (origHandler) origHandler(e);
-            };
-            
-            ws.send(JSON.stringify({ 
-              type: 'login', 
-              uuid, 
-              password: passwordHash, 
-              timestamp: Date.now() 
-            }));
-          });
+          // FIX (3.4): Use waitForMessage instead of overwriting ws.onmessage
+          ws.send(JSON.stringify({ 
+            type: 'login', 
+            uuid, 
+            password: passwordHash, 
+            timestamp: Date.now() 
+          }));
+
+          const loginResp = await waitForMessage('login-ok') || await waitForMessage('error').catch(()=>null);
+          const loginSuccess = loginResp?.type === 'login-ok';
+          const loginErrorMsg = loginResp?.type === 'error' ? (loginResp.error || loginResp.data?.error) : null;
           
           if (loginErrorMsg === 'User not found') {
             console.error('❌ Login failed: user not found');
@@ -1038,8 +1070,9 @@ function setupReg(){
   pick.onclick=()=>fileInput.click();
   fileInput.onchange=async()=>{
     if(!fileInput.files[0]) return;
-    const stripped=await stripExif(fileInput.files[0]);
-    const b64=await fileToBase64(stripped);
+    // FIX (2.1): processAvatar resizes to 200px JPEG — no freeze on large photos
+    const processed=await processAvatar(fileInput.files[0]);
+    const b64=await fileToBase64(processed);
     regAvatar=b64;
     pick.innerHTML=`<img src="${b64}" alt="">`;
   };
@@ -1077,26 +1110,10 @@ function setupReg(){
         }));
       }
 
-      // Wait for register-ok
-      let receivedUuid = null;
-      let registerError = null;
-      await new Promise((resolve) => {
-        const timeout = setTimeout(resolve, 4000);
-        const origHandler = ws.onmessage;
-        ws.onmessage = (e) => {
-          const msg = JSON.parse(e.data);
-          if (msg.type === 'register-ok') {
-            receivedUuid = msg.uuid;
-            clearTimeout(timeout);
-            resolve();
-          } else if (msg.type === 'error') {
-            registerError = msg.error;
-            clearTimeout(timeout);
-            resolve();
-          }
-          if (origHandler) origHandler(e);
-        };
-      });
+      // FIX (3.4): Use waitForMessage instead of overwriting ws.onmessage
+      const regResp = await waitForMessage('register-ok', 4000);
+      const receivedUuid = regResp?.uuid || null;
+      const registerError = !regResp ? 'Нет ответа от сервера (timeout)' : null;
 
       if (registerError) throw new Error(registerError);
       if (!receivedUuid) throw new Error('Не получен UUID от сервера');
@@ -1139,26 +1156,14 @@ function setupReg(){
       await waitForServerReady();
       
       if (ws && ws.readyState === WebSocket.OPEN) {
-        // FIX: Send login after register so server knows who we are
-        await new Promise((resolve) => {
-          const timeout = setTimeout(resolve, 3000);
-          const origHandler = ws.onmessage;
-          ws.onmessage = (e) => {
-            const msg = JSON.parse(e.data);
-            if (msg.type === 'login-ok') {
-              clearTimeout(timeout);
-              resolve();
-            }
-            if (origHandler) origHandler(e);
-          };
-          
-          ws.send(JSON.stringify({
-            type: 'login',
-            uuid: receivedUuid,
-            password: passwordHash,
-            timestamp: Date.now()
-          }));
-        });
+        // FIX (3.4): Use waitForMessage instead of overwriting ws.onmessage
+        ws.send(JSON.stringify({
+          type: 'login',
+          uuid: receivedUuid,
+          password: passwordHash,
+          timestamp: Date.now()
+        }));
+        await waitForMessage('login-ok', 3000);
       }
 
       // FIX: NOW show the app after proper login
@@ -1192,7 +1197,13 @@ async function handleIncomingMessage(msg) {
     if (!renderedMsgIds.has(ts.toString())) {
       renderedMsgIds.add(ts.toString());
       appendMessage(localMsg);
-      scrollBottom();
+      // FIX (3.2): Smart scroll — only auto-scroll if already near bottom
+      if(isNearBottom()) {
+        scrollBottom();
+      } else {
+        const hint=document.getElementById('scrollDownHint');
+        if(hint) hint.style.display='block';
+      }
     }
   }
 
@@ -1464,6 +1475,11 @@ async function sendMessage(type, content){
     scrollBottom();
   }
   updateLastMessage(activeChat, content, message.ts, type);
+
+  // FIX (3.3): Refresh right info panel after media sends so tabs update immediately
+  if(activeChat && (type === 'image' || type === 'video' || type === 'file')) {
+    await renderInfoPanel(activeChat);
+  }
 }
 
 // ==================== RENDER ====================
@@ -1774,6 +1790,16 @@ function makeVoicePlayer(dataUrl){
 function scrollBottom(){
   const area=document.getElementById('messagesArea');
   area.scrollTop=area.scrollHeight;
+  // Hide hint when manually scrolled to bottom
+  const hint=document.getElementById('scrollDownHint');
+  if(hint) hint.style.display='none';
+}
+
+// FIX (3.2): Only auto-scroll if user is already near bottom — don't interrupt reading
+function isNearBottom(threshold=120){
+  const area=document.getElementById('messagesArea');
+  if(!area) return true;
+  return area.scrollHeight - area.scrollTop - area.clientHeight < threshold;
 }
 
 function updateLastMessage(chatId, content, ts, type){
@@ -1893,8 +1919,9 @@ function setupEvents(){
   document.getElementById('settingsAvatarFile').onchange=async()=>{
     const f=document.getElementById('settingsAvatarFile').files[0];
     if(!f) return;
-    const stripped=await stripExif(f);
-    const b64=await fileToBase64(stripped);
+    // FIX (2.1): processAvatar resizes to 200px JPEG
+    const processed=await processAvatar(f);
+    const b64=await fileToBase64(processed);
     myProfile.avatar=b64;
     const av=document.getElementById('settingsAv');
     renderAvatar(av, b64, myProfile.nickname);
@@ -1905,6 +1932,8 @@ function setupEvents(){
   document.getElementById('exportBtn').onclick=exportData;
   document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
   document.getElementById('importFile').onchange=importData;
+  // FIX (FIXES_REPORT 2.7): Clear all local data — account stays on server
+  document.getElementById('clearDataBtn').onclick=clearAllData;
 
   document.getElementById('sendBtn').onclick=doSend;
   document.getElementById('msgInput').onkeydown=e=>{
@@ -1934,7 +1963,10 @@ function setupEvents(){
   };
   document.getElementById('deleteBothBtn').onclick=()=>{
     if(activeChat && ws && ws.readyState === WebSocket.OPEN) {
-      sendToServer('delete-for-both', {to: activeChat, ts: null});
+      // FIX (2.5 / 3.6): Send real ts (last message ts) — not null
+      const contact = contacts.find(c => c.uuid === activeChat);
+      const ts = contact?.lastTs || Date.now();
+      sendToServer('delete-for-both', {to: activeChat, ts});
     }
     deleteChatLocal(activeChat);
     document.getElementById('deleteChatModal').style.display='none';
@@ -2043,6 +2075,16 @@ function showNoChatView(){
   document.getElementById('infoPanelEmpty').style.display='flex';
 }
 
+// FIX (FIXES_REPORT 2.7): Clear all local chats/contacts — account remains on server
+function clearAllData() {
+  if (!confirm('Удалить все чаты и контакты? Аккаунт на сервере останется.')) return;
+  indexedDB.deleteDatabase('Cipher');
+  localStorage.removeItem('cipherContacts');
+  document.getElementById('settingsModal').style.display='none';
+  showToast('Данные очищены. Перезагрузка...');
+  setTimeout(() => location.reload(), 1200);
+}
+
 async function deleteChatLocal(chatId){
   if(!chatId) return;
   await dbDeleteByIndex('messages','chatId',chatId);
@@ -2144,7 +2186,8 @@ async function handleFileAttach(){
   if(!f||!activeChat) return;
 
   if(f.type.startsWith('image/')){
-    const stripped=await stripExif(f);
+    // FIX (2.1): processAvatar with 800px cap for chat images — safe size for sending
+    const stripped=await processAvatar(f, 800);
     const b64=await fileToBase64(stripped);
     await sendMessage('image',b64);
   } else if(f.type.startsWith('video/')){
