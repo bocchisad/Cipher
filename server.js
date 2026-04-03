@@ -20,6 +20,7 @@ const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 const USERS_FILE = process.env.USERS_FILE || path.join(__dirname, 'users.json');
 const QUEUE_FILE = process.env.QUEUE_FILE || path.join(__dirname, 'queue.json');
+const ROOMS_FILE = process.env.ROOMS_FILE || path.join(__dirname, 'rooms.json');
 
 // ==================== SQLITE INTEGRATION ====================
 // Launch with: USE_SQLITE=1 node server.js  (or set in render.yaml)
@@ -73,6 +74,8 @@ function verifyPassword(pwd, stored) {
 // ws connections always in memory; persistent data goes to SQLite or JSON
 const users = new Map(); // uuid -> { ws, uuid, nickname, avatar, lastSeen, password }
 const messageQueue = new Map(); // uuid -> [{ from, to, content, ts, type }, ...]
+/** roomId -> { id, title, kind: 'group'|'channel', owner, members: string[], admins?: string[] } */
+const rooms = new Map();
 
 // ==================== STORAGE ABSTRACTION ====================
 function getUserFromStore(uuid) {
@@ -216,6 +219,44 @@ function loadQueueJSON() {
   }
 }
 
+function saveRoomsJSON() {
+  if (dbModule) return;
+  const data = {};
+  for (const [id, room] of rooms) {
+    data[id] = { ...room, members: [...room.members] };
+  }
+  const tmp = ROOMS_FILE + '.tmp';
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+    fs.renameSync(tmp, ROOMS_FILE);
+  } catch (e) {
+    console.error('💾 Save rooms error:', e.message);
+    try { fs.unlinkSync(tmp); } catch {}
+  }
+}
+
+function loadRoomsJSON() {
+  if (dbModule) return;
+  try {
+    if (fs.existsSync(ROOMS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(ROOMS_FILE, 'utf8'));
+      for (const [id, room] of Object.entries(data)) {
+        rooms.set(id, {
+          id,
+          title: room.title || id.slice(0, 8),
+          kind: room.kind === 'channel' ? 'channel' : 'group',
+          owner: room.owner,
+          members: Array.isArray(room.members) ? room.members : [],
+          admins: Array.isArray(room.admins) ? room.admins : []
+        });
+      }
+      console.log(`✓ Loaded ${rooms.size} rooms from JSON`);
+    }
+  } catch (e) {
+    console.error('💾 Load rooms error:', e.message);
+  }
+}
+
 // Backup users every 5 minutes (JSON mode only)
 setInterval(() => {
   if (!dbModule && fs.existsSync(USERS_FILE)) {
@@ -348,10 +389,23 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'rtc-offer':
     case 'rtc-answer':
     case 'rtc-ice':
+    case 'rtc-hangup':
       handleRtcSignal(uuid, type, data);
       break;
     case 'delete-for-both':
       handleDeleteForBoth(uuid, data);
+      break;
+    case 'delete-message':
+      handleDeleteMessage(uuid, data);
+      break;
+    case 'room-create':
+      handleRoomCreate(uuid, data);
+      break;
+    case 'room-join':
+      handleRoomJoin(uuid, data);
+      break;
+    case 'message-reaction':
+      handleMessageReaction(uuid, data);
       break;
     default:
       console.warn(`⚠️ Unknown message type: ${type}`);
@@ -508,8 +562,57 @@ function handleSendMessage(fromUuid, data) {
     return;
   }
 
-  const { to, content, ts, type: msgType } = data;
-  const message = { from: fromUuid, to, content, ts, type: msgType };
+  const { to, content, ts, type: msgType, roomId } = data;
+  const message = {
+    from: fromUuid,
+    to,
+    content,
+    ts,
+    type: msgType,
+    roomId: roomId || (rooms.has(to) ? to : undefined)
+  };
+
+  if (rooms.has(to)) {
+    const room = rooms.get(to);
+    if (room.kind === 'channel') {
+      const admins = new Set([room.owner, ...(room.admins || [])]);
+      if (!admins.has(fromUuid)) {
+        const fromUser = users.get(fromUuid);
+        if (fromUser?.ws && fromUser.ws.readyState === WebSocket.OPEN) {
+          safeWsSend(fromUser.ws, { type: 'error', error: 'В канале публикуют только администраторы' });
+        }
+        return;
+      }
+    }
+    if (!room.members.includes(fromUuid)) {
+      const fromUser = users.get(fromUuid);
+      if (fromUser?.ws && fromUser.ws.readyState === WebSocket.OPEN) {
+        safeWsSend(fromUser.ws, { type: 'error', error: 'Вы не в этой комнате' });
+      }
+      return;
+    }
+    for (const memberId of room.members) {
+      if (memberId === fromUuid) continue;
+      const u = users.get(memberId);
+      if (u?.ws && u.ws.readyState === WebSocket.OPEN) {
+        safeWsSend(u.ws, { type: 'message', data: message });
+      } else {
+        if (dbModule) {
+          dbModule.enqueueMessageForUser(memberId, message);
+        } else {
+          if (!messageQueue.has(memberId)) messageQueue.set(memberId, []);
+          messageQueue.get(memberId).push(message);
+          saveQueueJSON();
+        }
+      }
+    }
+    const fromUser = users.get(fromUuid);
+    if (fromUser?.ws && fromUser.ws.readyState === WebSocket.OPEN) {
+      safeWsSend(fromUser.ws, { type: 'delivered', data: { to, ts } });
+    }
+    console.log(`  📣 Room ${to.substring(0, 8)}...`);
+    return;
+  }
 
   console.log(`💬 ${fromUuid.substring(0, 8)}... → ${to.substring(0, 8)}...`);
 
@@ -518,7 +621,6 @@ function handleSendMessage(fromUuid, data) {
   if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
     safeWsSend(toUser.ws, { type: 'message', data: message });
 
-    // Delivery receipt to sender
     const fromUser = users.get(fromUuid);
     if (fromUser?.ws && fromUser.ws.readyState === WebSocket.OPEN) {
       safeWsSend(fromUser.ws, { type: 'delivered', data: { to, ts } });
@@ -526,9 +628,83 @@ function handleSendMessage(fromUuid, data) {
 
     console.log(`  ✓ Delivered to ${toUser.nickname}`);
   } else {
-    // [FIX-3.5] Queue is now persisted
     enqueueMessageToStore(message);
     console.log(`  ⏸️ Queued for ${to.substring(0, 8)}...`);
+  }
+}
+
+function handleRoomCreate(fromUuid, data) {
+  if (!fromUuid || !data?.title) {
+    const u = users.get(fromUuid);
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', error: 'Укажите название' });
+    return;
+  }
+  const kind = data.kind === 'channel' ? 'channel' : 'group';
+  const memberUuids = Array.isArray(data.memberUuids)
+    ? [...new Set(data.memberUuids.map((x) => String(x).trim().toLowerCase()).filter(Boolean))]
+    : [];
+  const id = generateUUID();
+  const members = new Set([fromUuid, ...memberUuids]);
+  const room = {
+    id,
+    title: String(data.title).slice(0, 64),
+    kind,
+    owner: fromUuid,
+    members: [...members],
+    admins: kind === 'channel' ? [fromUuid] : []
+  };
+  rooms.set(id, room);
+  saveRoomsJSON();
+  const creator = users.get(fromUuid);
+  if (creator?.ws) safeWsSend(creator.ws, { type: 'room-created', data: { room } });
+  const invite = { type: 'room-invite', data: { room } };
+  for (const mid of room.members) {
+    if (mid === fromUuid) continue;
+    const usr = users.get(mid);
+    if (usr?.ws && usr.ws.readyState === WebSocket.OPEN) safeWsSend(usr.ws, invite);
+  }
+  console.log(`📁 Room: ${room.title} (${id.substring(0, 8)}...)`);
+}
+
+function handleRoomJoin(fromUuid, data) {
+  if (!fromUuid || !data?.roomId) return;
+  const rid = String(data.roomId).trim().toLowerCase();
+  const room = rooms.get(rid);
+  if (!room) {
+    const u = users.get(fromUuid);
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', error: 'Комната не найдена' });
+    return;
+  }
+  if (!room.members.includes(fromUuid)) {
+    room.members.push(fromUuid);
+    saveRoomsJSON();
+  }
+  const u = users.get(fromUuid);
+  if (u?.ws) safeWsSend(u.ws, { type: 'room-joined', data: { room } });
+}
+
+function handleMessageReaction(fromUuid, data) {
+  if (!data?.to || data.ts == null || !data.emoji) return;
+  const payload = {
+    type: 'message-reaction',
+    data: {
+      from: fromUuid,
+      to: data.to,
+      ts: data.ts,
+      emoji: data.emoji,
+      remove: !!data.remove
+    }
+  };
+  if (rooms.has(data.to)) {
+    const room = rooms.get(data.to);
+    for (const memberId of room.members) {
+      if (memberId === fromUuid) continue;
+      const u = users.get(memberId);
+      if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
+    }
+  } else {
+    const u = users.get(data.to);
+    if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
   }
 }
 
@@ -571,6 +747,19 @@ function handleDeleteForBoth(fromUuid, data) {
   }
 }
 
+/** Удаление одного сообщения у собеседника (только scope both — «у всех») */
+function handleDeleteMessage(fromUuid, data) {
+  if (!data?.to || data.ts == null) return;
+  if (data.scope !== 'both') return;
+  const toUser = users.get(data.to);
+  if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
+    safeWsSend(toUser.ws, {
+      type: 'message-deleted',
+      data: { from: fromUuid, ts: data.ts }
+    });
+  }
+}
+
 // ==================== BROADCAST ====================
 function broadcast(msg, excludeUuid = null) {
   const data = JSON.stringify(msg);
@@ -593,6 +782,7 @@ function shutdown() {
   console.log('\n👋 Shutting down...');
   saveUsersJSON();
   saveQueueJSON();
+  saveRoomsJSON();
   if (dbModule) dbModule.closeDatabase();
   wss.clients.forEach(ws => ws.close());
   app.close(() => {
@@ -607,6 +797,7 @@ process.on('SIGTERM', shutdown);
 // ==================== START ====================
 loadUsersJSON();
 loadQueueJSON();
+loadRoomsJSON();
 
 app.listen(PORT, HOST, () => {
   console.log(`
