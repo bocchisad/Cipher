@@ -436,6 +436,9 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'message-reaction':
       handleMessageReaction(uuid, data);
       break;
+    case 'ping':
+      // keep-alive от клиента (прокси / Render idle)
+      break;
     default:
       console.warn(`⚠️ Unknown message type: ${type}`);
   }
