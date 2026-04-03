@@ -663,6 +663,7 @@ let serverReadyReceived = false;
 
 function disconnectWebSocket() {
   return new Promise((resolve) => {
+    stopClientWsPing();
     try {
       if (ws) {
         ws.onclose = null;
@@ -710,8 +711,8 @@ function connectWebSocket() {
       const wsTemp = new WebSocket(addr);
       const timeout = setTimeout(() => {
         wsTemp.close();
-        reject(new Error('Connection timeout (10s)'));
-      }, 10000);
+        reject(new Error('Connection timeout (25s)'));
+      }, 25000);
 
       wsTemp.onopen = () => {
         clearTimeout(timeout);
@@ -767,7 +768,8 @@ function setupWSHandlers() {
   };
 
   ws.onclose = () => {
-    console.error('❌ WebSocket closed:', ws.code, ws.reason || '(no reason)');
+    console.error('❌ WebSocket closed:', ws?.code, ws?.reason || '(no reason)');
+    stopClientWsPing();
     serverReadyReceived = false;
     connectionState = 'disconnected';
     updateConnStatus(false);
@@ -816,7 +818,7 @@ function attemptReconnect() {
   }, delay);
 }
 
-function waitForServerReady(timeoutMs = 2000) {
+function waitForServerReady(timeoutMs = 8000) {
   return new Promise((resolve) => {
     const deadline = setTimeout(resolve, timeoutMs);
     const check = setInterval(() => {
@@ -825,14 +827,61 @@ function waitForServerReady(timeoutMs = 2000) {
   });
 }
 
+/** Типы, которые нельзя откладывать (сессия звонка протухнет) */
+const WS_NO_QUEUE_TYPES = new Set(['rtc-offer', 'rtc-answer', 'rtc-ice', 'rtc-hangup']);
+/** Очередь до появления сокета + login (Render sleep / плохая сеть) */
+let pendingOutbound = [];
+
+function flushPendingOutbound() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !myProfile?.uuid) return;
+  let n = 0;
+  while (pendingOutbound.length) {
+    const { type, data } = pendingOutbound[0];
+    try {
+      ws.send(JSON.stringify({ type, data, uuid: myProfile.uuid, timestamp: Date.now() }));
+      pendingOutbound.shift();
+      n++;
+    } catch (e) {
+      console.warn('flushPendingOutbound failed', type, e);
+      break;
+    }
+  }
+  if (n) console.log(`📤 Отправлено из очереди: ${n} сообщ.`);
+}
+
 // ==================== FIX #1: sendToServer — uuid not username ====================
 function sendToServer(type, data) {
   const msg = { type, data, uuid: myProfile.uuid, timestamp: Date.now() };
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
+    try {
+      ws.send(JSON.stringify(msg));
+    } catch (e) {
+      console.warn('ws.send error', e);
+      if (!WS_NO_QUEUE_TYPES.has(type)) pendingOutbound.push({ type, data });
+    }
   } else {
-    console.warn(`⚠️ "${type}" — no connection, saved locally only`);
+    if (WS_NO_QUEUE_TYPES.has(type)) {
+      console.warn(`⚠️ "${type}" — нет соединения (звонок отмените и повторите после подключения)`);
+      return;
+    }
+    pendingOutbound.push({ type, data });
+    console.warn(`⚠️ "${type}" в очереди (${pendingOutbound.length}), отправим после входа на сервер`);
   }
+}
+
+let clientWsPingTimer = null;
+function startClientWsPing() {
+  if (clientWsPingTimer) clearInterval(clientWsPingTimer);
+  clientWsPingTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN && myProfile?.uuid) {
+      try {
+        ws.send(JSON.stringify({ type: 'ping', uuid: myProfile.uuid, timestamp: Date.now() }));
+      } catch (_) {}
+    }
+  }, 30000);
+}
+function stopClientWsPing() {
+  if (clientWsPingTimer) { clearInterval(clientWsPingTimer); clientWsPingTimer = null; }
 }
 
 function handleServerMessage(msg) {
@@ -908,6 +957,8 @@ function handleServerMessage(msg) {
           renderChatHeader();
         }
       }
+      flushPendingOutbound();
+      startClientWsPing();
       break;
     case 'error':
       const errText = data?.error || msg.error;
@@ -2065,6 +2116,7 @@ function renderSidebar(){
       
       for (let i = renderIndex; i < endIndex; i++) {
         const c = contacts[i];
+        if (!c || c.uuid === '_metadata') continue;
         const item=document.createElement('div');
         item.className='chat-item'+(activeChat===c.uuid?' active':'');
         item.dataset.id=c.uuid;
@@ -2080,7 +2132,8 @@ function renderSidebar(){
         info.className='info';
         const name=document.createElement('div');
         name.className='name';
-        name.textContent=c.nickname||c.uuid;
+        const prefix = c.kind === 'channel' ? '📢 ' : (c.kind === 'group' ? '👥 ' : '');
+        name.textContent = prefix + (c.nickname || c.uuid);
         const last=document.createElement('div');
         last.className='last';
         last.textContent=c.lastMsg||'Нет сообщений';
