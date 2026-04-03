@@ -1503,12 +1503,12 @@ async function startApp(uuid) {
     if (!isAvatarSafe(myProfile.avatar)) {
       console.warn('⚠️ Local avatar is too large, clearing...');
       myProfile.avatar = '';
-      await dbPut('profile', myProfile);
+      await dbPut('profile', {key: 'profile', ...myProfile});
     }
     console.log('✓ Profile loaded');
   } else {
     myProfile = { nickname: 'User_' + uuid.slice(0, 4), avatar: '' };
-    await dbPut('profile', myProfile);
+    await dbPut('profile', {key: 'profile', ...myProfile});
   }
 
   // 2. Загрузка контактов
