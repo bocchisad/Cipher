@@ -1416,10 +1416,16 @@ async function startApp(uuid){
     console.log('🚀 Cipher started for:', uuid.substring(0, 8) + '...');
     myProfile.uuid = uuid;
 
-    console.log('📦 Loading profile from DB...');
+console.log('📦 Loading profile from DB...');
     const saved = await dbGet('profile', 'profile');
     if(saved) {
       myProfile = saved;
+      if (!isAvatarSafe(myProfile.avatar)) {
+        console.warn('⚠️ Локальная аватарка слишком большая или повреждена. Очистка...');
+        myProfile.avatar = '';
+        await dbPut('profile', myProfile);
+      }
+      
       console.log('✓ Profile loaded');
     } else {
       await dbPut('profile', {key: 'profile', ...myProfile});
@@ -1447,10 +1453,10 @@ async function startApp(uuid){
     setupEvents();
     console.log('✓ Events set up');
 
-    // FIX: correct field name 'nickname' not 'nick'
     if(ws && ws.readyState === WebSocket.OPEN) {
       console.log('📤 Sending profile update...');
-      sendToServer('profile-update', { nickname: myProfile.nickname, avatar: myProfile.avatar });
+      const safeAvatar = isAvatarSafe(myProfile.avatar) ? myProfile.avatar : '';
+      sendToServer('profile-update', { nickname: myProfile.nickname, avatar: safeAvatar });
     }
 
     // FIX (Недочёт #4): Request browser notification permission
