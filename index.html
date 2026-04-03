@@ -1414,8 +1414,7 @@ async function handleDeleteForBothReceived(data) {
 async function startApp(uuid) {
   myUuid = uuid;
   console.log('🚀 Cipher started for:', uuid);
-
-<<<<<<< HEAD
+  
   // 1. Загрузка профиля
   console.log('📦 Loading profile from DB...');
   const saved = await dbGet('profile', 'profile');
@@ -1431,60 +1430,6 @@ async function startApp(uuid) {
   } else {
     myProfile = { nickname: 'User_' + uuid.slice(0, 4), avatar: '' };
     await dbPut('profile', myProfile);
-=======
-console.log('📦 Loading profile from DB...');
-    const saved = await dbGet('profile', 'profile');
-    if(saved) {
-      myProfile = saved;
-      if (!isAvatarSafe(myProfile.avatar)) {
-        console.warn('⚠️ Локальная аватарка слишком большая или повреждена. Очистка...');
-        myProfile.avatar = '';
-        await dbPut('profile', myProfile);
-      }
-      
-      console.log('✓ Profile loaded');
-    } else {
-      await dbPut('profile', {key: 'profile', ...myProfile});
-      console.log('✓ Profile created');
-    }
-
-    console.log('📋 Loading contacts from DB...');
-    const savedContacts = await dbGetAll('contacts');
-    contacts = savedContacts
-      .filter(c => c.uuid !== '_metadata')
-      .map(c => ({
-        ...c,
-        type: c.type || 'friend'
-      }));
-    console.log(`✓ Loaded ${contacts.length} contacts`);
-
-    console.log('🎨 Rendering sidebar...');
-    renderSidebar();
-    console.log('✓ Sidebar rendering scheduled');
-
-    console.log('📄 Showing empty chat view...');
-    showNoChatView();
-    
-    console.log('🔧 Setting up events...');
-    setupEvents();
-    console.log('✓ Events set up');
-
-    if(ws && ws.readyState === WebSocket.OPEN) {
-      console.log('📤 Sending profile update...');
-      const safeAvatar = isAvatarSafe(myProfile.avatar) ? myProfile.avatar : '';
-      sendToServer('profile-update', { nickname: myProfile.nickname, avatar: safeAvatar });
-    }
-
-    // FIX (Недочёт #4): Request browser notification permission
-    if ('Notification' in window && Notification.permission === 'default') {
-      setTimeout(() => Notification.requestPermission(), 2000);
-    }
-    
-    console.log('✅ App fully initialized');
-  } catch (err) {
-    console.error('❌ startApp error:', err);
-    throw err;
->>>>>>> f60b42bbcfc444dd501a383fb07d67b16eb65476
   }
 
   // 2. Загрузка контактов
