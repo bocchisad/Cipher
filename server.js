@@ -160,11 +160,11 @@ function dequeueMessagesFromStore(uuid) {
   if (dbModule) {
     return dbModule.dequeueMessages(n);
   }
-  const msgs = [];
+  let msgs = [...(messageQueue.get(n) || [])];
+  messageQueue.delete(n);
   for (const [k, arr] of [...messageQueue.entries()]) {
-    if (!arr?.length) continue;
-    if (normUid(k) === n) {
-      msgs.push(...arr);
+    if (normUid(k) === n && arr?.length) {
+      msgs = msgs.concat(arr);
       messageQueue.delete(k);
     }
   }
@@ -469,6 +469,9 @@ async function handleMessage(ws, msg, setUserId, ip) {
       break;
     case 'room-update':
       handleRoomUpdate(uuid, data);
+      break;
+    case 'room-delete':
+      handleRoomDelete(uuid, data);
       break;
     case 'message-reaction':
       handleMessageReaction(uuid, data);
@@ -883,6 +886,34 @@ function handleRoomUpdate(fromUuid, data) {
   normalizeRoom(room);
   saveRoomsJSON();
   broadcastRoomToMembers(room);
+}
+
+function handleRoomDelete(fromUuid, data) {
+  const u = getUserLive(fromUuid);
+  if (!data?.roomId) return;
+  const rid = normUid(data.roomId);
+  const room = rooms.get(rid);
+  if (!room) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Комната не найдена' } });
+    return;
+  }
+  normalizeRoom(room);
+  if (normUid(room.owner) !== normUid(fromUuid)) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Удалить может только владелец' } });
+    return;
+  }
+  const members = [...room.members];
+  if (room.kind === 'channel' && room.username) {
+    channelUsernames.delete(String(room.username).toLowerCase());
+  }
+  rooms.delete(rid);
+  saveRoomsJSON();
+  const payload = { type: 'room-deleted', data: { roomId: rid } };
+  for (const mid of members) {
+    const usr = getUserLive(mid);
+    if (usr?.ws && usr.ws.readyState === WebSocket.OPEN) safeWsSend(usr.ws, payload);
+  }
+  console.log(`🗑️ Room deleted ${rid.substring(0, 8)}… by owner`);
 }
 
 function handleRoomAdmin(fromUuid, data) {
