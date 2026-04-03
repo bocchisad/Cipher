@@ -1411,59 +1411,53 @@ async function handleDeleteForBothReceived(data) {
 }
 
 // ==================== START APP ====================
-async function startApp(uuid){
-  try {
-    console.log('🚀 Cipher started for:', uuid.substring(0, 8) + '...');
-    myProfile.uuid = uuid;
+async function startApp(uuid) {
+  myUuid = uuid;
+  console.log('🚀 Cipher started for:', uuid);
 
-    console.log('📦 Loading profile from DB...');
-    const saved = await dbGet('profile', 'profile');
-    if(saved) {
-      myProfile = saved;
-      console.log('✓ Profile loaded');
-    } else {
-      await dbPut('profile', {key: 'profile', ...myProfile});
-      console.log('✓ Profile created');
+  // 1. Загрузка профиля
+  console.log('📦 Loading profile from DB...');
+  const saved = await dbGet('profile', 'profile');
+  if (saved) {
+    myProfile = saved;
+    // Если аватарка из базы слишком тяжелая — чистим её, иначе она убьет сокет опять
+    if (!isAvatarSafe(myProfile.avatar)) {
+      console.warn('⚠️ Local avatar is too large, clearing...');
+      myProfile.avatar = '';
+      await dbPut('profile', myProfile);
     }
-
-    console.log('📋 Loading contacts from DB...');
-    const savedContacts = await dbGetAll('contacts');
-    contacts = savedContacts
-      .filter(c => c.uuid !== '_metadata')
-      .map(c => ({
-        ...c,
-        type: c.type || 'friend'
-      }));
-    console.log(`✓ Loaded ${contacts.length} contacts`);
-
-    console.log('🎨 Rendering sidebar...');
-    renderSidebar();
-    console.log('✓ Sidebar rendering scheduled');
-
-    console.log('📄 Showing empty chat view...');
-    showNoChatView();
-    
-    console.log('🔧 Setting up events...');
-    setupEvents();
-    console.log('✓ Events set up');
-
-    // FIX: correct field name 'nickname' not 'nick'
-    if(ws && ws.readyState === WebSocket.OPEN) {
-      console.log('📤 Sending profile update...');
-      sendToServer('profile-update', { nickname: myProfile.nickname, avatar: myProfile.avatar });
-    }
-
-    // FIX (Недочёт #4): Request browser notification permission
-    if ('Notification' in window && Notification.permission === 'default') {
-      setTimeout(() => Notification.requestPermission(), 2000);
-    }
-    
-    console.log('✅ App fully initialized');
-  } catch (err) {
-    console.error('❌ startApp error:', err);
-    throw err;
+    console.log('✓ Profile loaded');
+  } else {
+    myProfile = { nickname: 'User_' + uuid.slice(0, 4), avatar: '' };
+    await dbPut('profile', myProfile);
   }
+
+  // 2. Загрузка контактов
+  console.log('📋 Loading contacts from DB...');
+  const storedContacts = await dbGetAll('contacts');
+  contacts.clear();
+  storedContacts.forEach(c => contacts.set(c.uuid, c));
+  console.log('✓ Loaded', contacts.size, 'contacts');
+
+  renderSidebar();
+
+  // 3. Настройка событий
+  console.log('🔧 Setting up events...');
+  setupAppEvents();
+
+  // 4. Отправка данных на сервер (БЕЗОПАСНАЯ)
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    console.log('📤 Sending profile update...');
+    const safeAvatar = isAvatarSafe(myProfile.avatar) ? myProfile.avatar : '';
+    sendToServer('profile-update', { 
+      nickname: myProfile.nickname, 
+      avatar: safeAvatar 
+    });
+  }
+
+  console.log('✅ App fully initialized');
 }
+
 
 // ==================== SEND ====================
 async function sendMessage(type, content){
