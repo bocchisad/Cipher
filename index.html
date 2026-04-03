@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cipher — P2P Messenger</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f8ef7'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='white' font-size='16' font-family='system-ui,sans-serif' font-weight='700'%3EC%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -81,8 +82,9 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .chat-item{display:flex;align-items:center;gap:10px;padding:10px 10px;border-radius:var(--r);cursor:pointer;transition:background .15s;position:relative;}
 .chat-item:hover{background:var(--bg3)}
 .chat-item.active{background:var(--bg4);box-shadow:inset 3px 0 0 var(--accent)}
-.chat-item{animation:chatIn .22s ease both}
-@keyframes chatIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.chat-item{animation:chatIn .16s ease-out both}
+@keyframes chatIn{from{opacity:.75}to{opacity:1}}
+.chat-item .av.has-unread::after{content:'';position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:2px solid var(--bg1);box-sizing:border-box;display:none}
 .chat-item .av{width:42px;height:42px;min-width:42px;border-radius:50%;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--accent);position:relative;}
 .chat-item .av img{width:100%;height:100%;object-fit:cover}
 .online-dot{width:10px;height:10px;border-radius:50%;background:var(--green);border:2px solid var(--bg1);position:absolute;bottom:1px;right:1px;}
@@ -158,8 +160,8 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .send-btn:active{transform:scale(.92)}
 .send-btn svg{color:#fff}
 #recordBtn{color:var(--text2)}
-#recordBtn.recording{color:var(--red);animation:pulse .8s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+#recordBtn.recording{color:var(--red);animation:pulseRec 1.2s ease-in-out infinite}
+@keyframes pulseRec{0%,100%{opacity:1}50%{opacity:.55}}
 
 /* RIGHT PANEL */
 #infoPanel{width:var(--info-w);min-width:200px;max-width:min(520px,50vw);flex-shrink:0;background:var(--bg1);border-left:1px solid var(--border);display:flex;flex-direction:column;height:100%;overflow:hidden;min-height:0}
@@ -184,10 +186,10 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .empty-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;color:var(--text3);font-size:12px;gap:8px;}
 
 /* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);animation:overlayIn .2s ease}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);animation:overlayIn .14s ease}
 @keyframes overlayIn{from{opacity:0}to{opacity:1}}
-.modal{animation:modalPop .24s cubic-bezier(.2,.9,.2,1)}
-@keyframes modalPop{from{opacity:0;transform:scale(.96) translateY(8px)}to{opacity:1;transform:none}}
+.modal{animation:modalPop .18s ease-out}
+@keyframes modalPop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r2);padding:24px 22px;width:min(420px,94vw);max-height:min(90dvh,800px);overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.5);}
 .modal h2{font-size:18px;font-weight:700;margin-bottom:20px}
 .modal label{font-size:12px;color:var(--text2);display:block;margin-bottom:6px;margin-top:14px}
@@ -281,7 +283,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .msg-call-log .bubble{background:var(--bg2)!important;border-style:dashed!important;color:var(--text2);font-size:12px;padding:8px 14px!important}
 #voiceRecordBar{display:none;align-items:center;gap:10px;padding:8px 12px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
 #voiceRecordBar.active{display:flex}
-.voice-rec-pulse{width:10px;height:10px;border-radius:50%;background:var(--red);animation:pulse .9s infinite}
+.voice-rec-pulse{width:10px;height:10px;border-radius:50%;background:var(--red);animation:pulseRec 1.2s ease-in-out infinite}
 .voice-rec-time{font-variant-numeric:tabular-nums;font-size:13px;color:var(--text2);min-width:48px}
 #attachQueue{display:none;flex-wrap:wrap;gap:6px;padding:8px 12px;border-top:1px solid var(--border);background:var(--bg1)}
 #attachQueue.active{display:flex}
@@ -316,12 +318,66 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .mobile-only{display:none!important}
 @media (max-width:900px){
   .mobile-only{display:flex!important}
-  #app{flex-direction:row;align-items:stretch;height:100dvh;min-height:0}
-  /* Telegram-like: список на весь экран ИЛИ чат на весь экран */
+  #app{
+    flex-direction:row;
+    align-items:stretch;
+    height:100dvh;
+    min-height:0;
+    background:linear-gradient(165deg,#10121a 0%,#0b0c10 42%,#12151e 100%);
+  }
+  html,body{background:linear-gradient(165deg,#10121a 0%,#0b0c10 42%,#12151e 100%)}
+  /* Только список чатов */
   #app:not(.app-chat-open) #mainChat{display:none!important}
-  #app:not(.app-chat-open) #sidebar{width:100%!important;min-width:0!important;max-width:none!important;border-right:none}
-  #app.app-chat-open #sidebar{display:none!important}
-  #app.app-chat-open #mainChat{display:flex!important;width:100%!important;flex:1!important;min-width:0!important}
+  #app:not(.app-chat-open) #sidebar{
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+    border-right:none;
+    background:linear-gradient(180deg,#14161f 0%,#0e0f14 100%);
+  }
+  /* Чат открыт: узкая колонка аватаров + переписка (как в Telegram) */
+  #app.app-chat-open #mainChat{
+    display:flex!important;
+    flex:1!important;
+    min-width:0!important;
+    width:auto!important;
+    background:linear-gradient(180deg,#12141c 0%,#0c0d11 100%);
+  }
+  #app.app-chat-open #sidebar{
+    display:flex!important;
+    width:56px!important;
+    min-width:56px!important;
+    max-width:56px!important;
+    border-right:1px solid var(--border);
+    background:#111318;
+  }
+  #app.app-chat-open #sidebar .logo{display:none!important}
+  #app.app-chat-open #sidebar .sidebar-top{
+    flex-direction:column;
+    align-items:center;
+    padding:max(8px, env(safe-area-inset-top)) 4px 8px;
+    gap:10px;
+    border-bottom:1px solid var(--border);
+  }
+  #app.app-chat-open #sidebar .chat-item{
+    flex-direction:column;
+    padding:6px 2px;
+    justify-content:center;
+    align-items:center;
+    animation:none;
+  }
+  #app.app-chat-open #sidebar .chat-item .info,
+  #app.app-chat-open #sidebar .chat-item .meta{display:none!important}
+  #app.app-chat-open #sidebar .chat-item .av{width:40px;height:40px;min-width:40px;font-size:14px}
+  #app.app-chat-open #sidebar .chat-item .av.has-unread::after{display:block}
+  #app.app-chat-open #sidebar .sidebar-bottom{
+    flex-direction:column;
+    align-items:center;
+    padding:8px 4px max(10px, env(safe-area-inset-bottom));
+    gap:6px;
+  }
+  #app.app-chat-open #sidebar .sidebar-bottom .my-name,
+  #app.app-chat-open #sidebar .sidebar-bottom .status-dot{display:none!important}
   #sidebar{
     flex-shrink:0;
     display:flex!important;
@@ -330,26 +386,60 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
     transform:none!important;
   }
   #sidebar .sidebar-top{padding-top:max(10px, env(safe-area-inset-top))}
-  #chatList{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  #chatList{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 4px}
   #sidebar .sidebar-bottom{padding:10px 8px;flex-shrink:0}
   .panel-resizer{display:none!important}
   #resizeSidebar,#resizeInfo{display:none!important}
-  #mainChat{flex:1;min-width:0;display:flex!important;flex-direction:column;min-height:0}
-  #app:not(.app-chat-open) #mainChat{display:flex!important}
-  #app.app-chat-open #sidebar{display:flex!important}
-  #mobileBackBtn{display:none!important}
+  #mainChat{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+  #app.app-chat-open #mobileBackBtn{display:flex!important;align-items:center;justify-content:center}
+  #app:not(.app-chat-open) #mobileBackBtn{display:none!important}
   #infoPanel{
     position:fixed;right:0;top:0;bottom:0;width:min(100%,380px);max-width:100%;z-index:400;
-    transform:translateX(100%);transition:transform .22s ease;border-left:1px solid var(--border)
+    transform:translateX(100%);transition:transform .2s ease-out;border-left:1px solid var(--border)
   }
-  #infoPanel.info-open{transform:translateX(0);box-shadow:-8px 0 32px rgba(0,0,0,.5)}
-  #app.info-overlay::before{content:'';position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:399}
+  #infoPanel.info-open{transform:translateX(0);box-shadow:-8px 0 32px rgba(0,0,0,.45)}
+  #app.info-overlay::before{content:'';position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:399}
   .reg-box{padding:24px 20px;width:100%}
-  #chatHeader{padding-left:8px;padding-right:8px;padding-top:max(4px, env(safe-area-inset-top))}
-  #chatHeader .hbtns .icon-btn{padding:6px;min-width:40px;min-height:40px}
-  #inputArea{padding:10px 10px;padding-bottom:max(12px, env(safe-area-inset-bottom));flex-wrap:nowrap;gap:6px}
-  #msgInput{font-size:16px}
-  #messagesArea{padding:10px min(12px,3vw)}
+  #chatHeader{padding-left:6px;padding-right:6px;padding-top:max(4px, env(safe-area-inset-top));flex-wrap:nowrap;gap:8px}
+  #chatHeader .hbtns{flex-shrink:0}
+  #chatHeader .hbtns .icon-btn{padding:6px;min-width:38px;min-height:38px}
+  #inputArea{
+    padding:10px 8px;
+    padding-bottom:max(10px, env(safe-area-inset-bottom));
+    flex-direction:row;
+    flex-wrap:nowrap;
+    align-items:flex-end;
+    gap:6px;
+    background:rgba(17,19,24,.92);
+  }
+  #msgInput{
+    font-size:16px;
+    writing-mode:horizontal-tb;
+    text-orientation:mixed;
+    min-height:44px;
+  }
+  #messagesArea{padding:10px min(10px,3vw);background:transparent}
+  #chatView{min-width:0}
+  .conn-status{
+    top:max(6px, env(safe-area-inset-top));
+    bottom:auto;
+    right:8px;
+    left:auto;
+    font-size:10px;
+    padding:5px 9px;
+    z-index:120;
+    opacity:.92;
+    pointer-events:none;
+    max-width:min(140px, 36vw);
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  #voiceRecordBar{flex-wrap:wrap;row-gap:8px}
+  #emojiPicker{bottom:64px;right:8px;left:8px;max-width:none}
+}
+@media (max-width:900px) and (prefers-reduced-motion:reduce){
+  .chat-item,.modal-overlay,.modal,#infoPanel{animation:none!important;transition-duration:.01ms!important}
 }
 </style>
 </head>
@@ -1251,7 +1341,7 @@ async function handleIncomingReaction(data) {
     m.reactions[em].push(uid);
   }
   await dbPut('messages', m);
-  if (activeChat === chatTarget) {
+  if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
     updateMessageReactionRow(data.ts);
   }
 }
@@ -1928,10 +2018,13 @@ async function handleIncomingMessage(msg) {
   if (normUid(from) === normUid(myProfile.uuid)) return;
 
   const chatId = getIncomingChatId(msg);
-  const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: activeChat === chatId, reactions: msg.reactions || {}};
+  const here = activeChat ? normUid(activeChat) : '';
+  const ch = normUid(chatId);
+  const sameChat = !!(here && here === ch);
+  const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}};
   await dbPut('messages', localMsg);
 
-  if(activeChat === chatId) {
+  if (sameChat) {
     if (!renderedMsgIds.has(ts.toString())) {
       renderedMsgIds.add(ts.toString());
       appendMessage(localMsg);
@@ -1948,13 +2041,13 @@ async function handleIncomingMessage(msg) {
   updateLastMessage(chatId, content, ts, type);
 
   const contact = contacts.find((c) => normUid(c.uuid) === chatId);
-  if(contact && activeChat !== chatId) {
+  if (contact && !sameChat) {
     contact.unread = (contact.unread || 0) + 1;
     await dbPut('contacts', contact);
   }
 
   // FIX (Недочёт #4): Browser notifications
-  if (document.hidden || activeChat !== chatId) {
+  if (document.hidden || !sameChat) {
     if ('Notification' in window && Notification.permission === 'granted') {
       const sender = contacts.find((c) => normUid(c.uuid) === chatId);
       const name = sender?.nickname || chatId.substring(0, 8);
@@ -2062,9 +2155,10 @@ function handleUserOnline(userInfo) {
   if(contact) {
     contact.online = true;
     if(nickname) contact.nickname = nickname;
-    // Validate avatar before setting
-    if(avatar && isValidAvatar(avatar)) {
+    if (avatar && isAvatarSafe(avatar)) {
       contact.avatar = avatar;
+    } else if (avatar) {
+      contact.avatar = '';
     }
     
     const cleaned = sanitizeContact(contact);
@@ -2311,10 +2405,11 @@ function renderSidebar() {
     const c = contacts[i];
     if (!c || c.uuid === '_metadata') continue;
     const item = document.createElement('div');
-    item.className = 'chat-item' + (activeChat === c.uuid ? ' active' : '');
+    item.className = 'chat-item' + (normUid(activeChat) === normUid(c.uuid) ? ' active' : '');
     item.dataset.id = c.uuid;
     const av = document.createElement('div');
     av.className = 'av';
+    if ((c.unread || 0) > 0) av.classList.add('has-unread');
     renderAvatar(av, c.avatar, c.nickname || c.uuid);
     if (c.online && c.kind !== 'saved') {
       const dot = document.createElement('div');
@@ -3083,16 +3178,18 @@ async function appendCallLogToChat(peerUuid, text) {
   const chatId = normUid(peerUuid);
   if (!chatId || !text) return;
   const ts = Date.now();
+  const openHere = activeChat ? normUid(activeChat) : '';
+  const inThisChat = openHere === chatId;
   const localMsg = {
     chatId,
     from: normUid(myProfile.uuid),
     type: 'call-log',
     content: text,
     ts,
-    read: activeChat === chatId
+    read: inThisChat
   };
   await dbPut('messages', localMsg);
-  if (activeChat === chatId) {
+  if (inThisChat) {
     renderedMsgIds.add(String(ts));
     appendMessage({ ...localMsg, chatId });
     scrollBottom();
@@ -3919,19 +4016,22 @@ function iceToJSON(c) {
 function attachRemoteStream(stream) {
   const rv = document.getElementById('callRemoteVideo');
   const ra = document.getElementById('callRemoteAudio');
-  if (!stream || !rv || !ra) return;
-  const vtracks = stream.getVideoTracks().filter((t) => t.readyState === 'live');
-  if (vtracks.length) {
-    rv.srcObject = stream;
+  if (!stream || !rv) return;
+  try {
+    stream.getAudioTracks().forEach((t) => {
+      t.enabled = true;
+    });
+  } catch (_) {}
+  /* Один <video> для всего удалённого потока — так надёжнее для звука в Chrome/Android/iOS, чем раздельно audio/video */
+  rv.srcObject = stream;
+  rv.muted = false;
+  if ('volume' in rv) rv.volume = 1;
+  rv.play().catch(() => {});
+  if (ra) {
     ra.srcObject = null;
-    rv.muted = false;
-    rv.play().catch(() => {});
-  } else {
-    ra.srcObject = stream;
-    rv.srcObject = null;
-    ra.volume = 1;
-    ra.muted = false;
-    ra.play().catch(() => {});
+    try {
+      ra.pause();
+    } catch (_) {}
   }
 }
 
