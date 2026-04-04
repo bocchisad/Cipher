@@ -454,14 +454,13 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 <!-- REGISTRATION -->
 <div id="regOverlay">
   <div class="reg-box">
-    <button type="button" id="regCloseBtn" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--text2);cursor:pointer;font-size:24px;line-height:1;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:var(--r);transition:all .2s" title="Закрыть">×</button>
     <h1><span>Cipher</span></h1>
     <p>P2P-месcенджер с E2E шифрованием</p>
     
     <!-- TABS -->
     <div class="auth-tabs" id="authTabs">
-      <div class="auth-tab active" id="authTabLogin" data-tab="login">Вход</div>
-      <div class="auth-tab" id="authTabRegister" data-tab="register">Регистрация</div>
+      <div class="auth-tab active" id="authTabLogin" data-tab="login" onclick="document.getElementById('loginForm').style.display='block';document.getElementById('registerForm').style.display='none';this.classList.add('active');document.getElementById('authTabRegister').classList.remove('active')">Вход</div>
+      <div class="auth-tab" id="authTabRegister" data-tab="register" onclick="document.getElementById('loginForm').style.display='none';document.getElementById('registerForm').style.display='block';this.classList.add('active');document.getElementById('authTabLogin').classList.remove('active')">Регистрация</div>
     </div>
     
     <!-- LOGIN FORM -->
