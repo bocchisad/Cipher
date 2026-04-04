@@ -28,8 +28,8 @@
   --text3:#545e72;
   --font:'Syne',sans-serif;
   --mono:'JetBrains Mono',monospace;
-  --r:10px;
-  --r2:16px;
+  --r:12px;
+  --r2:20px;
   --sidebar:280px;
   --info:280px;
   --sidebar-w:280px;
@@ -82,8 +82,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .chat-item{display:flex;align-items:center;gap:10px;padding:10px 10px;border-radius:var(--r);cursor:pointer;transition:background .15s;position:relative;}
 .chat-item:hover{background:var(--bg3)}
 .chat-item.active{background:var(--bg4);box-shadow:inset 3px 0 0 var(--accent)}
-.chat-item{animation:chatIn .16s ease-out both}
-@keyframes chatIn{from{opacity:.75}to{opacity:1}}
+.chat-item{}
 .chat-item .av.has-unread::after{content:'';position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:2px solid var(--bg1);box-sizing:border-box;display:none}
 .chat-item .av{width:42px;height:42px;min-width:42px;border-radius:50%;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--accent);position:relative;}
 .chat-item .av img{width:100%;height:100%;object-fit:cover}
@@ -160,36 +159,36 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .send-btn:active{transform:scale(.92)}
 .send-btn svg{color:#fff}
 #recordBtn{color:var(--text2)}
-#recordBtn.recording{color:var(--red);animation:pulseRec 1.2s ease-in-out infinite}
-@keyframes pulseRec{0%,100%{opacity:1}50%{opacity:.55}}
+#recordBtn.recording{color:var(--red)}
+@keyframes none{}
 
 /* RIGHT PANEL */
 #infoPanel{width:var(--info-w);min-width:200px;max-width:min(520px,50vw);flex-shrink:0;background:var(--bg1);border-left:1px solid var(--border);display:flex;flex-direction:column;height:100%;overflow:hidden;min-height:0}
-.info-top{padding:24px 20px 16px;text-align:center;border-bottom:1px solid var(--border)}
-.big-av{width:72px;height:72px;border-radius:50%;background:var(--bg4);margin:0 auto 12px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:var(--accent);border:2px solid var(--border2);}
+.info-top{padding:20px;text-align:center;border-bottom:none;background:linear-gradient(135deg,var(--bg3),var(--bg2));border-radius:0 0 var(--r2) var(--r2);margin:0;position:relative}
+.close-info{position:absolute;top:12px;right:12px!important;color:var(--text2)!important}
+.close-info:hover{color:var(--text)!important;background:var(--bg4)!important}
+.big-av{width:80px;height:80px;border-radius:50%;background:var(--bg4);margin:0 auto 14px;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;color:var(--accent);border:3px solid var(--accent);box-shadow:0 8px 24px rgba(79,142,247,0.15)}
 .big-av img{width:100%;height:100%;object-fit:cover}
 .info-name{font-size:16px;font-weight:700;margin-bottom:4px}
 .info-status{font-size:12px;color:var(--green)}
 .info-id{font-size:10px;font-family:var(--mono);color:var(--text3);margin-top:6px;word-break:break-all;line-height:1.4}
-.tabs{display:flex;border-bottom:1px solid var(--border);}
-.tab{flex:1;padding:10px 4px;text-align:center;font-size:12px;font-weight:600;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;}
+.tabs{display:flex;border-bottom:1px solid var(--border);gap:0}
+.tab{flex:1;padding:12px 8px;text-align:center;font-size:12px;font-weight:600;color:var(--text3);cursor:pointer;border-bottom:3px solid transparent;transition:color .15s,border-color .15s;border-radius:var(--r) var(--r) 0 0}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-.tab-content{flex:1;overflow-y:auto;padding:12px}
-.media-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px}
-.media-thumb{aspect-ratio:1;border-radius:4px;overflow:hidden;cursor:pointer;background:var(--bg4);}
+.tab-content{flex:1;overflow-y:auto;padding:14px}
+.media-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.media-thumb{aspect-ratio:1;border-radius:var(--r);overflow:hidden;cursor:pointer;background:var(--bg4);border:1px solid var(--border);transition:transform .15s,border-color .15s}
+.media-thumb:hover{transform:scale(1.02);border-color:var(--accent)}
 .media-thumb img{width:100%;height:100%;object-fit:cover}
-.file-row{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:8px;cursor:pointer;transition:background .15s;}
-.file-row:hover{background:var(--bg3)}
-.link-row{padding:8px 6px;border-radius:8px;cursor:pointer;transition:background .15s;}
-.link-row:hover{background:var(--bg3)}
+.file-row{display:flex;align-items:center;gap:10px;padding:10px;border-radius:var(--r);cursor:pointer;transition:background .15s,border-color .15s;border:1px solid transparent}
+.file-row:hover{background:var(--bg3);border-color:var(--border)}
+.link-row{padding:10px;border-radius:var(--r);cursor:pointer;transition:background .15s,border-color .15s;border:1px solid transparent}
+.link-row:hover{background:var(--bg3);border-color:var(--border)}
 .link-row a{color:var(--accent);font-size:12px;text-decoration:none;word-break:break-all}
 .empty-tab{display:flex;flex-direction:column;align-items:center;justify-content:center;height:120px;color:var(--text3);font-size:12px;gap:8px;}
 
 /* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);animation:overlayIn .14s ease}
-@keyframes overlayIn{from{opacity:0}to{opacity:1}}
-.modal{animation:modalPop .18s ease-out}
-@keyframes modalPop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:500;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r2);padding:24px 22px;width:min(420px,94vw);max-height:min(90dvh,800px);overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.5);}
 .modal h2{font-size:18px;font-weight:700;margin-bottom:20px}
 .modal label{font-size:12px;color:var(--text2);display:block;margin-bottom:6px;margin-top:14px}
@@ -283,7 +282,7 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .msg-call-log .bubble{background:var(--bg2)!important;border-style:dashed!important;color:var(--text2);font-size:12px;padding:8px 14px!important}
 #voiceRecordBar{display:none;align-items:center;gap:10px;padding:8px 12px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
 #voiceRecordBar.active{display:flex}
-.voice-rec-pulse{width:10px;height:10px;border-radius:50%;background:var(--red);animation:pulseRec 1.2s ease-in-out infinite}
+.voice-rec-pulse{width:10px;height:10px;border-radius:50%;background:var(--red)}
 .voice-rec-time{font-variant-numeric:tabular-nums;font-size:13px;color:var(--text2);min-width:48px}
 #attachQueue{display:none;flex-wrap:wrap;gap:6px;padding:8px 12px;border-top:1px solid var(--border);background:var(--bg1)}
 #attachQueue.active{display:flex}
@@ -583,6 +582,9 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
   <div id="infoPanel">
     <div id="infoPanelContent" style="display:none;flex-direction:column;height:100%">
       <div class="info-top">
+        <button type="button" id="closeInfoPanelBtn" class="icon-btn close-info" title="Закрыть" style="position:absolute;top:16px;right:16px">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
         <div class="big-av" id="infoBigAv"></div>
         <div class="info-name" id="infoName"></div>
         <div class="info-status" id="infoStatus"></div>
@@ -2475,6 +2477,8 @@ document.addEventListener('click',e=>{
       if(action.dataset.action==='msg-react' && action.dataset.emoji) {
         sendReactionToggle(ts, action.dataset.emoji);
       }
+      if(action.dataset.action==='msg-reply') replyToMessage(ts);
+      if(action.dataset.action==='msg-forward') forwardMessage(ts);
       if(action.dataset.action==='msg-del-me') deleteMessageForMe(ts);
       if(action.dataset.action==='msg-del-both') deleteMessageForEveryone(ts);
     } else {
@@ -2488,6 +2492,38 @@ document.addEventListener('click',e=>{
     menu.style.display='none';
   }
 });
+
+async function replyToMessage(ts){
+  if (!activeChat) return;
+  const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
+  const msg = msgs.find((m) => m.ts === ts);
+  if (!msg) return;
+  const inp = document.getElementById('msgInput');
+  if (inp) {
+    const senderName = contacts.find((c) => normUid(c.uuid) === normUid(msg.from))?.nickname || msg.from;
+    const preview = msg.type === 'text' ? msg.content.substring(0, 40) : '[' + msg.type + ']';
+    inp.value += `\n\n> ${senderName}: ${preview}`;
+    inp.focus();
+    inp.style.height = 'auto';
+    inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
+  }
+}
+
+async function forwardMessage(ts){
+  if (!activeChat) return;
+  const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
+  const msg = msgs.find((m) => m.ts === ts);
+  if (!msg) return;
+  const inp = document.getElementById('msgInput');
+  if (inp) {
+    const senderName = contacts.find((c) => normUid(c.uuid) === normUid(msg.from))?.nickname || msg.from;
+    const preview = msg.type === 'text' ? msg.content.substring(0, 40) : '[' + msg.type + ']';
+    inp.value += `\n\nПересланное от ${senderName}: ${preview}`;
+    inp.focus();
+    inp.style.height = 'auto';
+    inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
+  }
+}
 
 async function deleteMessageForMe(ts){
   if (!activeChat) return;
@@ -2518,6 +2554,8 @@ function showMessageCtxMenu(e, msg){
     `<button type="button" class="ctx-emoji-btn" data-action="msg-react" data-emoji="${em}" title="${em}">${em}</button>`
   ).join('');
   let html = `<div class="ctx-react-bar">${reactBar}</div>`;
+  html += `<div class="ctx-item" data-action="msg-reply">↩ Ответить</div>`;
+  html += `<div class="ctx-item" data-action="msg-forward">↪ Пересл ать</div>`;
   html += `<div class="ctx-item" data-action="msg-del-me">🗑 Удалить у меня</div>`;
   if (isMine) html += `<div class="ctx-item danger" data-action="msg-del-both">Удалить у всех</div>`;
   menu.innerHTML = html;
@@ -2712,6 +2750,25 @@ function appendMessage(msg){
   stack.appendChild(reactRow);
   wrapper.appendChild(stack);
   wrapper.oncontextmenu = (ev) => { showMessageCtxMenu(ev, msg); };
+  
+  // Обработчик long-press для мобиля
+  let touchStart = 0;
+  wrapper.addEventListener('touchstart', (e) => {
+    touchStart = Date.now();
+  });
+  wrapper.addEventListener('touchend', (e) => {
+    if (Date.now() - touchStart > 500) {
+      const evt = new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: e.changedTouches[0].clientX,
+        clientY: e.changedTouches[0].clientY
+      });
+      wrapper.dispatchEvent(evt);
+    }
+  });
+  
   area.appendChild(wrapper);
 }
 
@@ -3450,8 +3507,13 @@ function setupEvents(){
   const sab = document.getElementById('switchAccountBtn');
   if (sab) sab.onclick = () => {
     if (!confirm('Выйти и войти под другим аккаунтом?')) return;
-    try { localStorage.removeItem('cipherAuth'); } catch (_) {}
-    location.reload();
+    try { 
+      localStorage.removeItem('cipherAuth');
+      localStorage.removeItem('cipherContacts');
+      localStorage.clear();
+    } catch (_) {}
+    indexedDB.deleteDatabase('Cipher');
+    setTimeout(() => location.reload(), 100);
   };
 
   buildEmojiGrid();
@@ -3485,6 +3547,12 @@ function setupEvents(){
   };
   const mib = document.getElementById('mobileInfoBtn');
   if (mib) mib.onclick = toggleChatInfoPanel;
+
+  const closeInfoBtn = document.getElementById('closeInfoPanelBtn');
+  if (closeInfoBtn) closeInfoBtn.onclick = () => {
+    const ip = document.getElementById('infoPanel');
+    if (ip) ip.classList.remove('info-open');
+  };
 
   window.addEventListener('resize', () => applyMobileChatLayout());
 
@@ -3988,8 +4056,14 @@ function openLightbox(src){
 const RTC_CFG = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
-  ]
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
+  ],
+  iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require'
 };
 let rtcPc = null;
 let rtcLocal = null;
