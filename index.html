@@ -459,8 +459,8 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
     
     <!-- TABS -->
     <div class="auth-tabs" id="authTabs">
-      <div class="auth-tab active" id="authTabLogin" data-tab="login" onclick="(function(){document.getElementById('loginForm').style.display='block';document.getElementById('registerForm').style.display='none';document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');})()">Вход</div>
-      <div class="auth-tab" id="authTabRegister" data-tab="register" onclick="(function(){document.getElementById('loginForm').style.display='none';document.getElementById('registerForm').style.display='block';document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));this.classList.add('active');})()">Регистрация</div>
+      <div class="auth-tab active" id="authTabLogin" data-tab="login" onclick="document.getElementById('loginForm').style.display='block';document.getElementById('registerForm').style.display='none';this.classList.add('active');document.getElementById('authTabRegister').classList.remove('active')">Вход</div>
+      <div class="auth-tab" id="authTabRegister" data-tab="register" onclick="document.getElementById('loginForm').style.display='none';document.getElementById('registerForm').style.display='block';this.classList.add('active');document.getElementById('authTabLogin').classList.remove('active')">Регистрация</div>
     </div>
     
     <!-- LOGIN FORM -->
@@ -1921,18 +1921,8 @@ async function loginWithCredentials(uuidRaw, passwordRaw) {
 let regAvatar='';
 
 function setupReg(){
-  // Инициализируем вкладки регистрации - РЕЗЕРВНЫЙ СПОСОБ
+  // Инициализируем вкладки регистрации
   initAuthTabs();
-  
-  // Также убедимся что onclick работает
-  const tabLogin = document.getElementById('authTabLogin');
-  const tabRegister = document.getElementById('authTabRegister');
-  if (tabLogin && !tabLogin.hasAttribute('onclick')) {
-    tabLogin.onclick = () => switchAuthTab('login');
-  }
-  if (tabRegister && !tabRegister.hasAttribute('onclick')) {
-    tabRegister.onclick = () => switchAuthTab('register');
-  }
   
   const pick=document.getElementById('regAvatarPick');
   const fileInput=document.getElementById('regAvatarFile');
