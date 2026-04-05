@@ -1407,6 +1407,12 @@ function handleServerMessage(msg) {
           renderChatHeader();
         }
       }
+      // [FIX: Offline Delivery] Store pending offline messages to be processed
+      // in startApp() AFTER myProfile.uuid and contacts are fully loaded.
+      if (msg.pending && Array.isArray(msg.pending) && msg.pending.length > 0) {
+        console.log(`📨 ${msg.pending.length} offline messages queued for delivery after startApp`);
+        window._pendingOfflineMessages = msg.pending;
+      }
       flushPendingOutbound();
       startClientWsPing();
       break;
@@ -1571,7 +1577,21 @@ async function upsertRoomContact(room) {
 
 async function handleIncomingReaction(data) {
   if (!data || data.ts == null || !data.emoji) return;
-  const chatTarget = data.to;
+  // [FIX: Reaction Sync] For P2P chats the message is stored under the *other* person's UUID.
+  // data.from = reactor, data.to = target (may be our own UUID in DM or a room ID).
+  // We need to find which chatId the reacted-to message lives under.
+  let chatTarget;
+  if (normUid(data.from) === normUid(myProfile.uuid)) {
+    // We are the sender of the reaction — chat is with data.to
+    chatTarget = normUid(data.to);
+  } else {
+    // We are the recipient of the reaction — chat is with data.from
+    chatTarget = normUid(data.from);
+  }
+  // Also check rooms (room reactions use roomId as data.to)
+  const isRoom = contacts.some(c => normUid(c.uuid) === normUid(data.to) && (c.kind === 'group' || c.kind === 'channel'));
+  if (isRoom) chatTarget = normUid(data.to);
+
   const msgs = await dbGetByIndex('messages', 'chatId', chatTarget);
   const m = msgs.find((x) => x.ts === data.ts);
   if (!m) return;
@@ -1586,7 +1606,7 @@ async function handleIncomingReaction(data) {
     m.reactions[em].push(uid);
   }
   await dbPut('messages', m);
-  if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
+  if (activeChat && normUid(activeChat) === chatTarget) {
     updateMessageReactionRow(data.ts);
   }
 }
@@ -1628,8 +1648,8 @@ function updateConnStatus(connected) {
 }
 
 // ==================== DB (IndexedDB) ====================
-// FIX (FIXES_REPORT 2.7): Bump DB_VER to 2 — migration clears orphaned contacts store
-const DB_NAME='Cipher', DB_VER=2;
+// FIX (FIXES_REPORT 2.7): Bump DB_VER to 3 — adds 'keys' store for E2EE private key
+const DB_NAME='Cipher', DB_VER=3;
 let db;
 
 async function openDB(){
@@ -1648,6 +1668,8 @@ async function openDB(){
         const ms=d.createObjectStore('messages',{keyPath:'id',autoIncrement:true});
         ms.createIndex('chatId','chatId',{unique:false});
       }
+      // v3: E2EE key storage — private key never leaves the browser
+      if(!d.objectStoreNames.contains('keys')) d.createObjectStore('keys',{keyPath:'key'});
     };
     req.onsuccess=e=>{db=e.target.result;res(db)};
     req.onerror=rej;
@@ -1845,6 +1867,139 @@ async function hashClient(password) {
   const enc = new TextEncoder();
   const buf = await crypto.subtle.digest('SHA-256', enc.encode(password));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// ==================== E2EE (End-to-End Encryption) ====================
+// ECDH P-256 key exchange + AES-GCM-256 message encryption.
+// Private key lives ONLY in IndexedDB — the server NEVER sees it.
+let _e2eePrivateKey = null;   // CryptoKey
+let _e2eePublicKeyJwk = null; // JWK string (sent to server)
+const _peerPublicKeys  = new Map(); // normUid → CryptoKey
+const _sharedAesKeys   = new Map(); // normUid → CryptoKey (cached derived keys)
+
+async function e2ee_generateAndStore() {
+  try {
+    const kp = await crypto.subtle.generateKey(
+      { name: 'ECDH', namedCurve: 'P-256' },
+      true,          // extractable so we can persist as JWK
+      ['deriveKey']
+    );
+    const privJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+    const pubJwk  = await crypto.subtle.exportKey('jwk', kp.publicKey);
+    await dbPut('keys', { key: 'ecdh-private', jwk: privJwk });
+    await dbPut('keys', { key: 'ecdh-public',  jwk: pubJwk  });
+    _e2eePrivateKey  = kp.privateKey;
+    _e2eePublicKeyJwk = JSON.stringify(pubJwk);
+    console.log('🔑 E2EE key pair generated and stored');
+    return true;
+  } catch (e) {
+    console.error('E2EE keygen error:', e);
+    return false;
+  }
+}
+
+async function e2ee_loadFromDB() {
+  try {
+    const privRec = await dbGet('keys', 'ecdh-private');
+    const pubRec  = await dbGet('keys', 'ecdh-public');
+    if (!privRec || !pubRec) return false;
+    _e2eePrivateKey = await crypto.subtle.importKey(
+      'jwk', privRec.jwk,
+      { name: 'ECDH', namedCurve: 'P-256' },
+      false, ['deriveKey']
+    );
+    _e2eePublicKeyJwk = JSON.stringify(pubRec.jwk);
+    console.log('🔑 E2EE keys loaded from IndexedDB');
+    return true;
+  } catch (e) {
+    console.error('E2EE key load error:', e);
+    return false;
+  }
+}
+
+async function e2ee_ensureKeys() {
+  if (_e2eePrivateKey && _e2eePublicKeyJwk) return true;
+  const loaded = await e2ee_loadFromDB();
+  if (loaded) return true;
+  return e2ee_generateAndStore();
+}
+
+function e2ee_sendPublicKey() {
+  if (_e2eePublicKeyJwk) {
+    sendToServer('set-public-key', { publicKey: _e2eePublicKeyJwk });
+  }
+}
+
+async function e2ee_importPeerKey(jwkString) {
+  const jwk = typeof jwkString === 'string' ? JSON.parse(jwkString) : jwkString;
+  return crypto.subtle.importKey(
+    'jwk', jwk,
+    { name: 'ECDH', namedCurve: 'P-256' },
+    false, []
+  );
+}
+
+async function e2ee_getDerivedKey(peerUuid) {
+  const id = normUid(peerUuid);
+  if (_sharedAesKeys.has(id)) return _sharedAesKeys.get(id);
+  const peerPub = _peerPublicKeys.get(id);
+  if (!peerPub || !_e2eePrivateKey) return null;
+  const aesKey = await crypto.subtle.deriveKey(
+    { name: 'ECDH', public: peerPub },
+    _e2eePrivateKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+  _sharedAesKeys.set(id, aesKey);
+  return aesKey;
+}
+
+// Fetch peer's public key from server (promise-based, 3-second timeout)
+async function e2ee_fetchPeerKey(peerUuid) {
+  const id = normUid(peerUuid);
+  if (_peerPublicKeys.has(id)) return true;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), 3000);
+    const handler = (msg) => {
+      if (msg.type === 'public-key' && normUid(msg.uuid) === id) {
+        clearTimeout(timer);
+        const set = pendingHandlers.get('public-key');
+        if (set) { set.delete(handler); if (!set.size) pendingHandlers.delete('public-key'); }
+        if (msg.publicKey) {
+          e2ee_importPeerKey(msg.publicKey).then(key => {
+            _peerPublicKeys.set(id, key);
+            _sharedAesKeys.delete(id); // invalidate cached derived key
+            resolve(true);
+          }).catch(() => resolve(false));
+        } else {
+          resolve(false); // peer has no E2EE key (legacy client)
+        }
+      }
+    };
+    if (!pendingHandlers.has('public-key')) pendingHandlers.set('public-key', new Set());
+    pendingHandlers.get('public-key').add(handler);
+    sendToServer('get-public-key', { uuid: peerUuid });
+  });
+}
+
+async function e2ee_encrypt(peerUuid, plaintext) {
+  const key = await e2ee_getDerivedKey(peerUuid);
+  if (!key) return null; // fallback: send unencrypted
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder().encode(plaintext);
+  const ct  = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc);
+  const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return { ct: b64(ct), iv: b64(iv.buffer) };
+}
+
+async function e2ee_decrypt(peerUuid, ctBase64, ivBase64) {
+  const key = await e2ee_getDerivedKey(peerUuid);
+  if (!key) throw new Error('No shared key for decryption');
+  const ct  = Uint8Array.from(atob(ctBase64), c => c.charCodeAt(0));
+  const iv  = Uint8Array.from(atob(ivBase64),  c => c.charCodeAt(0));
+  const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  return new TextDecoder().decode(buf);
 }
 
 // ==================== STATE ====================
@@ -2280,14 +2435,35 @@ function getIncomingChatId(msg) {
 }
 
 async function handleIncomingMessage(msg) {
-  const {from, to, type, content, ts, roomId} = msg;
+  const {from, to, type, ts, roomId} = msg;
+  let {content} = msg;
   if (normUid(from) === normUid(myProfile.uuid)) return;
+
+  // [E2EE] Decrypt if message is encrypted (DMs only)
+  if (msg.encrypted && msg.iv && msg.content) {
+    try {
+      const senderUuid = normUid(from);
+      // Ensure we have the sender's public key for shared secret derivation
+      if (!_peerPublicKeys.has(senderUuid)) {
+        await e2ee_fetchPeerKey(senderUuid);
+      }
+      const plainJson = await e2ee_decrypt(senderUuid, msg.content, msg.iv);
+      const plain = JSON.parse(plainJson);
+      content = plain.content;
+      // type comes from origType or plaintext
+      msg = { ...msg, type: plain.type || msg.origType || type, content, encrypted: false };
+    } catch (e) {
+      console.warn('E2EE decrypt failed:', e.message);
+      content = '[🔒 Зашифровано — не удалось расшифровать]';
+      msg = { ...msg, content };
+    }
+  }
 
   const chatId = getIncomingChatId(msg);
   const here = activeChat ? normUid(activeChat) : '';
   const ch = normUid(chatId);
   const sameChat = !!(here && here === ch);
-  const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}};
+  const localMsg = {chatId, from, to, type: msg.type || type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}};
   await dbPut('messages', localMsg);
 
   if (sameChat) {
@@ -2304,7 +2480,7 @@ async function handleIncomingMessage(msg) {
     }
   }
 
-  updateLastMessage(chatId, content, ts, type);
+  updateLastMessage(chatId, content, ts, msg.type || type);
 
   let contact = contacts.find((c) => normUid(c.uuid) === chatId);
   // Auto-create contact from incoming DM if sender not in contacts list
@@ -2335,11 +2511,12 @@ async function handleIncomingMessage(msg) {
       const sender = contacts.find((c) => normUid(c.uuid) === chatId);
       const name = sender?.nickname || chatId.substring(0, 8);
       let body = '';
-      if (type === 'text') body = content.length > 60 ? content.slice(0, 60) + '...' : content;
-      else if (type === 'image') body = '📷 Фото';
-      else if (type === 'voice') body = '🎵 Голосовое сообщение';
-      else if (type === 'file') body = '📎 Файл';
-      else if (type === 'video') body = '🎬 Видео';
+      const msgType = msg.type || type;
+      if (msgType === 'text') body = content.length > 60 ? content.slice(0, 60) + '...' : content;
+      else if (msgType === 'image') body = '📷 Фото';
+      else if (msgType === 'voice') body = '🎵 Голосовое сообщение';
+      else if (msgType === 'file') body = '📎 Файл';
+      else if (msgType === 'video') body = '🎬 Видео';
       else body = 'Новое сообщение';
 
       try {
@@ -2350,7 +2527,8 @@ async function handleIncomingMessage(msg) {
 
   renderSidebar();
   // FIX #3: auto-refresh info panel on incoming media/file
-  if (sameChat && (type === 'image' || type === 'video' || type === 'file')) {
+  const msgType = msg.type || type;
+  if (sameChat && (msgType === 'image' || msgType === 'video' || msgType === 'file')) {
     renderTabContent().catch(() => {});
   }
 }
@@ -2562,6 +2740,7 @@ async function startApp(uuid) {
       console.warn('⚠️ Account changed! Clearing old contacts & messages...');
       await dbClearStore('contacts');
       await dbClearStore('messages');
+      await dbClearStore('keys');
     }
     myProfile = saved;
     // Если аватарка из базы слишком тяжелая — чистим её, иначе она убьет сокет опять
@@ -2575,6 +2754,7 @@ async function startApp(uuid) {
     myProfile = { uuid, nickname: 'User_' + uuid.slice(0, 4), avatar: '' };
     await dbPut('profile', {key: 'profile', ...myProfile});
   }
+  // [E2EE] Set UUID BEFORE processing any pending messages so getIncomingChatId works
   myProfile.uuid = normUid(uuid);
 
   // 2. Загрузка контактов (contacts — массив, не Map)
@@ -2593,11 +2773,28 @@ async function startApp(uuid) {
 
   renderSidebar();
 
-  // 3. Настройка событий
+  // 3. [FIX: Offline Delivery] Deliver queued offline messages now that
+  //    myProfile.uuid and contacts are fully loaded.
+  if (window._pendingOfflineMessages && window._pendingOfflineMessages.length > 0) {
+    console.log(`📨 Processing ${window._pendingOfflineMessages.length} offline messages...`);
+    for (const qMsg of window._pendingOfflineMessages) {
+      try { await handleIncomingMessage(qMsg); } catch (e) { console.warn('Offline msg error:', e); }
+    }
+    window._pendingOfflineMessages = null;
+  }
+
+  // 4. [E2EE] Load or generate key pair, then announce public key to server
+  const keysOk = await e2ee_ensureKeys();
+  if (keysOk && ws && ws.readyState === WebSocket.OPEN) {
+    e2ee_sendPublicKey();
+    console.log('🔐 E2EE public key sent to server');
+  }
+
+  // 5. Настройка событий
   console.log('🔧 Setting up events...');
   setupEvents();
 
-  // 4. Отправка данных на сервер (БЕЗОПАСНАЯ)
+  // 6. Отправка данных на сервер (БЕЗОПАСНАЯ)
   if (ws && ws.readyState === WebSocket.OPEN) {
     console.log('📤 Sending profile update...');
     const safeAvatar = isAvatarSafe(myProfile.avatar) ? myProfile.avatar : '';
@@ -2652,6 +2849,36 @@ async function sendMessage(type, content){
 
   const isSaved = c && c.kind === 'saved';
   if(!isSaved && ws && ws.readyState === WebSocket.OPEN) {
+    // [E2EE] Encrypt DM text/voice/file content before sending to server.
+    // Groups and channels are NOT encrypted (server needs to fan-out to members).
+    if (!isRoom && _e2eePrivateKey && type !== 'call-log') {
+      try {
+        const hasPeerKey = await e2ee_fetchPeerKey(activeChat);
+        if (hasPeerKey) {
+          const encrypted = await e2ee_encrypt(activeChat, JSON.stringify({ type, content }));
+          if (encrypted) {
+            const encMsg = { ...message, content: encrypted.ct, iv: encrypted.iv, encrypted: true, origType: type };
+            sendToServer('message', encMsg);
+            // FIX PC #5: don't send Favorites to server
+            replyingToMsg = null;
+            const rp = document.getElementById('replyPreview');
+            if (rp) rp.style.display = 'none';
+            if(!renderedMsgIds.has(message.ts.toString())) {
+              renderedMsgIds.add(message.ts.toString());
+              appendMessage(localMsg);
+              scrollBottom();
+            }
+            updateLastMessage(activeChat, content, message.ts, type);
+            if(activeChat && (type === 'image' || type === 'video' || type === 'file')) {
+              await renderInfoPanel(activeChat);
+            }
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('E2EE encrypt failed, sending unencrypted:', e.message);
+      }
+    }
     sendToServer('message', message); // FIX #5: don't send Favorites to server
   }
 
@@ -3988,6 +4215,64 @@ function confirmPickMembers() {
   document.getElementById('pickMembersModal').style.display = 'none';
 }
 
+// ==================== FULL RESET (Logout) ====================
+// [FIX: Auth Flow] Cleanly resets ALL state without requiring browser cache clear.
+async function fullReset() {
+  console.log('🔄 fullReset: starting logout...');
+
+  // 1. Close WebSocket and stop reconnect loop
+  await disconnectWebSocket();
+
+  // 2. Reset all in-memory state
+  myProfile = { uuid: '', nickname: '', avatar: '' };
+  contacts = [];
+  activeChat = null;
+  replyingToMsg = null;
+  attachmentQueue = [];
+  renderedMsgIds.clear();
+  pendingOutbound = [];
+  window._pendingOfflineMessages = null;
+  window._cipherEventsBound = false; // allow re-binding events on next startApp
+
+  // 3. Clear E2EE key cache
+  _e2eePrivateKey   = null;
+  _e2eePublicKeyJwk = null;
+  _peerPublicKeys.clear();
+  _sharedAesKeys.clear();
+
+  // 4. Clear localStorage session token
+  try {
+    localStorage.removeItem('cipherAuth');
+    localStorage.removeItem('cipherPinned');
+    localStorage.removeItem('infoPanelHidden');
+  } catch (_) {}
+
+  // 5. Wipe IndexedDB stores (keeps DB structure, just clears data)
+  try {
+    await dbClearStore('profile');
+    await dbClearStore('contacts');
+    await dbClearStore('messages');
+    await dbClearStore('keys');
+  } catch (e) {
+    console.warn('fullReset: dbClearStore error:', e.message);
+  }
+
+  // 6. Close all modals
+  document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+
+  // 7. Return to registration / login screen
+  const appEl      = document.getElementById('app');
+  const regOverlay = document.getElementById('regOverlay');
+  if (appEl)      appEl.style.display      = 'none';
+  if (regOverlay) regOverlay.style.display = 'flex';
+
+  // 8. Re-initialize auth UI
+  regAvatar = '';
+  setupReg();
+
+  console.log('✅ fullReset: logged out successfully');
+}
+
 // ==================== EVENTS ====================
 function setupEvents(){
   if (window._cipherEventsBound) return;
@@ -4120,15 +4405,9 @@ function setupEvents(){
   document.getElementById('clearDataBtn').onclick=clearAllData;
 
   const sab = document.getElementById('switchAccountBtn');
-  if (sab) sab.onclick = () => {
-    if (!confirm('Выйти и войти под другим аккаунтом?')) return;
-    try { 
-      localStorage.removeItem('cipherAuth');
-      localStorage.removeItem('cipherContacts');
-      localStorage.clear();
-    } catch (_) {}
-    indexedDB.deleteDatabase('Cipher');
-    setTimeout(() => location.reload(), 100);
+  if (sab) sab.onclick = async () => {
+    if (!confirm('Выйти из аккаунта? Все локальные данные будут очищены.')) return;
+    await fullReset();
   };
 
   const emojiBtn = document.getElementById('emojiBtn');
