@@ -2208,6 +2208,11 @@ function setupReg(){
         key: 'profile'
       };
       await dbPut('profile', { key: 'profile', ...myProfile });
+
+      // FIX: явно чистим старые контакты и сообщения из DB при регистрации нового аккаунта
+      // (в startApp проверка не сработает т.к. profile уже перезаписан с новым UUID)
+      await dbClearStore('contacts');
+      await dbClearStore('messages');
       contacts = [];
 
       regBtn.textContent='Вход...';
