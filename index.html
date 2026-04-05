@@ -152,6 +152,13 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .file-info{flex:1;min-width:0}
 .file-name{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .file-size{font-size:11px;color:var(--text2)}
+/* FIX #2: Стили для цитат в ответах и пересылке */
+.msg-quote{display:flex;align-items:center;gap:8px;border-left:3px solid var(--accent);padding:8px 10px;margin-bottom:8px;background:rgba(79,142,247,0.08);border-radius:0 var(--r) var(--r) 0;overflow:hidden;max-width:100%}
+.msg-quote .quote-av{width:32px;height:32px;min-width:32px;border-radius:50%;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer;flex-shrink:0}
+.msg-quote .quote-av img{width:100%;height:100%;object-fit:cover}
+.msg-quote .quote-content{flex:1;min-width:0}
+.msg-quote .quote-author{font-size:11px;font-weight:600;color:var(--accent);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msg-quote .quote-text{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .date-divider{text-align:center;font-size:11px;color:var(--text3);padding:8px 0;display:flex;align-items:center;gap:10px;}
 .date-divider::before,.date-divider::after{content:'';flex:1;height:1px;background:var(--border);}
 
@@ -233,10 +240,15 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:700;display:none;align-items:center;justify-content:center;cursor:zoom-out;}
 #lightbox img{max-width:90vw;max-height:90vh;border-radius:8px}
 
+/* FIX #2: Модалка просмотра аватара */
+#avatarModal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px)}
+#avatarModal.active{display:flex}
+#avatarModal img{max-width:90vw;max-height:90vh;border-radius:50%;box-shadow:0 12px 48px rgba(0,0,0,0.5);transition:transform .2s,opacity .2s}
+#avatarModal .avatar-close{position:absolute;top:20px;right:20px;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s}
+#avatarModal .avatar-close:hover{background:rgba(0,0,0,0.7)}
+
 /* No chat selected */
 #noChatView{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:12px;}
-.nc-logo{font-size:48px;font-weight:700;letter-spacing:-2px}
-.nc-logo span{color:var(--accent)}
 
 /* DRAG & DROP */
 #dropOverlay{position:absolute;inset:0;background:rgba(79,142,247,0.12);border:2px dashed var(--accent);border-radius:var(--r);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--accent);font-size:15px;font-weight:600;pointer-events:none;}
@@ -2968,31 +2980,65 @@ function makeVoicePlayer(dataUrl){
   dur.className='voice-dur';
   dur.textContent='0:00';
 
-  let audio=null,playing=false,timer=null;
-  btn.onclick=()=>{
-    if(!audio){audio=new Audio(dataUrl);}
+  let audio=null,playing=false,timer=null,blobUrl=null;
+  try {
+    const response = fetch(dataUrl);
+    response.then(async (res) => {
+      const blob = await res.blob();
+      blobUrl = URL.createObjectURL(blob);
+      if (audio) {
+        audio.src = blobUrl;
+        audio.load();
+      }
+    }).catch(() => {});
+  } catch (_) {}
+  btn.onclick=async ()=>{
+    if(!audio){
+      audio=new Audio();
+      audio.preload='metadata';
+      audio.playsInline=true;
+      if(blobUrl) audio.src=blobUrl;
+      else audio.src=dataUrl;
+
+      // FIX #1: Освобождаем blob URL после окончания воспроизведения
+      audio.onended=()=>{
+        playing=false;
+        clearInterval(timer);
+        fill.style.width='0';
+        btn.innerHTML=`<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>`;
+        if(blobUrl){
+          URL.revokeObjectURL(blobUrl);
+          blobUrl=null;
+        }
+      };
+    }
     if(playing){
       audio.pause();
       playing=false;
       clearInterval(timer);
       btn.innerHTML=`<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>`;
     } else {
-      audio.play();
-      playing=true;
-      btn.innerHTML=`<svg width="10" height="14" fill="white" viewBox="0 0 10 14"><rect x="0" y="0" width="3" height="14"/><rect x="7" y="0" width="3" height="14"/></svg>`;
-      timer=setInterval(()=>{
-        if(!audio.duration) return;
-        const pct=(audio.currentTime/audio.duration)*100;
-        fill.style.width=pct+'%';
-        const s=Math.floor(audio.currentTime);
-        dur.textContent=Math.floor(s/60)+':'+(s%60).toString().padStart(2,'0');
-        if(audio.ended){
-          playing=false;
-          clearInterval(timer);
-          fill.style.width='0';
-          btn.innerHTML=`<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>`;
-        }
-      },100);
+      try {
+        await audio.play();
+        playing=true;
+        btn.innerHTML=`<svg width="10" height="14" fill="white" viewBox="0 0 10 14"><rect x="0" y="0" width="3" height="14"/><rect x="7" y="0" width="3" height="14"/></svg>`;
+        timer=setInterval(()=>{
+          if(!audio.duration) return;
+          const pct=(audio.currentTime/audio.duration)*100;
+          fill.style.width=pct+'%';
+          const s=Math.floor(audio.currentTime);
+          dur.textContent=Math.floor(s/60)+':'+(s%60).toString().padStart(2,'0');
+          if(audio.ended){
+            playing=false;
+            clearInterval(timer);
+            fill.style.width='0';
+            btn.innerHTML=`<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>`;
+          }
+        },100);
+      } catch(e) {
+        console.error('Audio play error:', e);
+        showToast('Ошибка воспроизведения');
+      }
     }
   };
   row.appendChild(btn);
@@ -3693,6 +3739,9 @@ function setupEvents(){
         localStorage.setItem('infoPanelHidden', 'true');
       }
     }
+    // FIX #4: Восстанавливаем фокус и снимаем блокировки после закрытия инфо-панели
+    document.body.style.overflow = '';
+    document.getElementById('msgInput')?.focus();
   };
 
   const toggleInfoBtn = document.getElementById('toggleInfoPanelBtn');
@@ -4126,13 +4175,37 @@ async function flushAttachmentQueue() {
 // ==================== VOICE RECORD (пауза / отмена / отправить) ====================
 async function toggleRecord() {
   if (!activeChat || voiceSession) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('Запись голоса не поддерживается в этом браузере');
+    return;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream);
+    // FIX #1: Выбор правильного MIME-type для iOS Safari и других браузеров
+    let mimeType = '';
+    const supportedTypes = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+      'audio/ogg'
+    ];
+
+    for (const type of supportedTypes) {
+      if (MediaRecorder.isTypeSupported(type)) {
+        mimeType = type;
+        break;
+      }
+    }
+
+    const recorderOptions = mimeType ? { mimeType } : {};
+    const recorder = new MediaRecorder(stream, recorderOptions);
     const chunks = [];
+
     recorder.ondataavailable = (e) => {
       if (e.data.size) chunks.push(e.data);
     };
+
     const started = Date.now();
     let pausedMs = 0;
     let pauseStarted = 0;
@@ -4157,15 +4230,31 @@ async function toggleRecord() {
       tickTimer: setInterval(tick, 400)
     };
     tick();
+    // FIX #1: Обработка visibilitychange для остановки записи при сворачивании
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && voiceSession && !voiceSession.cancelled) {
+        voiceSession.cancelled = true;
+        try {
+          voiceSession.recorder.stop();
+        } catch (_) {}
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange, { once: true });
     recorder.onstop = async () => {
       const vs = voiceSession;
       if (vs?.tickTimer) clearInterval(vs.tickTimer);
-      if (vs?.stream) vs.stream.getTracks().forEach((t) => t.stop());
+      // FIX #1: Остановка всех треков потока
+      if (vs?.stream) {
+        vs.stream.getTracks().forEach((t) => t.stop());
+      }
+
+      // Удаление обработчика visibilitychange
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.getElementById('voiceRecordBar')?.classList.remove('active');
       document.getElementById('recordBtn')?.classList.remove('recording');
       voiceSession = null;
       if (!vs || vs.cancelled) return;
-      const blob = new Blob(vs.chunks, { type: 'audio/webm' });
+      const blob = new Blob(vs.chunks, { type: mimeType || 'audio/webm' });
       const b64 = await fileToBase64(blob);
       await sendMessage('voice', b64);
     };
@@ -4212,7 +4301,17 @@ async function toggleRecord() {
       } catch (_) {}
     };
   } catch (e) {
-    showToast('Нет доступа к микрофону');
+    // FIX #1: Корректная обработка ошибок
+    let errorMsg = 'Нет доступа к микрофону';
+    if (e.name === 'NotAllowedError') {
+      errorMsg = 'Доступ к микрофону запрещён. Разрешите в настройках браузера.';
+    } else if (e.name === 'NotFoundError') {
+      errorMsg = 'Микрофон не найден. Подключите микрофон и попробуйте снова.';
+    } else if (e.name === 'NotReadableError') {
+      errorMsg = 'Микрофон занят другим приложением.';
+    }
+    showToast(errorMsg);
+    console.error('Voice record error:', e);
   }
 }
 
