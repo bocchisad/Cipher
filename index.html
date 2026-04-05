@@ -1061,7 +1061,7 @@ function waitForMessage(type, timeoutMs = 4000) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       const set = pendingHandlers.get(type);
-      if (set) { set.delete(resolve); if (!set.size) pendingHandlers.delete(type); }
+      if (set) { set.delete(wrappedResolve); if (!set.size) pendingHandlers.delete(type); }
       resolve(null);
     }, timeoutMs);
 
@@ -1254,6 +1254,7 @@ function attemptReconnect() {
     reconnectTimer = null;
     try {
       await connectWebSocket();
+      reconnectAttempts = 0; // Reset counter on success
       if (myProfile.uuid) {
         serverReadyReceived = false;
         await waitForServerReady();
@@ -1409,19 +1410,20 @@ function handleServerMessage(msg) {
       flushPendingOutbound();
       startClientWsPing();
       break;
-    case 'error':
+    case 'error': {
       const errText = data?.error || msg.error;
       console.error('❌ Server error:', errText);
       if (errText === 'User not found') {
         handleUserNotFound();
       } else {
-        let t = '❌ Ошибка: ' + errText;
+        let t = '❌ ' + errText;
         if (data?.channelSuggestions && data.channelSuggestions.length) {
           t += ' — попробуйте: ' + data.channelSuggestions.join(', ');
         }
         showToast(t);
       }
       break;
+    }
     case 'message':
       handleIncomingMessage(data);
       break;
@@ -1430,6 +1432,13 @@ function handleServerMessage(msg) {
       if (data?.ts) {
         const el = document.querySelector(`[data-ts="${data.ts}"] .check`);
         if (el) { el.textContent = '✓✓'; el.classList.add('delivered'); }
+        // Persist delivered state to DB so it survives reload
+        if (activeChat) {
+          dbGetByIndex('messages', 'chatId', activeChat).then(msgs => {
+            const m = msgs.find(x => x.ts === data.ts);
+            if (m) { m.delivered = true; dbPut('messages', m).catch(() => {}); }
+          }).catch(() => {});
+        }
       }
       break;
     case 'user-online':
@@ -2038,8 +2047,8 @@ async function init(){
             ? (loginResp.error || loginResp.data?.error)
             : null;
 
-          if (loginErrorMsg === 'User not found') {
-            console.error('❌ Login failed: user not found');
+          if (loginErrorMsg) {
+            console.error('❌ Login failed:', loginErrorMsg);
             localStorage.removeItem('cipherAuth');
             setupReg();
             return;
@@ -2212,8 +2221,8 @@ function setupReg(){
 
       regBtn.textContent='Вход...';
 
-      waitForMessage('login-ok', 4000).then(() => {
-      }).catch(() => {});
+      const loginAfterRegP = waitForMessage('login-ok', 6000);
+      const loginAfterRegErr = waitForMessage('error', 6000);
 
       ws.send(JSON.stringify({
         type: 'login',
@@ -2222,7 +2231,8 @@ function setupReg(){
         timestamp: Date.now()
       }));
 
-      await new Promise(r => setTimeout(r, 400));
+      // Wait for login-ok (or timeout/error) before starting app
+      await Promise.race([loginAfterRegP, loginAfterRegErr, new Promise(r => setTimeout(r, 3000))]);
 
       await startApp(receivedUuid);
 
@@ -2296,7 +2306,24 @@ async function handleIncomingMessage(msg) {
 
   updateLastMessage(chatId, content, ts, type);
 
-  const contact = contacts.find((c) => normUid(c.uuid) === chatId);
+  let contact = contacts.find((c) => normUid(c.uuid) === chatId);
+  // Auto-create contact from incoming DM if sender not in contacts list
+  if (!contact && !roomId) {
+    contact = {
+      uuid: chatId,
+      nickname: String(from || '').slice(0, 12) || chatId.slice(0, 12),
+      avatar: '',
+      online: true,
+      lastMsg: '',
+      lastTs: 0,
+      unread: 0,
+      type: 'friend',
+      kind: 'friend'
+    };
+    contacts.push(contact);
+    const cleaned = sanitizeContact(contact);
+    if (cleaned) await dbPut('contacts', cleaned).catch(() => {});
+  }
   if (contact && !sameChat) {
     contact.unread = (contact.unread || 0) + 1;
     await dbPut('contacts', contact);
@@ -3256,7 +3283,7 @@ function appendMessage(msg){
   mt.className='mtime';
   mt.textContent=fmtTime(msg.ts);
   // FIX (Недочёт #6): single checkmark initially, becomes ✓✓ on delivered receipt
-  if(isOut) mt.innerHTML+=` <span class="check">✓</span>`;
+  if(isOut) mt.innerHTML+=` <span class="check${msg.delivered ? ' delivered' : ''}">${msg.delivered ? '✓✓' : '✓'}</span>`;
   bubble.appendChild(mt);
   stack.appendChild(bubble);
   const reactRow = document.createElement('div');
