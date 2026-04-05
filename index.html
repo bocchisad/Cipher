@@ -3357,8 +3357,6 @@ async function ensureFavoriteContact() {
   const cleaned = sanitizeContact(favoriteRow);
   if (cleaned) await dbPut('contacts', cleaned).catch(() => {});
 }
-  if (cleaned) await dbPut('contacts', cleaned).catch(() => {});
-}
 
 async function appendCallLogToChat(peerUuid, text) {
   const chatId = normUid(peerUuid);
