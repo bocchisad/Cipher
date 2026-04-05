@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Cipher — P2P Messenger</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f8ef7'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='white' font-size='16' font-family='system-ui,sans-serif' font-weight='700'%3EC%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -248,7 +248,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 #avatarModal .avatar-close:hover{background:rgba(0,0,0,0.7)}
 
 /* No chat selected */
-#noChatView{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text3);gap:12px;}
+/* noChatView – see PC pixel fixes */
 
 /* DRAG & DROP */
 #dropOverlay{position:absolute;inset:0;background:rgba(79,142,247,0.12);border:2px dashed var(--accent);border-radius:var(--r);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--accent);font-size:15px;font-weight:600;pointer-events:none;}
@@ -320,10 +320,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .call-ctrl-btn svg{width:22px;height:22px}
 #callRemoteAudio{display:none}
 
-/* CONNECTION STATUS */
-.conn-status{position:fixed;bottom:10px;right:10px;font-size:11px;color:var(--text3);z-index:100;padding:6px 12px;background:var(--bg3);border-radius:var(--r);border:1px solid var(--border);}
-.conn-status.connected{color:var(--green)}
-.conn-status.disconnected{color:var(--red)}
+/* CONNECTION STATUS + THEMES + EXTRAS – see EXTRA_CSS below */
 
 .msg-reactions{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;align-items:center;width:100%;max-width:min(92vw,560px)}
 .reaction-pill{font-size:11px;background:var(--bg4);border:1px solid var(--border);border-radius:12px;padding:3px 8px;cursor:pointer;color:var(--text2);font-family:inherit}
@@ -331,11 +328,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .reaction-add:hover{opacity:1;color:var(--accent);border-color:var(--accent)}
 
 /* Emoji picker */
-#emojiPicker{position:absolute;bottom:72px;right:16px;left:16px;max-width:340px;margin-left:auto;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:10px;z-index:150;display:none;box-shadow:0 12px 40px rgba(0,0,0,.45);max-height:220px;overflow-y:auto}
-#emojiPicker.show{display:block}
-.emoji-grid{display:flex;flex-wrap:wrap;gap:4px}
-.emoji-cell{font-size:22px;line-height:1;padding:6px;border-radius:8px;cursor:pointer;transition:background .1s;border:none;background:transparent}
-.emoji-cell:hover{background:var(--bg4)}
+/* emoji picker – in extra CSS */
 
 .mobile-only{display:none!important}
 @media (max-width:900px){
@@ -443,21 +436,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
   }
   #messagesArea{padding:10px min(10px,3vw);background:transparent}
   #chatView{min-width:0}
-  .conn-status{
-    top:max(6px, env(safe-area-inset-top));
-    bottom:auto;
-    right:8px;
-    left:auto;
-    font-size:10px;
-    padding:5px 9px;
-    z-index:120;
-    opacity:.92;
-    pointer-events:none;
-    max-width:min(140px, 36vw);
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:ellipsis;
-  }
+  /* conn-status mobile: in extra css */
   #voiceRecordBar{flex-wrap:wrap;row-gap:8px}
   #emojiPicker{bottom:64px;right:8px;left:8px;max-width:none}
   #toggleInfoPanelBtn{display:none!important}
@@ -465,6 +444,154 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 @media (max-width:900px) and (prefers-reduced-motion:reduce){
   .chat-item,.modal-overlay,.modal,#infoPanel{animation:none!important;transition-duration:.01ms!important}
 }
+
+/* ===== LIGHT THEME ===== */
+:root[data-theme="light"]{
+  --bg0:#f0f2f5;
+  --bg1:#ffffff;
+  --bg2:#f8f9fb;
+  --bg3:#eef0f4;
+  --bg4:#e2e5ec;
+  --border:#d1d5de;
+  --border2:#b8bece;
+  --accent:#3a7be8;
+  --accent2:#2966d0;
+  --accent-glow:rgba(58,123,232,0.15);
+  --green:#2ecc71;
+  --red:#e74c3c;
+  --yellow:#f39c12;
+  --text:#1a1d26;
+  --text2:#4a5568;
+  --text3:#8a97ab;
+}
+:root[data-theme="light"] .msg .bubble{background:#ffffff;border-color:#dde2ec;color:#1a1d26}
+:root[data-theme="light"] .msg.out .bubble{background:linear-gradient(135deg,#ddeeff,#cce5ff);border-color:#99ccff;color:#0a1a2f}
+:root[data-theme="light"] #chatHeader{background:#ffffff}
+:root[data-theme="light"] #sidebar{background:#f8f9fb}
+:root[data-theme="light"] .sidebar-top{background:#f8f9fb}
+:root[data-theme="light"] #inputArea{background:#ffffff}
+:root[data-theme="light"] #msgInput{background:#f0f2f5;border-color:#d1d5de;color:#1a1d26}
+:root[data-theme="light"] #regOverlay{background:#eef0f5}
+:root[data-theme="light"] .reg-box{background:linear-gradient(135deg,#ffffff,#f5f7fa)}
+:root[data-theme="light"] .modal{background:#ffffff}
+:root[data-theme="light"] .modal input{background:#f5f7fa;color:#1a1d26}
+:root[data-theme="light"] #ctxMenu{background:#ffffff}
+:root[data-theme="light"] .ctx-item:hover{background:#f0f2f5}
+:root[data-theme="light"] #toast{background:#333;color:#fff}
+:root[data-theme="light"] .chat-item:hover{background:#eef0f4}
+:root[data-theme="light"] .chat-item.active{background:#e2e8f8}
+:root[data-theme="light"] #infoPanel{background:#ffffff}
+:root[data-theme="light"] .info-top{background:linear-gradient(135deg,#f0f4ff,#f8f9fb)}
+:root[data-theme="light"] .tab-content{background:#ffffff}
+:root[data-theme="light"] .date-divider{color:#8a97ab}
+:root[data-theme="light"] #messagesArea{background:#f0f2f5}
+:root[data-theme="light"] #noChatView{background:#f0f2f5}
+
+/* ===== CONNECTION STATUS — PC: top bar; mobile: top-right hidden in chat ===== */
+.conn-status{position:fixed;bottom:10px;right:10px;font-size:11px;color:var(--text3);z-index:100;padding:5px 10px;background:var(--bg3);border-radius:var(--r);border:1px solid var(--border);pointer-events:none;transition:opacity .3s;}
+.conn-status.connected{color:var(--green)}
+.conn-status.disconnected{color:var(--red)}
+/* PC: show in sidebar-top area */
+@media(min-width:901px){
+  .conn-status{position:static;background:transparent;border:none;padding:0;font-size:10px;margin-left:4px;pointer-events:none;}
+  .sidebar-conn-wrap{display:flex;align-items:center;gap:4px;min-width:0}
+}
+@media(max-width:900px){
+  .conn-status{
+    position:fixed;top:max(6px,env(safe-area-inset-top));right:8px;bottom:auto;
+    font-size:10px;padding:4px 8px;z-index:120;max-width:min(130px,35vw);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .app-chat-open .conn-status{opacity:0;pointer-events:none}
+}
+
+/* ===== THEME TOGGLE BUTTON ===== */
+.theme-btn{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text2);transition:background .15s,color .15s;font-size:15px;flex-shrink:0}
+.theme-btn:hover{background:var(--bg3);color:var(--text)}
+
+/* ===== MESSAGES: no text selection on mobile ===== */
+.msg{-webkit-user-select:none;user-select:none}
+.msg *{-webkit-user-select:none;user-select:none}
+/* but allow selection in bubbles on desktop */
+@media(min-width:901px){
+  .msg .bubble,.msg .bubble *{-webkit-user-select:text;user-select:text}
+}
+
+/* ===== SWIPE-TO-REPLY indicator ===== */
+.swipe-reply-indicator{
+  position:absolute;right:-44px;top:50%;transform:translateY(-50%);
+  width:36px;height:36px;border-radius:50%;background:var(--accent);
+  display:flex;align-items:center;justify-content:center;color:#fff;
+  font-size:16px;opacity:0;transition:opacity .15s,right .15s;
+  pointer-events:none;
+}
+.msg{position:relative;overflow:visible}
+
+/* ===== EMOJI PICKER enlarged ===== */
+#emojiPicker{position:absolute;bottom:72px;right:8px;left:auto;width:340px;max-width:95vw;
+  background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);
+  padding:8px;z-index:150;display:none;box-shadow:0 12px 40px rgba(0,0,0,.45);
+  max-height:300px;overflow-y:auto}
+#emojiPicker.show{display:block}
+.emoji-category{font-size:10px;color:var(--text3);font-weight:600;letter-spacing:.5px;
+  text-transform:uppercase;padding:6px 4px 2px;margin-top:4px}
+.emoji-grid{display:flex;flex-wrap:wrap;gap:2px}
+.emoji-cell{font-size:22px;line-height:1;padding:5px;border-radius:8px;cursor:pointer;
+  transition:background .1s;border:none;background:transparent;flex-shrink:0}
+.emoji-cell:hover{background:var(--bg4)}
+
+/* ===== REPLY QUOTE in bubble ===== */
+.reply-quote{
+  border-left:3px solid var(--accent);background:rgba(79,142,247,0.1);
+  padding:6px 10px;border-radius:0 var(--r) var(--r) 0;margin-bottom:8px;
+  cursor:pointer;overflow:hidden;
+}
+.reply-quote-author{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:2px}
+.reply-quote-text{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ===== PHOTO ALBUM GROUP ===== */
+.album-grid{display:grid;gap:3px;border-radius:var(--r);overflow:hidden;max-width:280px;margin-bottom:4px}
+.album-grid.album-2{grid-template-columns:1fr 1fr}
+.album-grid.album-3{grid-template-columns:1fr 1fr;grid-template-rows:auto auto}
+.album-grid.album-3 .album-item:first-child{grid-column:1/-1}
+.album-grid.album-4{grid-template-columns:1fr 1fr;grid-template-rows:auto auto}
+.album-grid.album-many{grid-template-columns:1fr 1fr 1fr}
+.album-item{aspect-ratio:1;overflow:hidden;cursor:pointer;background:var(--bg4)}
+.album-item img{width:100%;height:100%;object-fit:cover;display:block}
+.album-more{display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);color:#fff;font-size:18px;font-weight:700}
+
+
+/* ===== MOBILE CONN STATUS (separate fixed element) ===== */
+.conn-status-mobile{
+  position:fixed;top:max(6px,env(safe-area-inset-top));right:8px;
+  font-size:10px;color:var(--text3);z-index:120;padding:4px 8px;
+  background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);
+  pointer-events:none;max-width:min(130px,35vw);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  opacity:.92;transition:opacity .3s;
+}
+.conn-status-mobile.connected{color:var(--green)}
+.conn-status-mobile.disconnected{color:var(--red)}
+.app-chat-open .conn-status-mobile{opacity:0;pointer-events:none}
+@media(min-width:901px){.conn-status-mobile{display:none!important}}
+
+
+/* ===== PC pixel fixes ===== */
+#noChatView{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:var(--text3);gap:12px;background:var(--bg0);
+}
+.nc-logo{font-size:48px;font-weight:700;letter-spacing:-1px;color:var(--text3);margin-bottom:8px}
+.nc-logo span{color:var(--accent)}
+/* Sidebar: bottom flush */
+.sidebar-bottom{
+  padding:12px 16px;border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;cursor:pointer;flex-shrink:0;
+}
+/* Pixel-perfect borders between panels */
+#sidebar{border-right:1px solid var(--border)!important}
+#infoPanel{border-left:1px solid var(--border)!important}
+
 </style>
 </head>
 <body>
@@ -505,15 +632,18 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
   </div>
 </div>
 
-<!-- CONNECTION STATUS -->
-<div class="conn-status" id="connStatus">● Отключено</div>
-
+<!-- CONNECTION STATUS MOBILE -->
+<div class="conn-status conn-status-mobile" id="connStatusMobile" style="display:none">● Отключено</div>
 <!-- APP -->
 <div id="app">
   <!-- SIDEBAR -->
   <div id="sidebar">
     <div class="sidebar-top">
-      <span class="logo"><span>C</span>ipher</span>
+      <div class="sidebar-conn-wrap">
+        <span class="logo"><span>C</span>ipher</span>
+        <div class="conn-status" id="connStatus">● Отключено</div>
+      </div>
+      <button type="button" class="theme-btn" id="themeToggleBtn" title="Тема">🌙</button>
       <button type="button" class="icon-btn" id="addChatBtn" title="Новый чат, группа или канал">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
       </button>
@@ -558,7 +688,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
           <button class="icon-btn" id="videoCallBtn" title="Видео звонок">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
           </button>
-          <button class="icon-btn" id="toggleInfoPanelBtn" title="Показать/скрыть профиль" style="display:none">
+          <button class="icon-btn" id="toggleInfoPanelBtn" title="Показать/скрыть профиль">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           </button>
           <button class="icon-btn" id="deleteChatBtn" title="Удалить чат">
@@ -602,7 +732,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </div>
-      <div id="emojiPicker" aria-hidden="true"><div class="emoji-grid" id="emojiGrid"></div></div>
+      <div id="emojiPicker" aria-hidden="true"></div>
       <!-- FIX (3.2): Scroll-down hint — shown when user scrolled up and new message arrives -->
       <div id="scrollDownHint" style="display:none;position:absolute;bottom:80px;right:20px;z-index:10">
         <button onclick="scrollBottom();this.parentElement.style.display='none'"
@@ -795,7 +925,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
       <button type="button" class="btn-ghost" id="forwardCancel">Отмена</button>
     </div>
   </div>
-</div>a
+</div>
 <!-- WEBRTC CALL (TG-like layout) -->
 <div id="callOverlay" class="call-overlay-tg" style="display:none">
   <div class="call-overlay-bg"></div>
@@ -1286,6 +1416,7 @@ function handleServerMessage(msg) {
       handleUserOffline(data);
       break;
     case 'user-profile':
+    case 'profile-data': // FIX #8: server response to request-profile
       handleUserProfile(data);
       break;
     case 'delete-for-both':
@@ -1450,13 +1581,17 @@ async function handleUserNotFound() {
 }
 
 function updateConnStatus(connected) {
+  const text = connected ? '● Подключено' : '● Отключено';
+  const cls = connected ? 'connected' : 'disconnected';
+  // PC sidebar element
   const el = document.getElementById('connStatus');
-  if (connected) {
-    el.className = 'conn-status connected';
-    el.textContent = '● Подключено';
-  } else {
-    el.className = 'conn-status disconnected';
-    el.textContent = '● Отключено';
+  if (el) { el.className = 'conn-status ' + cls; el.textContent = text; }
+  // Mobile fixed element
+  const em = document.getElementById('connStatusMobile');
+  if (em) {
+    em.style.display = window.matchMedia('(max-width:900px)').matches ? 'block' : 'none';
+    em.className = 'conn-status conn-status-mobile ' + cls;
+    em.textContent = text;
   }
 }
 
@@ -1682,7 +1817,15 @@ let rtcScreenStream = null;
 let rtcCamTrack = null;
 let renderedMsgIds = new Set();
 
-const EMOJI_PRESET = ['😀','😃','😄','😁','😅','😂','🤣','😊','😍','🥰','😘','😜','🤔','😎','😢','😭','😡','👍','👎','🙏','👋','🔥','✨','❤️','💯','🎉','✅','❌','⭐','📎','🎵','📷'];
+const EMOJI_CATEGORIES = {
+  '😊 Смайлики': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','😮','😯','😲','😳','🥺','😞','😟','😤','😢','😭','😩','😫','🥱','😤','😡','🤬','😠','💀','☠️','😎','🤓','🧐','😕','😔','😪','😴'],
+  '👍 Жесты': ['👍','👎','👋','🤚','🖐','✋','🤙','💪','🦾','🤜','🤛','👊','✊','🤞','✌️','🤟','🤘','👌','🤏','👈','👉','👆','👇','☝️','👏','🙌','🤲','🙏','🤝','💅','👂','👃','👀','👁'],
+  '❤️ Сердца': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','♥️','♾','💋','💯','🔥','✨','⭐','🌟','💫','⚡','🎉','🎊','🥳','🎈','🎁'],
+  '😸 Животные': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧','🐦','🦆','🦅','🦉','🦇','🐺','🐗','🦋','🐛','🐝','🐞'],
+  '🍕 Еда': ['🍎','🍊','🍋','🍇','🍓','🍒','🍑','🍍','🥭','🥝','🍅','🥑','🍆','🥕','🌽','🌶','🍄','🥜','🍞','🧀','🥚','🍳','🥞','🧇','🥓','🍗','🍔','🌮','🍕','🍜','🍣','🍰','🎂','🧁','🍩','🍪','🍫','🍬','☕','🍵','🧃','🥤','🍺','🥂'],
+  '🚀 Разное': ['⚽','🏀','🏈','⚾','🎾','🏐','🏉','🎱','🏓','🏸','🥊','🎯','🎳','🎮','🎲','🧩','🃏','🎭','🎨','🎬','🎤','🎧','🎼','🎵','🎶','🎷','🎸','🎹','🎻','🥁','🎺','🚗','✈️','🚂','🚀','🛸','🌍','🌈','⛅','🌊','🌴','🌵','🏔','🏝','🏠','🏢','🏰','⛩','🗼','🗽','🎡','🎢','🎪','💻','📱','⌚','📷','📸','🔭','🔬','💡','🔑','🪄','🎁','🎀','🎊','🎉','🧨','✨','🎇','🎆']
+};
+const EMOJI_PRESET = Object.values(EMOJI_CATEGORIES).flat().slice(0,32);
 
 function getPinnedSet(){
   try{
@@ -1783,25 +1926,36 @@ function bindPanelResizers(){
 }
 
 function buildEmojiGrid(){
-  const grid = document.getElementById('emojiGrid');
-  if (!grid || grid.dataset.built) return;
-  grid.dataset.built = '1';
-  EMOJI_PRESET.forEach(ch => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'emoji-cell';
-    b.textContent = ch;
-    b.onclick = () => {
-      const ta = document.getElementById('msgInput');
-      if (!ta) return;
-      const start = ta.selectionStart ?? ta.value.length;
-      const end = ta.selectionEnd ?? ta.value.length;
-      ta.value = ta.value.slice(0, start) + ch + ta.value.slice(end);
-      ta.focus();
-      ta.setSelectionRange(start + ch.length, start + ch.length);
-      ta.dispatchEvent(new Event('input'));
-    };
-    grid.appendChild(b);
+  const container = document.getElementById('emojiPicker');
+  if (!container || container.dataset.built) return;
+  container.dataset.built = '1';
+  container.innerHTML = ''; // clear emojiGrid placeholder
+  const insertEmoji = (ch) => {
+    const ta = document.getElementById('msgInput');
+    if (!ta) return;
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    ta.value = ta.value.slice(0, start) + ch + ta.value.slice(end);
+    ta.focus();
+    ta.setSelectionRange(start + ch.length, start + ch.length);
+    ta.dispatchEvent(new Event('input'));
+  };
+  Object.entries(EMOJI_CATEGORIES).forEach(([cat, emojis]) => {
+    const catEl = document.createElement('div');
+    catEl.className = 'emoji-category';
+    catEl.textContent = cat;
+    container.appendChild(catEl);
+    const grid = document.createElement('div');
+    grid.className = 'emoji-grid';
+    emojis.forEach(ch => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'emoji-cell';
+      b.textContent = ch;
+      b.onclick = () => insertEmoji(ch);
+      grid.appendChild(b);
+    });
+    container.appendChild(grid);
   });
 }
 
@@ -2134,6 +2288,10 @@ async function handleIncomingMessage(msg) {
   }
 
   renderSidebar();
+  // FIX #3: auto-refresh info panel on incoming media/file
+  if (sameChat && (type === 'image' || type === 'video' || type === 'file')) {
+    renderTabContent().catch(() => {});
+  }
 }
 
 // ==================== GLOBAL ERROR HANDLING ====================
@@ -2298,6 +2456,24 @@ function handleUserProfile(data) {
 
 async function handleDeleteForBothReceived(data) {
   if (!data?.from) return;
+  if (data.deleteAll) {
+    // FIX #7: delete ALL messages from this chat (full chat wipe from peer)
+    await dbDeleteByIndex('messages', 'chatId', normUid(data.from));
+    // Also remove from contacts cache
+    const idx = contacts.findIndex(c => normUid(c.uuid) === normUid(data.from));
+    if (idx > -1) {
+      contacts[idx].lastMsg = '';
+      contacts[idx].lastTs = 0;
+      await dbPut('contacts', contacts[idx]);
+    }
+    if (activeChat === normUid(data.from)) {
+      activeChat = null;
+      showNoChatView();
+    }
+    renderSidebar();
+    showToast('Собеседник удалил переписку');
+    return;
+  }
   // Delete specific message(s) by timestamp
   const msgs = await dbGetByIndex('messages', 'chatId', data.from);
   for (const m of msgs) {
@@ -2383,22 +2559,39 @@ async function sendMessage(type, content){
     return;
   }
   const isRoom = c && (c.kind === 'group' || c.kind === 'channel');
+  // FIX #2: include reply quote if replying
+  const replySnap = replyingToMsg ? {
+    ts: replyingToMsg.ts,
+    from: replyingToMsg.from,
+    type: replyingToMsg.type,
+    preview: replyingToMsg.type === 'text'
+      ? String(replyingToMsg.content || '').slice(0, 80)
+      : '📎 ' + replyingToMsg.type
+  } : undefined;
+
   const message = {
     from: normUid(myProfile.uuid),
     to: activeChat,
     type,
     content,
     ts: Date.now(),
-    ...(isRoom ? { roomId: activeChat } : {})
+    ...(isRoom ? { roomId: activeChat } : {}),
+    ...(replySnap ? { replyTo: replySnap } : {})
   };
 
   const localMsg = {...message, chatId: activeChat, read: true, reactions: {}};
   const localId = await dbPut('messages', localMsg);
   localMsg.id = localId;
 
-  if(ws && ws.readyState === WebSocket.OPEN) {
-    sendToServer('message', message);
+  const isSaved = c && c.kind === 'saved';
+  if(!isSaved && ws && ws.readyState === WebSocket.OPEN) {
+    sendToServer('message', message); // FIX #5: don't send Favorites to server
   }
+
+  // FIX: clear reply state after send
+  replyingToMsg = null;
+  const rp = document.getElementById('replyPreview');
+  if (rp) rp.style.display = 'none';
 
   if(!renderedMsgIds.has(message.ts.toString())) {
     renderedMsgIds.add(message.ts.toString());
@@ -2564,23 +2757,26 @@ async function replyToMessage(ts){
   const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
   const msg = msgs.find((m) => m.ts === ts);
   if (!msg) return;
-  
   replyingToMsg = msg;
-  
-  const senderName = contacts.find((c) => normUid(c.uuid) === normUid(msg.from))?.nickname || msg.from.substring(0, 8);
-  const preview = msg.type === 'text' ? msg.content.substring(0, 60) : '🎵 ' + msg.type;
-  
+  const isMe = normUid(msg.from) === normUid(myProfile.uuid);
+  const senderName = isMe ? (myProfile.nickname || 'Вы') :
+    (contacts.find((c) => normUid(c.uuid) === normUid(msg.from))?.nickname || String(msg.from||'').slice(0,8));
+  let preview = '';
+  if (msg.type === 'text') preview = String(msg.content||'').slice(0,80);
+  else if (msg.type === 'image') preview = '📷 Фото';
+  else if (msg.type === 'video') preview = '🎬 Видео';
+  else if (msg.type === 'voice') preview = '🎵 Голосовое';
+  else if (msg.type === 'file') { try { preview = '📎 ' + JSON.parse(msg.content).name; } catch { preview = '📎 Файл'; } }
+  else preview = '📎 ' + msg.type;
   const replyPreview = document.getElementById('replyPreview');
   const replyAuthor = document.getElementById('replyAuthor');
   const replyText = document.getElementById('replyText');
-  
   if (replyPreview && replyAuthor && replyText) {
-    replyAuthor.textContent = '↩ Ответить ' + senderName;
+    replyAuthor.textContent = '↩ ' + senderName;
     replyText.textContent = preview;
     replyPreview.style.display = 'flex';
     replyPreview.style.flexDirection = 'column';
   }
-  
   document.getElementById('msgInput')?.focus();
 }
 
@@ -2646,30 +2842,32 @@ async function forwardMessage(ts){
 
 async function forwardToContact(msg, contact) {
   if (!msg || !contact) return;
-  
-  // Отправляем оригинальное сообщение контакту
-  const senderName = contacts.find((c) => normUid(c.uuid) === normUid(msg.from))?.nickname || msg.from.substring(0, 8);
-  
+  const senderName = contacts.find((c) => normUid(c.uuid) === normUid(msg.from))?.nickname || String(msg.from||'').slice(0, 8);
   let content = msg.content;
   if (msg.type === 'text') {
-    content = `📨 От ${senderName}:\n${msg.content}`;
+    content = '📨 От ' + senderName + ':\n' + msg.content;
   }
-  
-  const outMsg = {
+  const targetId = normUid(contact.uuid);
+  const ts = Date.now();
+  const serverMsg = {
+    from: normUid(myProfile.uuid),
+    to: targetId,
     type: msg.type,
-    content: content,
-    from: myProfile.uuid,
-    to: contact.uuid,
-    ts: Date.now(),
-    id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(7)
+    content,
+    ts
   };
-  
-  await dbPut('messages', outMsg);
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    sendToServer('message', outMsg);
+  const localMsg = { ...serverMsg, chatId: targetId, read: true, reactions: {} };
+  await dbPut('messages', localMsg);
+  // Update last message preview for that chat
+  updateLastMessage(targetId, content, ts, msg.type);
+  // Send to server only if not saved chat
+  const tContact = contacts.find(c => normUid(c.uuid) === targetId);
+  if (!tContact || tContact.kind !== 'saved') {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      sendToServer('message', serverMsg);
+    }
   }
-  
-  showToast(`✓ Сообщение пересланно ${contact.nickname || 'контакту'}`);
+  showToast('✓ Переслано: ' + (contact.nickname || contact.uuid.slice(0,8)));
 }
 
 async function deleteMessageForMe(ts){
@@ -2702,7 +2900,7 @@ function showMessageCtxMenu(e, msg){
   ).join('');
   let html = `<div class="ctx-react-bar">${reactBar}</div>`;
   html += `<div class="ctx-item" data-action="msg-reply">↩ Ответить</div>`;
-  html += `<div class="ctx-item" data-action="msg-forward">↪ Пересл ать</div>`;
+  html += `<div class="ctx-item" data-action="msg-forward">↪ Переслать</div>`;
   html += `<div class="ctx-item" data-action="msg-del-me">🗑 Удалить у меня</div>`;
   if (isMine) html += `<div class="ctx-item danger" data-action="msg-del-both">Удалить у всех</div>`;
   menu.innerHTML = html;
@@ -2725,19 +2923,23 @@ async function openChat(uuid){
   document.getElementById('infoPanelEmpty').style.display='none';
   renderChatHeader();
 
-  let needsRender = false;
   if(contact && contact.unread){
     contact.unread=0;
     await dbPut('contacts',contact);
-    needsRender = true;
   }
-  
-  if(needsRender) renderSidebar();
+  renderSidebar(); // FIX #9: always update active highlight
 
   await loadMessages();
   await renderInfoPanel(activeChat);
   applyChatComposerVisibility();
   applyMobileChatLayout();
+  // FIX #8: request fresh profile from server to get latest avatar/nick/status
+  const _cInfo = contacts.find(c => normUid(c.uuid) === activeChat);
+  if (_cInfo && _cInfo.kind !== 'group' && _cInfo.kind !== 'channel' && _cInfo.kind !== 'saved') {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      sendToServer('request-profile', { uuid: activeChat });
+    }
+  }
 }
 
 function renderChatHeader(){
@@ -2773,8 +2975,11 @@ async function loadMessages(){
   const msgs=await dbGetByIndex('messages','chatId',activeChat);
   msgs.sort((a,b)=>a.ts-b.ts);
   let lastDate='';
-  msgs.forEach(m=>{
-    const d=fmtDate(m.ts);
+  // FIX: Group consecutive images into albums
+  const grouped = groupMessagesIntoAlbums(msgs);
+  grouped.forEach(item=>{
+    const ts = Array.isArray(item) ? item[0].ts : item.ts;
+    const d=fmtDate(ts);
     if(d!==lastDate){
       const div=document.createElement('div');
       div.className='date-divider';
@@ -2782,10 +2987,95 @@ async function loadMessages(){
       area.appendChild(div);
       lastDate=d;
     }
-    renderedMsgIds.add(m.ts.toString());
-    appendMessage(m);
+    if (Array.isArray(item)) {
+      // album group
+      item.forEach(m => renderedMsgIds.add(m.ts.toString()));
+      appendAlbum(item, area);
+    } else {
+      renderedMsgIds.add(item.ts.toString());
+      appendMessage(item);
+    }
   });
   scrollBottom();
+}
+
+function groupMessagesIntoAlbums(msgs) {
+  const out = [];
+  let i = 0;
+  while (i < msgs.length) {
+    const m = msgs[i];
+    if (m.type === 'image') {
+      const from = m.from;
+      const batch = [m];
+      // Look ahead: same sender, image, within 60s
+      while (i + 1 < msgs.length) {
+        const next = msgs[i + 1];
+        if (next.type === 'image' && next.from === from && Math.abs(next.ts - m.ts) < 60000) {
+          batch.push(next);
+          i++;
+        } else break;
+      }
+      out.push(batch.length > 1 ? batch : m);
+    } else {
+      out.push(m);
+    }
+    i++;
+  }
+  return out;
+}
+
+function appendAlbum(msgs, area) {
+  if (!msgs || !msgs.length) return;
+  const first = msgs[0];
+  const isOut = normUid(first.from) === normUid(myProfile.uuid);
+  const contact = contacts.find(c => normUid(c.uuid) === activeChat) || {};
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg' + (isOut ? ' out' : '');
+  wrapper.dataset.ts = first.ts;
+
+  if (!isOut) {
+    const mav = document.createElement('div');
+    mav.className = 'mavatar';
+    renderAvatar(mav, contact.avatar, contact.nickname || contact.uuid);
+    wrapper.appendChild(mav);
+  }
+
+  const stack = document.createElement('div');
+  stack.className = 'msg-stack';
+
+  const count = msgs.length;
+  const gridClass = count === 2 ? 'album-2' : count === 3 ? 'album-3' : count === 4 ? 'album-4' : 'album-many';
+  const grid = document.createElement('div');
+  grid.className = 'album-grid ' + gridClass;
+
+  const show = Math.min(count, 9);
+  msgs.slice(0, show).forEach((m, idx) => {
+    const item = document.createElement('div');
+    item.className = 'album-item';
+    if (idx === show - 1 && count > show) {
+      item.classList.add('album-more');
+      item.textContent = '+' + (count - show + 1);
+    } else {
+      const img = document.createElement('img');
+      img.src = m.content;
+      img.loading = 'lazy';
+      img.onclick = () => openLightbox(m.content);
+      item.appendChild(img);
+    }
+    grid.appendChild(item);
+  });
+
+  const mt = document.createElement('div');
+  mt.className = 'mtime';
+  mt.textContent = fmtTime(first.ts);
+  if (isOut) mt.innerHTML += ' <span class="check">✓</span>';
+
+  stack.appendChild(grid);
+  stack.appendChild(mt);
+  wrapper.appendChild(stack);
+  wrapper.oncontextmenu = (ev) => { showMessageCtxMenu(ev, first); };
+  area.appendChild(wrapper);
 }
 
 function appendMessage(msg){
@@ -2824,6 +3114,22 @@ function appendMessage(msg){
 
   const bubble=document.createElement('div');
   bubble.className='bubble';
+
+  // FIX #2: render reply quote if present
+  if (msg.replyTo) {
+    const rq = document.createElement('div');
+    rq.className = 'reply-quote';
+    const authorEl = document.createElement('div');
+    authorEl.className = 'reply-quote-author';
+    const rauthor = contacts.find(c=>normUid(c.uuid)===normUid(msg.replyTo.from));
+    authorEl.textContent = rauthor?.nickname || String(msg.replyTo.from||'').slice(0,8);
+    const textEl = document.createElement('div');
+    textEl.className = 'reply-quote-text';
+    textEl.textContent = msg.replyTo.preview || '';
+    rq.appendChild(authorEl);
+    rq.appendChild(textEl);
+    bubble.appendChild(rq);
+  }
 
   if(msg.type==='text'){
     const p=document.createElement('div');
@@ -2900,24 +3206,67 @@ function appendMessage(msg){
   wrapper.appendChild(stack);
   wrapper.oncontextmenu = (ev) => { showMessageCtxMenu(ev, msg); };
   
-  // Обработчик long-press для мобиля
-  let touchStart = 0;
+  // FIX mobile: long press = context menu only (no text selection)
+  // FIX mobile: swipe right to reply
+  let touchStartX = 0, touchStartY = 0, touchStartTime = 0;
+  let longPressTimer = null;
+  let swiping = false;
+
   wrapper.addEventListener('touchstart', (e) => {
-    touchStart = Date.now();
-  });
-  wrapper.addEventListener('touchend', (e) => {
-    if (Date.now() - touchStart > 500) {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchStartTime = Date.now();
+    swiping = false;
+    longPressTimer = setTimeout(() => {
+      // Long press: show context menu, prevent text selection
+      e.preventDefault();
+      const t = e.touches[0];
       const evt = new MouseEvent('contextmenu', {
-        bubbles: true,
-        cancelable: true,
-        view: window,
-        clientX: e.changedTouches[0].clientX,
-        clientY: e.changedTouches[0].clientY
+        bubbles: true, cancelable: true, view: window,
+        clientX: t.clientX, clientY: t.clientY
       });
       wrapper.dispatchEvent(evt);
+      longPressTimer = null;
+    }, 500);
+  }, { passive: false });
+
+  wrapper.addEventListener('touchmove', (e) => {
+    if (!touchStartX) return;
+    const dx = e.touches[0].clientX - touchStartX;
+    const dy = e.touches[0].clientY - touchStartY;
+    if (Math.abs(dy) > 15) { clearTimeout(longPressTimer); longPressTimer = null; return; }
+    if (dx > 10) {
+      swiping = true;
+      clearTimeout(longPressTimer); longPressTimer = null;
+      // Move bubble slightly to show swipe
+      const delta = Math.min(dx, 70);
+      wrapper.style.transform = `translateX(${delta}px)`;
+      wrapper.style.transition = 'none';
     }
+  }, { passive: true });
+
+  wrapper.addEventListener('touchend', (e) => {
+    clearTimeout(longPressTimer); longPressTimer = null;
+    if (swiping) {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      wrapper.style.transform = '';
+      wrapper.style.transition = 'transform .2s';
+      setTimeout(() => { wrapper.style.transition = ''; }, 200);
+      if (dx > 60) {
+        // Swipe right = reply
+        replyToMessage(msg.ts);
+      }
+      swiping = false;
+    }
+    touchStartX = 0;
   });
-  
+
+  wrapper.addEventListener('touchcancel', () => {
+    clearTimeout(longPressTimer); longPressTimer = null;
+    wrapper.style.transform = '';
+    swiping = false; touchStartX = 0;
+  });
+
   area.appendChild(wrapper);
 }
 
@@ -3694,12 +4043,12 @@ function setupEvents(){
     setTimeout(() => location.reload(), 100);
   };
 
-  buildEmojiGrid();
   const emojiBtn = document.getElementById('emojiBtn');
   const emojiPicker = document.getElementById('emojiPicker');
   if (emojiBtn && emojiPicker) {
     emojiBtn.onclick = (e) => {
       e.stopPropagation();
+      if (!emojiPicker.dataset.built) buildEmojiGrid(); // lazy build
       emojiPicker.classList.toggle('show');
       emojiPicker.setAttribute('aria-hidden', emojiPicker.classList.contains('show') ? 'false' : 'true');
     };
@@ -3729,38 +4078,62 @@ function setupEvents(){
   const closeInfoBtn = document.getElementById('closeInfoPanelBtn');
   if (closeInfoBtn) closeInfoBtn.onclick = () => {
     const ip = document.getElementById('infoPanel');
-    if (ip) {
-      const isMobile = window.matchMedia('(max-width:900px)').matches;
-      if (isMobile) {
-        ip.classList.remove('info-open');
-      } else {
-        // На ПК скрываем полностью
-        ip.classList.add('info-hidden');
-        localStorage.setItem('infoPanelHidden', 'true');
-      }
+    if (!ip) return;
+    const isMobile = window.matchMedia('(max-width:900px)').matches;
+    if (isMobile) {
+      ip.classList.remove('info-open');
+      document.getElementById('app')?.classList.remove('info-overlay');
+    } else {
+      // FIX #6: on desktop toggle info-hidden so it CAN be re-opened
+      ip.classList.add('info-hidden');
+      localStorage.setItem('infoPanelHidden', 'true');
     }
-    // FIX #4: Восстанавливаем фокус и снимаем блокировки после закрытия инфо-панели
     document.body.style.overflow = '';
     document.getElementById('msgInput')?.focus();
   };
 
+  // FIX #6: toggleInfoPanelBtn – make it work for re-open too
   const toggleInfoBtn = document.getElementById('toggleInfoPanelBtn');
   if (toggleInfoBtn) {
-    toggleInfoBtn.onclick = () => {
+    toggleInfoBtn.onclick = (e) => {
+      e.stopPropagation();
       const ip = document.getElementById('infoPanel');
-      if (ip) {
+      if (!ip) return;
+      const isMobile = window.matchMedia('(max-width:900px)').matches;
+      if (isMobile) {
+        const open = !ip.classList.contains('info-open');
+        ip.classList.toggle('info-open', open);
+        document.getElementById('app')?.classList.toggle('info-overlay', open);
+      } else {
         ip.classList.toggle('info-hidden');
         localStorage.setItem('infoPanelHidden', ip.classList.contains('info-hidden'));
       }
     };
-    // Восстанавливаем состояние при загрузке
+    // Restore state on load
     const wasHidden = localStorage.getItem('infoPanelHidden') === 'true';
-    if (wasHidden && document.getElementById('infoPanel')) {
-      document.getElementById('infoPanel').classList.add('info-hidden');
-    }
+    if (wasHidden) document.getElementById('infoPanel')?.classList.add('info-hidden');
   }
 
+  // Show toggleInfoPanelBtn on desktop (it's hidden by default inline style)
+  if (toggleInfoBtn) toggleInfoBtn.style.display = '';
+
   window.addEventListener('resize', () => applyMobileChatLayout());
+
+  // FIX: Theme toggle
+  const themeBtn = document.getElementById('themeToggleBtn');
+  if (themeBtn) {
+    const applyTheme = (t) => {
+      document.documentElement.dataset.theme = t;
+      themeBtn.textContent = t === 'light' ? '☀️' : '🌙';
+      localStorage.setItem('cipherTheme', t);
+    };
+    const saved = localStorage.getItem('cipherTheme') || 'dark';
+    applyTheme(saved);
+    themeBtn.onclick = () => {
+      const cur = document.documentElement.dataset.theme || 'dark';
+      applyTheme(cur === 'dark' ? 'light' : 'dark');
+    };
+  }
 
   document.getElementById('sendBtn').onclick=doSend;
   
@@ -3791,7 +4164,11 @@ function setupEvents(){
   });
 
   document.getElementById('attachBtn').onclick=()=>document.getElementById('fileInput').click();
-  document.getElementById('fileInput').onchange=handleFileAttach;
+  document.getElementById('fileInput').onchange=async()=>{
+    await handleFileAttach();
+    // FIX #7 PC: focus input so Enter sends, not opens another file picker
+    setTimeout(() => document.getElementById('msgInput')?.focus(), 50);
+  };
 
   document.getElementById('recordBtn').onclick=toggleRecord;
 
@@ -3813,10 +4190,8 @@ function setupEvents(){
   };
   document.getElementById('deleteBothBtn').onclick=()=>{
     if(activeChat && ws && ws.readyState === WebSocket.OPEN) {
-      // FIX (2.5 / 3.6): Send real ts (last message ts) — not null
-      const contact = contacts.find((c) => normUid(c.uuid) === activeChat);
-      const ts = contact?.lastTs || Date.now();
-      sendToServer('delete-for-both', { to: activeChat, ts });
+      // FIX #7: Send delete-all-chat signal so peer also clears messages from cache
+      sendToServer('delete-for-both', { to: activeChat, ts: Date.now(), deleteAll: true });
     }
     deleteChatLocal(activeChat);
     document.getElementById('deleteChatModal').style.display='none';
@@ -3876,12 +4251,14 @@ async function doSend(){
   const text=inp.value.trim();
   if(!activeChat) return;
   if(!text && !attachmentQueue.length) return;
+  // FIX PC #3: If attachment queue and text, flush attachments first, then send text
   if(attachmentQueue.length) await flushAttachmentQueue();
   if(text) {
-    sendMessage('text',text);
+    await sendMessage('text', text);
     inp.value='';
     inp.style.height='auto';
   }
+  inp.focus();
 }
 
 // FIX: addChat — was using 'nick' field, must be 'nickname'
