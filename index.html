@@ -338,9 +338,9 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
     align-items:stretch;
     height:100dvh;
     min-height:0;
-    background:linear-gradient(165deg,#10121a 0%,#0b0c10 42%,#12151e 100%);
+    background:var(--bg0);
   }
-  html,body{background:linear-gradient(165deg,#10121a 0%,#0b0c10 42%,#12151e 100%)}
+  html,body{background:var(--bg0)}
   /* Только список чатов */
   #app:not(.app-chat-open) #mainChat{display:none!important}
   #app:not(.app-chat-open) #sidebar{
@@ -348,7 +348,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
     min-width:0!important;
     max-width:none!important;
     border-right:none;
-    background:linear-gradient(180deg,#14161f 0%,#0e0f14 100%);
+    background:var(--bg1);
   }
   /* Чат открыт: узкая колонка аватаров + переписка (как в Telegram) */
   #app.app-chat-open #mainChat{
@@ -356,7 +356,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
     flex:1!important;
     min-width:0!important;
     width:auto!important;
-    background:linear-gradient(180deg,#12141c 0%,#0c0d11 100%);
+    background:var(--bg0);
   }
   #app.app-chat-open #sidebar{
     display:flex!important;
@@ -364,7 +364,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
     min-width:56px!important;
     max-width:56px!important;
     border-right:1px solid var(--border);
-    background:#111318;
+    background:var(--bg1);
   }
   #app.app-chat-open #sidebar .logo{display:none!important}
   #app.app-chat-open #sidebar .sidebar-top{
@@ -439,7 +439,9 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
   /* conn-status mobile: in extra css */
   #voiceRecordBar{flex-wrap:wrap;row-gap:8px}
   #emojiPicker{bottom:64px;right:8px;left:8px;max-width:none}
-  #toggleInfoPanelBtn{display:none!important}
+  #toggleInfoPanelBtn{display:flex!important}
+  /* mobileInfoBtn теперь скрыт — используем единую toggleInfoPanelBtn */
+  #mobileInfoBtn{display:none!important}
 }
 @media (max-width:900px) and (prefers-reduced-motion:reduce){
   .chat-item,.modal-overlay,.modal,#infoPanel{animation:none!important;transition-duration:.01ms!important}
@@ -486,6 +488,16 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 :root[data-theme="light"] .date-divider{color:#8a97ab}
 :root[data-theme="light"] #messagesArea{background:#f0f2f5}
 :root[data-theme="light"] #noChatView{background:#f0f2f5}
+/* Mobile light theme: override inline dark backgrounds */
+@media (max-width:900px) {
+  :root[data-theme="light"] #app{background:var(--bg0)}
+  :root[data-theme="light"] html,:root[data-theme="light"] body{background:var(--bg0)}
+  :root[data-theme="light"] #app:not(.app-chat-open) #sidebar{background:var(--bg1)}
+  :root[data-theme="light"] #app.app-chat-open #sidebar{background:var(--bg1)}
+  :root[data-theme="light"] #app.app-chat-open #mainChat{background:var(--bg0)}
+  :root[data-theme="light"] #inputArea{background:rgba(255,255,255,0.95)}
+  :root[data-theme="light"] .sidebar-bottom{background:var(--bg1)}
+}
 
 /* ===== CONNECTION STATUS — PC: top bar; mobile: top-right hidden in chat ===== */
 .conn-status{position:fixed;bottom:10px;right:10px;font-size:11px;color:var(--text3);z-index:100;padding:5px 10px;background:var(--bg3);border-radius:var(--r);border:1px solid var(--border);pointer-events:none;transition:opacity .3s;}
@@ -539,6 +551,17 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .emoji-cell{font-size:22px;line-height:1;padding:5px;border-radius:8px;cursor:pointer;
   transition:background .1s;border:none;background:transparent;flex-shrink:0}
 .emoji-cell:hover{background:var(--bg4)}
+
+/* ===== FORWARDED MESSAGE HEADER ===== */
+.fwd-header{
+  display:flex;align-items:center;gap:6px;
+  border-left:3px solid var(--accent);
+  padding:4px 8px;margin-bottom:6px;
+  border-radius:0 6px 6px 0;
+  background:rgba(79,142,247,0.08);
+  font-size:11px;color:var(--accent);font-weight:600;
+}
+.fwd-header svg{flex-shrink:0;opacity:.8}
 
 /* ===== REPLY QUOTE in bubble ===== */
 .reply-quote{
@@ -1679,6 +1702,16 @@ function dbDelete(store,key){
   });
 }
 
+// FIX: helper to clear entire object store (account isolation)
+function dbClearStore(store){
+  return new Promise((res,rej)=>{
+    const tx=db.transaction(store,'readwrite');
+    const req=tx.objectStore(store).clear();
+    req.onsuccess=()=>res();
+    req.onerror=rej;
+  });
+}
+
 function dbDeleteByIndex(store,index,val){
   return new Promise((res,rej)=>{
     const tx=db.transaction(store,'readwrite');
@@ -1729,7 +1762,8 @@ function renderAvatar(el, av, name){
   el.innerHTML='';
   // FIX: Only render avatar if it's safe (valid format AND size <= 500KB)
   // This prevents memory freeze from large data URLs
-  if(isAvatarSafe(av)){
+  // FIX-AV: also guard against empty string — isAvatarSafe('') returns true but src='' breaks img
+  if(av && isAvatarSafe(av)){
     const img=document.createElement('img');
     img.src=av;
     img.alt='';
@@ -2496,6 +2530,12 @@ async function startApp(uuid) {
   console.log('📦 Loading profile from DB...');
   const saved = await dbGet('profile', 'profile');
   if (saved) {
+    // FIX: если сменился аккаунт (другой UUID) — чистим контакты и сообщения
+    if (saved.uuid && normUid(saved.uuid) !== normUid(uuid)) {
+      console.warn('⚠️ Account changed! Clearing old contacts & messages...');
+      await dbClearStore('contacts');
+      await dbClearStore('messages');
+    }
     myProfile = saved;
     // Если аватарка из базы слишком тяжелая — чистим её, иначе она убьет сокет опять
     if (!isAvatarSafe(myProfile.avatar)) {
@@ -2672,7 +2712,7 @@ function renderSidebar() {
     av.className = 'av';
     if ((c.unread || 0) > 0) av.classList.add('has-unread');
     renderAvatar(av, c.avatar, c.nickname || c.uuid);
-    if (c.online && c.kind !== 'saved') {
+    if (c.online && c.kind !== 'saved' && c.kind !== 'channel') {
       const dot = document.createElement('div');
       dot.className = 'online-dot';
       av.appendChild(dot);
@@ -2794,11 +2834,10 @@ async function forwardMessage(ts){
   
   list.innerHTML = '';
   
-  // Исключаем текущий чат и каналы
+  // Включаем всех — личные чаты + Избранное, кроме каналов и текущего чата
   const selectableContacts = contacts.filter(c => 
     c.kind !== 'channel' && 
-    c.kind !== 'saved' && 
-    normUid(c.uuid) !== activeChat
+    normUid(c.uuid) !== normUid(activeChat)
   );
   
   if (selectableContacts.length === 0) {
@@ -2814,14 +2853,14 @@ async function forwardMessage(ts){
     item.onmouseout = () => item.style.background = 'none';
     
     const av = document.createElement('div');
-    av.className = 'av';
-    av.style.cssText = 'width:40px;height:40px;border-radius:50%;background:var(--bg4);margin-right:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0';
+    av.style.cssText = 'width:40px;height:40px;border-radius:50%;background:var(--bg4);margin-right:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:15px;font-weight:600;color:var(--accent)';
     renderAvatar(av, contact.avatar, contact.nickname || contact.uuid);
     
+    const prefix = contact.kind === 'saved' ? '⭐ ' : (contact.kind === 'group' ? '👥 ' : '');
     const info = document.createElement('div');
     info.style.cssText = 'flex:1;min-width:0';
     info.innerHTML = `
-      <div style="font-size:14px;font-weight:600;color:var(--text)">${contact.nickname || contact.uuid}</div>
+      <div style="font-size:14px;font-weight:600;color:var(--text)">${prefix}${contact.nickname || contact.uuid}</div>
       <div style="font-size:12px;color:var(--text3)">${contact.lastMsg || 'Нет сообщений'}</div>
     `;
     
@@ -2829,7 +2868,6 @@ async function forwardMessage(ts){
     item.appendChild(info);
     
     item.onclick = async () => {
-      // Отправляем сообщение в выбранный чат
       await forwardToContact(msg, contact);
       modal.style.display = 'none';
     };
@@ -2842,31 +2880,45 @@ async function forwardMessage(ts){
 
 async function forwardToContact(msg, contact) {
   if (!msg || !contact) return;
-  const senderName = contacts.find((c) => normUid(c.uuid) === normUid(msg.from))?.nickname || String(msg.from||'').slice(0, 8);
-  let content = msg.content;
-  if (msg.type === 'text') {
-    content = '📨 От ' + senderName + ':\n' + msg.content;
-  }
+  const originalFrom = normUid(msg.from);
+  const isMe = originalFrom === normUid(myProfile.uuid);
+  const senderName = isMe
+    ? (myProfile.nickname || 'Вы')
+    : (contacts.find((c) => normUid(c.uuid) === originalFrom)?.nickname || String(msg.from||'').slice(0, 8));
+  
   const targetId = normUid(contact.uuid);
   const ts = Date.now();
+  
+  // Содержимое пересылаем как есть — тип и контент оригинала
   const serverMsg = {
     from: normUid(myProfile.uuid),
     to: targetId,
     type: msg.type,
-    content,
-    ts
+    content: msg.content,
+    ts,
+    forwardedFrom: { name: senderName, uuid: originalFrom }
   };
   const localMsg = { ...serverMsg, chatId: targetId, read: true, reactions: {} };
   await dbPut('messages', localMsg);
-  // Update last message preview for that chat
-  updateLastMessage(targetId, content, ts, msg.type);
-  // Send to server only if not saved chat
+  updateLastMessage(targetId, msg.content, ts, msg.type);
+  
+  // Отправляем на сервер только если чат не "Избранное"
   const tContact = contacts.find(c => normUid(c.uuid) === targetId);
   if (!tContact || tContact.kind !== 'saved') {
     if (ws && ws.readyState === WebSocket.OPEN) {
       sendToServer('message', serverMsg);
     }
   }
+  
+  // Если текущий открытый чат — тот, куда переслали, показываем сообщение
+  if (activeChat && normUid(activeChat) === targetId) {
+    if (!renderedMsgIds.has(ts.toString())) {
+      renderedMsgIds.add(ts.toString());
+      appendMessage(localMsg);
+      scrollBottom();
+    }
+  }
+  
   showToast('✓ Переслано: ' + (contact.nickname || contact.uuid.slice(0,8)));
 }
 
@@ -2948,7 +3000,8 @@ function renderChatHeader(){
 
   const statusEl = document.getElementById('headerStatus');
   if (statusEl) {
-    if (contact.kind === 'channel') {
+    if (contact.kind === 'channel' || contact.kind === 'saved') {
+      // Избранное и каналы: статус не показываем
       statusEl.classList.add('is-hidden');
     } else {
       statusEl.classList.remove('is-hidden');
@@ -3129,6 +3182,14 @@ function appendMessage(msg){
     rq.appendChild(authorEl);
     rq.appendChild(textEl);
     bubble.appendChild(rq);
+  }
+
+  // FIX-FORWARD: render "Переслано от" header if message was forwarded
+  if (msg.forwardedFrom) {
+    const fwd = document.createElement('div');
+    fwd.className = 'fwd-header';
+    fwd.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg> Переслано от: ${escapeHtml(msg.forwardedFrom.name || String(msg.forwardedFrom.uuid||'').slice(0,8) || '?')}`;
+    bubble.appendChild(fwd);
   }
 
   if(msg.type==='text'){
@@ -3537,7 +3598,7 @@ async function renderInfoPanel(uuid){
   renderAvatar(bigAv, contact.avatar, contact.nickname||contact.uuid);
   document.getElementById('infoName').textContent=contact.nickname||contact.uuid;
   const st = document.getElementById('infoStatus');
-  if (contact.kind === 'channel') {
+  if (contact.kind === 'channel' || contact.kind === 'saved') {
     st.style.display = 'none';
   } else {
     st.style.display = '';
@@ -3731,28 +3792,28 @@ function saveRoomSettingsFromModal() {
 
 async function ensureFavoriteContact() {
   const sid = normUid(myProfile.uuid);
-  // Ищем существующее "Избранное"
-  let favoriteRow = contacts.find((c) => c.kind === 'saved' && normUid(c.uuid) === sid);
   
-  if (!favoriteRow) {
-    // Создаем новое "Избранное"
-    favoriteRow = {
-      uuid: myProfile.uuid,
-      nickname: 'Избранное',
-      avatar: '',
-      online: false,
-      lastMsg: '',
-      lastTs: 0,
-      unread: 0,
-      type: 'friend',
-      kind: 'saved'
-    };
-    contacts.unshift(favoriteRow);
-  } else {
-    // Обновляем существующее
-    favoriteRow.nickname = 'Избранное';
-    favoriteRow.kind = 'saved';
+  // Удаляем ВСЕ существующие saved-контакты (в том числе дубли от чужих аккаунтов)
+  const toRemove = contacts.filter(c => c.kind === 'saved');
+  for (const c of toRemove) {
+    const idx = contacts.indexOf(c);
+    if (idx > -1) contacts.splice(idx, 1);
+    try { await dbDelete('contacts', c.uuid); } catch(_) {}
   }
+  
+  // Создаём единственное «Избранное» с текущим UUID
+  const favoriteRow = {
+    uuid: myProfile.uuid,
+    nickname: 'Избранное',
+    avatar: '',
+    online: false,
+    lastMsg: '',
+    lastTs: 0,
+    unread: 0,
+    type: 'friend',
+    kind: 'saved'
+  };
+  contacts.unshift(favoriteRow);
   
   const cleaned = sanitizeContact(favoriteRow);
   if (cleaned) await dbPut('contacts', cleaned).catch(() => {});
@@ -4072,8 +4133,7 @@ function setupEvents(){
     showNoChatView();
     renderSidebar();
   };
-  const mib = document.getElementById('mobileInfoBtn');
-  if (mib) mib.onclick = toggleChatInfoPanel;
+  // mobileInfoBtn теперь подключён в doToggleInfoPanel ниже — не дублируем здесь
 
   const closeInfoBtn = document.getElementById('closeInfoPanelBtn');
   if (closeInfoBtn) closeInfoBtn.onclick = () => {
@@ -4092,27 +4152,31 @@ function setupEvents(){
     document.getElementById('msgInput')?.focus();
   };
 
-  // FIX #6: toggleInfoPanelBtn – make it work for re-open too
+  // UNIFIED info panel toggle — одна кнопка для мобайла и ПК
   const toggleInfoBtn = document.getElementById('toggleInfoPanelBtn');
+  function doToggleInfoPanel(e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const ip = document.getElementById('infoPanel');
+    if (!ip) return;
+    const isMobile = window.matchMedia('(max-width:900px)').matches;
+    if (isMobile) {
+      const open = !ip.classList.contains('info-open');
+      ip.classList.toggle('info-open', open);
+      document.getElementById('app')?.classList.toggle('info-overlay', open);
+    } else {
+      ip.classList.toggle('info-hidden');
+      localStorage.setItem('infoPanelHidden', ip.classList.contains('info-hidden'));
+    }
+  }
   if (toggleInfoBtn) {
-    toggleInfoBtn.onclick = (e) => {
-      e.stopPropagation();
-      const ip = document.getElementById('infoPanel');
-      if (!ip) return;
-      const isMobile = window.matchMedia('(max-width:900px)').matches;
-      if (isMobile) {
-        const open = !ip.classList.contains('info-open');
-        ip.classList.toggle('info-open', open);
-        document.getElementById('app')?.classList.toggle('info-overlay', open);
-      } else {
-        ip.classList.toggle('info-hidden');
-        localStorage.setItem('infoPanelHidden', ip.classList.contains('info-hidden'));
-      }
-    };
+    toggleInfoBtn.onclick = doToggleInfoPanel;
     // Restore state on load
     const wasHidden = localStorage.getItem('infoPanelHidden') === 'true';
     if (wasHidden) document.getElementById('infoPanel')?.classList.add('info-hidden');
   }
+  // mobileInfoBtn тоже ведёт к той же функции (на случай если HTML оставлен)
+  const mobileInfoBtnEl = document.getElementById('mobileInfoBtn');
+  if (mobileInfoBtnEl) mobileInfoBtnEl.onclick = doToggleInfoPanel;
 
   // Show toggleInfoPanelBtn on desktop (it's hidden by default inline style)
   if (toggleInfoBtn) toggleInfoBtn.style.display = '';
