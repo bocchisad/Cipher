@@ -34,6 +34,11 @@
   --info:280px;
   --sidebar-w:280px;
   --info-w:280px;
+  /* FIX #3: CSS-переменные для сетки */
+  --gap-xs:4px;
+  --gap-sm:8px;
+  --gap-md:16px;
+  --gap-lg:24px;
 }
 html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg0);color:var(--text);font-family:var(--font)}
 button{font-family:var(--font);cursor:pointer;border:none;background:none}
@@ -41,6 +46,8 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:4px}
+/* FIX #3: touch-action для устранения задержки 300мс на мобильных */
+button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab{touch-action:manipulation}
 
 /* REGISTRATION */
 #regOverlay{position:fixed;inset:0;background:var(--bg0);z-index:1000;display:flex;align-items:center;justify-content:center;}
@@ -82,7 +89,6 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 .chat-item{display:flex;align-items:center;gap:10px;padding:10px 10px;border-radius:var(--r);cursor:pointer;transition:background .15s;position:relative;}
 .chat-item:hover{background:var(--bg3)}
 .chat-item.active{background:var(--bg4);box-shadow:inset 3px 0 0 var(--accent)}
-.chat-item{}
 .chat-item .av.has-unread::after{content:'';position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:2px solid var(--bg1);box-sizing:border-box;display:none}
 .chat-item .av{width:42px;height:42px;min-width:42px;border-radius:50%;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--accent);position:relative;}
 .chat-item .av img{width:100%;height:100%;object-fit:cover}
@@ -771,14 +777,13 @@ input,textarea{font-family:var(--font);background:none;border:none;outline:none;
 <!-- FORWARD MODAL -->
 <div class="modal-overlay" id="forwardModal" style="display:none">
   <div class="modal" style="display:flex;flex-direction:column;max-height:min(85dvh,560px)">
-    <h2>Пересл ать сообщение</h2>
+    <h2>Переслать сообщение</h2>
     <div id="forwardContactsList" style="flex:1;overflow-y:auto;min-height:120px;margin-top:8px"></div>
     <div class="modal-btns" style="margin-top:16px">
       <button type="button" class="btn-ghost" id="forwardCancel">Отмена</button>
     </div>
   </div>
-</div>
-
+</div>a
 <!-- WEBRTC CALL (TG-like layout) -->
 <div id="callOverlay" class="call-overlay-tg" style="display:none">
   <div class="call-overlay-bg"></div>
