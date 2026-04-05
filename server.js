@@ -103,6 +103,8 @@ const messageQueue = new Map(); // uuid -> [{ from, to, content, ts, type }, ...
 const rooms = new Map();
 /** публичный @username канала (нормализованный) -> roomId */
 const channelUsernames = new Map();
+/** uuid -> publicKeyJwk (string) — E2EE public keys, cached in memory */
+const publicKeys = new Map();
 
 function normalizeChannelUsername(raw) {
   if (!raw || typeof raw !== 'string') return '';
@@ -476,6 +478,12 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'message-reaction':
       handleMessageReaction(uuid, data);
       break;
+    case 'set-public-key':
+      handleSetPublicKey(uuid, data);
+      break;
+    case 'get-public-key':
+      handleGetPublicKey(ws, data);
+      break;
     case 'ping':
       // keep-alive от клиента (прокси / Render idle)
       break;
@@ -516,6 +524,10 @@ function handleRegister(ws, msg, ip, setUserId) {
     lastSeen: Date.now()
   };
 
+  // [FIX: Auth Flow] If this ws already has a userId from a previous session on
+  // the same connection, cleanly remove the old association before registering.
+  // This prevents ghost users if logout happened without page reload.
+  // (setUserId will overwrite the closure variable; ws.close handler checks ws === user.ws)
   users.set(uuid, user);
 
   // [FIX-2.5] setUserId called — ws.on('close') will now correctly null out user.ws
@@ -523,6 +535,7 @@ function handleRegister(ws, msg, ip, setUserId) {
 
   saveUserToStore(user);
 
+  broadcast({ type: 'user-online', data: { uuid, nickname: user.nickname, avatar: user.avatar } }, uuid);
   console.log(`✅ Registered: ${user.nickname} (${uuid.substring(0, 8)}...)`);
   safeWsSend(ws, { type: 'register-ok', uuid, nickname: user.nickname, avatar: user.avatar });
 }
@@ -635,12 +648,13 @@ function handleLogin(ws, msg, setUserId, ip) {
   const pending = dequeueMessagesFromStore(uidCanon);
   if (pending.length > 0) {
     console.log(`📨 Delivering ${pending.length} queued messages to ${user.nickname}`);
-    pending.forEach(qMsg => safeWsSend(ws, { type: 'message', data: qMsg }));
   }
 
   console.log(`✅ Login: ${user.nickname} (${uidCanon.substring(0, 8)}...) [${users.size} users, ${onlineUsers.length} online]`);
 
-  safeWsSend(ws, { type: 'login-ok', uuid: uidCanon, nickname: user.nickname, avatar: user.avatar, users: onlineUsers });
+  // [FIX: Offline Delivery] Send pending messages INSIDE login-ok payload so the
+  // client has myProfile.uuid and contacts loaded before processing them.
+  safeWsSend(ws, { type: 'login-ok', uuid: uidCanon, nickname: user.nickname, avatar: user.avatar, users: onlineUsers, pending });
   broadcast({ type: 'user-online', data: { uuid: uidCanon, nickname: user.nickname, avatar: user.avatar } }, uidCanon);
 }
 
@@ -974,18 +988,44 @@ function handleMessageReaction(fromUuid, data) {
     }
   };
   if (rooms.has(data.to)) {
+    // Group / channel — broadcast to all members (including sender for multi-device)
     const room = rooms.get(data.to);
     normalizeRoom(room);
-    const src = normUid(fromUuid);
     for (const memberId of room.members) {
-      if (normUid(memberId) === src) continue;
       const u = getUserLive(memberId);
       if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
     }
   } else {
-    const u = getUserLive(data.to);
-    if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
+    // P2P — send to the peer
+    const peer = getUserLive(data.to);
+    if (peer?.ws && peer.ws.readyState === WebSocket.OPEN) safeWsSend(peer.ws, payload);
+    // [FIX: Reaction Sync] Also echo back to sender so all their devices update
+    const sender = getUserLive(fromUuid);
+    if (sender?.ws && sender.ws.readyState === WebSocket.OPEN) safeWsSend(sender.ws, payload);
   }
+}
+
+// ==================== E2EE PUBLIC KEY MANAGEMENT ====================
+function handleSetPublicKey(fromUuid, data) {
+  if (!fromUuid || !data?.publicKey) return;
+  const uid = normUid(fromUuid);
+  const keyStr = String(data.publicKey);
+  publicKeys.set(uid, keyStr);
+  if (dbModule) {
+    try { dbModule.savePublicKey(uid, keyStr); } catch (_) {}
+  }
+  console.log(`🔑 Public key set for ${uid.substring(0, 8)}...`);
+}
+
+function handleGetPublicKey(ws, data) {
+  if (!data?.uuid) return;
+  const uid = normUid(data.uuid);
+  // Try memory first, then DB
+  let key = publicKeys.get(uid) || '';
+  if (!key && dbModule) {
+    try { key = dbModule.getPublicKey(uid) || ''; } catch (_) {}
+  }
+  safeWsSend(ws, { type: 'public-key', uuid: uid, publicKey: key || null });
 }
 
 // ==================== PROFILE UPDATE ====================
