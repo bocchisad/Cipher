@@ -62,6 +62,7 @@ function createTables() {
       nickname    TEXT NOT NULL,
       avatar      TEXT NOT NULL DEFAULT '',
       password    TEXT NOT NULL,
+      public_key  TEXT NOT NULL DEFAULT '',
       last_seen   INTEGER NOT NULL DEFAULT 0,
       created_at  INTEGER NOT NULL DEFAULT (unixepoch())
     );
@@ -80,6 +81,11 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_queue_ts  ON message_queue(ts);
     CREATE INDEX IF NOT EXISTS idx_users_seen ON users(last_seen);
   `);
+
+  // Migration: add public_key column if it doesn't exist (upgrades older DBs)
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN public_key TEXT NOT NULL DEFAULT ''`);
+  } catch (_) { /* column already exists */ }
 }
 
 // ==================== USER OPERATIONS ====================
@@ -154,6 +160,16 @@ function getPendingCount(toUuid) {
     .get(toUuid)?.c || 0;
 }
 
+// ==================== PUBLIC KEY (E2EE) ====================
+function savePublicKey(uuid, publicKey) {
+  db.prepare('UPDATE users SET public_key = ? WHERE uuid = ?').run(publicKey || '', uuid);
+}
+
+function getPublicKey(uuid) {
+  const row = db.prepare('SELECT public_key FROM users WHERE uuid = ?').get(uuid);
+  return row?.public_key || '';
+}
+
 // ==================== CLOSE ====================
 function closeDatabase() {
   if (db) {
@@ -173,5 +189,7 @@ module.exports = {
   enqueueMessage,
   enqueueMessageForUser,
   dequeueMessages,
-  getPendingCount
+  getPendingCount,
+  savePublicKey,
+  getPublicKey
 };
