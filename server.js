@@ -1,12 +1,9 @@
 #!/usr/bin/env node
 /**
- * Cipher P2P Messenger Server v4.1
- * Fixes from Senior Dev Audit:
- * ✅ [CRIT-2.2] IP removed from console.log — privacy fix
- * ✅ [CRIT-2.3] SQLite (database.js) integration via USE_SQLITE=1 env
- * ✅ [CRIT-2.5] handleRegister now calls setUserId — ws.close cleanup fixed
- * ✅ [CRIT-2.6] WebSocket maxPayload 25MB + runtime size guard
- * ✅ [SERIOUS-3.5] messageQueue persisted to queue.json (survives restart)
+ * Cipher P2P Messenger Server v5.0 with E2EE
+ * - Blind Router for encrypted messages
+ * - Public key exchange (ECDSA, ECDH)
+ * - Room Key Share signaling
  */
 
 const WebSocket = require('ws');
@@ -23,7 +20,6 @@ const QUEUE_FILE = process.env.QUEUE_FILE || path.join(__dirname, 'queue.json');
 const ROOMS_FILE = process.env.ROOMS_FILE || path.join(__dirname, 'rooms.json');
 
 // ==================== SQLITE INTEGRATION ====================
-// Launch with: USE_SQLITE=1 node server.js  (or set in render.yaml)
 const USE_SQLITE = process.env.USE_SQLITE === '1';
 let dbModule = null;
 
@@ -34,7 +30,6 @@ if (USE_SQLITE) {
     console.log('✅ Storage: SQLite (SQLCipher AES-256)');
   } catch (e) {
     console.error('❌ Failed to load database.js:', e.message);
-    console.error('   Falling back to JSON storage.');
   }
 }
 
@@ -47,7 +42,6 @@ function generateUUID() {
   return crypto.randomBytes(16).toString('hex');
 }
 
-/** Единый формат UUID пользователя (клиенты шлют с разным регистром) */
 function normUid(s) {
   return String(s || '').trim().toLowerCase().replace(/-/g, '');
 }
@@ -63,7 +57,6 @@ function getUserLive(id) {
   return null;
 }
 
-/** Нормализовать участников комнаты (регистр + дедуп) */
 function normalizeRoom(room) {
   if (!room) return;
   room.owner = normUid(room.owner);
@@ -72,7 +65,6 @@ function normalizeRoom(room) {
   room.admins = adm;
 }
 
-// PBKDF2 password hashing (100k rounds SHA-512)
 function hashPassword(pwd) {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = crypto.pbkdf2Sync(pwd, salt, 100000, 64, 'sha512').toString('hex');
@@ -86,7 +78,6 @@ function verifyPassword(pwd, stored) {
       const computed = crypto.pbkdf2Sync(pwd, salt, 100000, 64, 'sha512').toString('hex');
       return crypto.timingSafeEqual(Buffer.from(computed, 'hex'), Buffer.from(hash, 'hex'));
     } else {
-      // Legacy SHA-256 — will be upgraded on next login
       const legacy = crypto.createHash('sha256').update(pwd).digest('hex');
       return legacy === stored;
     }
@@ -96,15 +87,10 @@ function verifyPassword(pwd, stored) {
 }
 
 // ==================== IN-MEMORY STORE ====================
-// ws connections always in memory; persistent data goes to SQLite or JSON
-const users = new Map(); // uuid -> { ws, uuid, nickname, avatar, lastSeen, password }
-const messageQueue = new Map(); // uuid -> [{ from, to, content, ts, type }, ...]
-/** roomId -> { id, title, kind: 'group'|'channel', owner, members: string[], admins?: string[], username?: string } */
+const users = new Map();
+const messageQueue = new Map();
 const rooms = new Map();
-/** публичный @username канала (нормализованный) -> roomId */
 const channelUsernames = new Map();
-/** uuid -> publicKeyJwk (string) — E2EE public keys, cached in memory */
-const publicKeys = new Map();
 
 function normalizeChannelUsername(raw) {
   if (!raw || typeof raw !== 'string') return '';
@@ -127,7 +113,6 @@ function getUserFromStore(uuid) {
   if (dbModule) {
     const row = dbModule.getUser(uuid);
     if (!row) return null;
-    // Merge DB record with live ws from memory
     const mem = users.get(uuid);
     return { ...row, ws: mem?.ws || null };
   }
@@ -135,7 +120,6 @@ function getUserFromStore(uuid) {
 }
 
 function saveUserToStore(user) {
-  // Always keep ws reference in memory
   const existing = users.get(user.uuid) || {};
   users.set(user.uuid, { ...existing, ...user });
 
@@ -149,10 +133,10 @@ function saveUserToStore(user) {
 function enqueueMessageToStore(message) {
   const key = normUid(message.to);
   if (dbModule) {
-    dbModule.enqueueMessage({ ...message, to: key });
+    dbModule.enqueueMessage(message);
   } else {
     if (!messageQueue.has(key)) messageQueue.set(key, []);
-    messageQueue.get(key).push({ ...message, to: key });
+    messageQueue.get(key).push(message);
     saveQueueJSON();
   }
 }
@@ -175,8 +159,8 @@ function dequeueMessagesFromStore(uuid) {
 }
 
 // ==================== RATE LIMITING ====================
-const regAttempts = new Map(); // ip -> { count, resetAt }
-const loginAttempts = new Map(); // ip -> { count, resetAt }
+const regAttempts = new Map();
+const loginAttempts = new Map();
 
 function checkRateLimit(map, ip, limit = 5, windowMs = 60000) {
   const now = Date.now();
@@ -187,7 +171,6 @@ function checkRateLimit(map, ip, limit = 5, windowMs = 60000) {
   return rec.count <= limit;
 }
 
-// Cleanup rate limit entries every 5 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [ip, rec] of regAttempts) if (now > rec.resetAt) regAttempts.delete(ip);
@@ -196,10 +179,18 @@ setInterval(() => {
 
 // ==================== JSON PERSISTENCE ====================
 function saveUsersJSON() {
-  if (dbModule) return; // SQLite handles it
+  if (dbModule) return;
   const data = {};
   for (const [uuid, user] of users) {
-    data[uuid] = { uuid: user.uuid, nickname: user.nickname, avatar: user.avatar, password: user.password, lastSeen: user.lastSeen };
+    data[uuid] = { 
+      uuid: user.uuid, 
+      nickname: user.nickname, 
+      avatar: user.avatar, 
+      password: user.password,
+      pub_ecdh: user.pub_ecdh || '',
+      pub_ecdsa: user.pub_ecdsa || '',
+      lastSeen: user.lastSeen 
+    };
   }
   const tmp = USERS_FILE + '.tmp';
   try {
@@ -212,18 +203,22 @@ function saveUsersJSON() {
 }
 
 function loadUsersJSON() {
-  if (dbModule) return; // SQLite loaded via openDatabase()
+  if (dbModule) return;
   try {
     if (fs.existsSync(USERS_FILE)) {
       const data = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
       for (const [uuid, user] of Object.entries(data)) {
-        users.set(uuid, { ...user, ws: null });
+        users.set(uuid, { 
+          ...user, 
+          ws: null,
+          pub_ecdh: user.pub_ecdh || '',
+          pub_ecdsa: user.pub_ecdsa || ''
+        });
       }
       console.log(`✓ Loaded ${users.size} users from JSON`);
     }
   } catch (e) {
     console.error('💾 Load users error:', e.message);
-    // Try backup
     const backup = USERS_FILE + '.bak';
     if (fs.existsSync(backup)) {
       try {
@@ -239,7 +234,6 @@ function loadUsersJSON() {
   }
 }
 
-// ==================== QUEUE PERSISTENCE (JSON fallback) ====================
 function saveQueueJSON() {
   if (dbModule) return;
   const data = {};
@@ -312,7 +306,6 @@ function loadRoomsJSON() {
   }
 }
 
-// Backup users every 5 minutes (JSON mode only)
 setInterval(() => {
   if (!dbModule && fs.existsSync(USERS_FILE)) {
     try { fs.copyFileSync(USERS_FILE, USERS_FILE + '.bak'); } catch {}
@@ -339,7 +332,7 @@ const app = http.createServer((req, res) => {
   fs.readFile(filePath, (err, data) => {
     if (err) {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end(`Cipher Messenger Server v4.1\nUsers: ${users.size}\nUptime: ${process.uptime().toFixed(0)}s`);
+      res.end(`Cipher Messenger Server v5.0\nUsers: ${users.size}\nUptime: ${process.uptime().toFixed(0)}s`);
       return;
     }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
@@ -348,30 +341,23 @@ const app = http.createServer((req, res) => {
 });
 
 // ==================== WEBSOCKET SERVER ====================
-// [FIX-2.6] maxPayload set to 25MB to prevent OOM crash
 const wss = new WebSocket.Server({
   server: app,
   perMessageDeflate: false,
-  maxPayload: 25 * 1024 * 1024 // 25 MB hard limit
+  maxPayload: 25 * 1024 * 1024
 });
 
 wss.on('connection', (ws, req) => {
   let userId = null;
   ws.isAlive = true;
-
-  // [FIX-2.2] IP kept ONLY for rate-limiting, never logged to console
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
 
-  // [FIX-2.2] No IP in log
   console.log(`📡 New connection established`);
-
-  // Send ready signal
   safeWsSend(ws, { type: 'server-ready', timestamp: Date.now() });
 
   ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', async (data) => {
-    // [FIX-2.6] Runtime size guard (belt-and-suspenders after maxPayload)
     if (data.length > 20 * 1024 * 1024) {
       safeWsSend(ws, { type: 'error', error: 'Message too large (max 20MB)' });
       console.warn('⚠️ Oversized message rejected');
@@ -427,7 +413,6 @@ async function handleMessage(ws, msg, setUserId, ip) {
 
   switch (type) {
     case 'register':
-      // [FIX-2.5] Pass setUserId so ws.close() properly cleans up userId
       handleRegister(ws, msg, ip, setUserId);
       break;
     case 'reregister':
@@ -436,17 +421,26 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'login':
       handleLogin(ws, msg, setUserId, ip);
       break;
+    case 'publish-keys':
+      handlePublishKeys(uuid, data, ws);
+      break;
+    case 'get-pub-keys':
+      handleGetPublicKeys(uuid, data, ws);
+      break;
+    case 'msg':
+    case 'rtc-offer':
+    case 'rtc-answer':
+    case 'rtc-ice':
+      handleE2EEMessage(uuid, type, data);
+      break;
+    case 'room-key-share':
+      handleRoomKeyShare(uuid, data);
+      break;
     case 'message':
       handleSendMessage(uuid, data);
       break;
     case 'profile-update':
       handleProfileUpdate(uuid, data);
-      break;
-    case 'rtc-offer':
-    case 'rtc-answer':
-    case 'rtc-ice':
-    case 'rtc-hangup':
-      handleRtcSignal(uuid, type, data);
       break;
     case 'delete-for-both':
       handleDeleteForBoth(uuid, data);
@@ -478,14 +472,7 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'message-reaction':
       handleMessageReaction(uuid, data);
       break;
-    case 'set-public-key':
-      handleSetPublicKey(uuid, data);
-      break;
-    case 'get-public-key':
-      handleGetPublicKey(ws, data);
-      break;
     case 'ping':
-      // keep-alive от клиента (прокси / Render idle)
       break;
     default:
       console.warn(`⚠️ Unknown message type: ${type}`);
@@ -493,16 +480,14 @@ async function handleMessage(ws, msg, setUserId, ip) {
 }
 
 // ==================== REGISTRATION ====================
-// [FIX-2.5] Added setUserId parameter — critical for disconnect cleanup
 function handleRegister(ws, msg, ip, setUserId) {
   if (!checkRateLimit(regAttempts, ip, 5, 60000)) {
     safeWsSend(ws, { type: 'error', error: 'Too many registrations. Try again in 1 minute.' });
-    // [FIX-2.2] No IP in warning log
     console.warn(`⚠️ Rate limit hit (registration)`);
     return;
   }
 
-  const { password, nickname, avatar } = msg || {};
+  const { password, nickname, avatar, pub_ecdh, pub_ecdsa } = msg || {};
 
   if (!password || password.length < 8) {
     safeWsSend(ws, { type: 'error', error: 'Password hash too short' });
@@ -520,27 +505,24 @@ function handleRegister(ws, msg, ip, setUserId) {
     uuid,
     nickname: nickname.trim().slice(0, 32),
     avatar: avatar || '',
-    password: hashPassword(password), // PBKDF2
+    password: hashPassword(password),
+    pub_ecdh: pub_ecdh || '',
+    pub_ecdsa: pub_ecdsa || '',
     lastSeen: Date.now()
   };
 
-  // [FIX: Auth Flow] If this ws already has a userId from a previous session on
-  // the same connection, cleanly remove the old association before registering.
-  // This prevents ghost users if logout happened without page reload.
-  // (setUserId will overwrite the closure variable; ws.close handler checks ws === user.ws)
   users.set(uuid, user);
-
-  // [FIX-2.5] setUserId called — ws.on('close') will now correctly null out user.ws
   setUserId(uuid);
-
   saveUserToStore(user);
 
-  broadcast({ type: 'user-online', data: { uuid, nickname: user.nickname, avatar: user.avatar } }, uuid);
+  if (dbModule) {
+    dbModule.updatePublicKeys(uuid, pub_ecdh || '', pub_ecdsa || '');
+  }
+
   console.log(`✅ Registered: ${user.nickname} (${uuid.substring(0, 8)}...)`);
   safeWsSend(ws, { type: 'register-ok', uuid, nickname: user.nickname, avatar: user.avatar });
 }
 
-// ==================== REREGISTER ====================
 function handleReregister(ws, msg, setUserId) {
   const { uuid, password, nickname, avatar } = msg || {};
 
@@ -551,7 +533,6 @@ function handleReregister(ws, msg, setUserId) {
 
   const existingUser = getUserFromStore(uuid);
   if (existingUser) {
-    // User exists — delegate to login
     handleLogin(ws, msg, setUserId, null);
     return;
   }
@@ -596,7 +577,6 @@ function handleLogin(ws, msg, setUserId, ip) {
     return;
   }
 
-  // [NEW] Rate limit login attempts to prevent brute force
   if (ip && !checkRateLimit(loginAttempts, ip, 10, 60000)) {
     safeWsSend(ws, { type: 'error', error: 'Too many login attempts. Try again in 1 minute.' });
     console.warn(`⚠️ Login rate limit hit`);
@@ -619,7 +599,6 @@ function handleLogin(ws, msg, setUserId, ip) {
 
   const uidCanon = normUid(user.uuid);
 
-  // Upgrade legacy SHA-256 → PBKDF2
   if (!user.password.startsWith('pbkdf2:')) {
     user.password = hashPassword(password);
     console.log(`🔒 Upgraded password hash for ${uidCanon.substring(0, 8)}...`);
@@ -648,17 +627,111 @@ function handleLogin(ws, msg, setUserId, ip) {
   const pending = dequeueMessagesFromStore(uidCanon);
   if (pending.length > 0) {
     console.log(`📨 Delivering ${pending.length} queued messages to ${user.nickname}`);
+    pending.forEach(qMsg => {
+      if (qMsg.type && ['msg', 'rtc-offer', 'rtc-answer', 'rtc-ice'].includes(qMsg.type)) {
+        safeWsSend(ws, { type: qMsg.type, data: qMsg });
+      } else {
+        safeWsSend(ws, { type: 'message', data: qMsg });
+      }
+    });
   }
 
   console.log(`✅ Login: ${user.nickname} (${uidCanon.substring(0, 8)}...) [${users.size} users, ${onlineUsers.length} online]`);
 
-  // [FIX: Offline Delivery] Send pending messages INSIDE login-ok payload so the
-  // client has myProfile.uuid and contacts loaded before processing them.
-  safeWsSend(ws, { type: 'login-ok', uuid: uidCanon, nickname: user.nickname, avatar: user.avatar, users: onlineUsers, pending });
+  safeWsSend(ws, { type: 'login-ok', uuid: uidCanon, nickname: user.nickname, avatar: user.avatar, users: onlineUsers });
   broadcast({ type: 'user-online', data: { uuid: uidCanon, nickname: user.nickname, avatar: user.avatar } }, uidCanon);
 }
 
-// ==================== SEND MESSAGE ====================
+// ==================== E2EE MESSAGE HANDLERS ====================
+
+// Publish public keys to server
+function handlePublishKeys(uuid, data, ws) {
+  if (!data?.pub_ecdh || !data?.pub_ecdsa) return;
+
+  const user = getUserFromStore(uuid);
+  if (!user) return;
+
+  user.pub_ecdh = data.pub_ecdh;
+  user.pub_ecdsa = data.pub_ecdsa;
+
+  saveUserToStore(user);
+
+  if (dbModule) {
+    dbModule.updatePublicKeys(uuid, data.pub_ecdh, data.pub_ecdsa);
+  }
+
+  safeWsSend(ws, { type: 'keys-published' });
+  console.log(`🔑 Published keys: ${uuid.substring(0, 8)}…`);
+}
+
+// Get public keys for recipient
+function handleGetPublicKeys(uuid, data, ws) {
+  if (!data?.targetUuid) return;
+
+  const target = getUserFromStore(data.targetUuid);
+  if (!target) {
+    safeWsSend(ws, { type: 'error', data: { error: 'User not found' } });
+    return;
+  }
+
+  const payload = {
+    type: 'pub-keys-response',
+    data: {
+      uuid: target.uuid,
+      pub_ecdh: target.pub_ecdh || '',
+      pub_ecdsa: target.pub_ecdsa || ''
+    }
+  };
+  safeWsSend(ws, payload);
+}
+
+// E2EE Message - Blind Router (payload, iv, signature not parsed)
+function handleE2EEMessage(fromUuid, type, data) {
+  if (!data?.to || !data?.payload || !data?.iv || !data?.signature) {
+    return;
+  }
+
+  const toUuid = normUid(data.to);
+  const message = {
+    from: fromUuid,
+    to: toUuid,
+    type,
+    payload: data.payload,
+    iv: data.iv,
+    signature: data.signature,
+    ts: data.ts || Date.now()
+  };
+
+  const toUser = getUserLive(toUuid);
+  if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
+    safeWsSend(toUser.ws, { type, data: message });
+  } else {
+    enqueueMessageToStore(message);
+  }
+
+  console.log(`💬 E2EE ${type}: ${fromUuid.substring(0, 8)}… → ${toUuid.substring(0, 8)}…`);
+}
+
+// Room Key Share - Blind routing encrypted room keys
+function handleRoomKeyShare(uuid, data) {
+  if (!data?.to || !data?.encryptedKey || !data?.roomId) return;
+
+  const toUser = getUserLive(data.to);
+  if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
+    safeWsSend(toUser.ws, {
+      type: 'room-key-share',
+      data: {
+        from: uuid,
+        roomId: data.roomId,
+        encryptedKey: data.encryptedKey
+      }
+    });
+  }
+
+  console.log(`🔑 Room key share: ${uuid.substring(0, 8)}… → ${data.to.substring(0, 8)}…`);
+}
+
+// ==================== LEGACY MESSAGE HANDLER ====================
 function handleSendMessage(fromUuid, data) {
   if (!fromUuid || !data?.to) {
     console.warn('⚠️ handleSendMessage: missing fromUuid or data.to');
@@ -707,7 +780,8 @@ function handleSendMessage(fromUuid, data) {
       } else {
         const qid = normUid(memberId);
         if (dbModule) {
-          dbModule.enqueueMessageForUser(qid, message);
+          const msg = { ...message, from: sender, to: qid, payload: content, iv: '', signature: '', type: 'message' };
+          dbModule.enqueueMessage(msg);
         } else {
           if (!messageQueue.has(qid)) messageQueue.set(qid, []);
           messageQueue.get(qid).push(message);
@@ -813,59 +887,57 @@ function handleRoomAddMembers(fromUuid, data) {
   if (!data?.roomId || !Array.isArray(data.memberUuids)) return;
   const rid = String(data.roomId).trim().toLowerCase().replace(/-/g, '');
   const room = rooms.get(rid);
+  normalizeRoom(room);
   if (!room) {
     if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Комната не найдена' } });
     return;
   }
-  normalizeRoom(room);
-  const adminSet = new Set([room.owner, ...(room.admins || [])].map(normUid));
-  if (!adminSet.has(normUid(fromUuid))) {
-    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Недостаточно прав' } });
+  const isAdmin = normUid(fromUuid) === normUid(room.owner) || (room.admins && room.admins.some(a => normUid(a) === normUid(fromUuid)));
+  if (!isAdmin) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Только администраторы могут добавлять участников' } });
     return;
   }
-  const memSet = new Set(room.members.map(normUid));
-  for (const raw of data.memberUuids) {
-    const mid = normUid(raw);
-    if (!mid || memSet.has(mid)) continue;
-    room.members.push(mid);
-    memSet.add(mid);
-    const usr = getUserLive(mid);
-    if (usr?.ws && usr.ws.readyState === WebSocket.OPEN) {
-      safeWsSend(usr.ws, { type: 'room-invite', data: { room } });
+  const newMembers = data.memberUuids.map(normUid).filter(Boolean);
+  for (const nm of newMembers) {
+    if (!room.members.some(m => normUid(m) === nm)) {
+      room.members.push(nm);
     }
   }
+  normalizeRoom(room);
   saveRoomsJSON();
+  const inv = { type: 'room-invite', data: { room } };
+  for (const nm of newMembers) {
+    const usr = getUserLive(nm);
+    if (usr?.ws && usr.ws.readyState === WebSocket.OPEN) safeWsSend(usr.ws, inv);
+  }
   broadcastRoomToMembers(room);
 }
 
 function handleChannelSubscribe(fromUuid, data) {
-  const u = users.get(fromUuid);
-  let rid = data?.roomId ? String(data.roomId).trim().toLowerCase().replace(/-/g, '') : '';
-  if (!rid && data?.username) {
-    const un = normalizeChannelUsername(data.username);
-    rid = channelUsernames.get(un) || '';
-  }
-  if (!rid || !rooms.has(rid)) {
+  if (!data?.channel || typeof data.channel !== 'string') return;
+  const ch = normalizeChannelUsername(data.channel);
+  const rid = channelUsernames.get(ch);
+  if (!rid) {
+    const u = getUserLive(fromUuid);
     if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Канал не найден' } });
     return;
   }
   const room = rooms.get(rid);
-  if (room.kind !== 'channel') {
-    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Это не канал' } });
-    return;
-  }
+  if (!room) return;
   normalizeRoom(room);
-  const sub = normUid(fromUuid);
-  if (!room.members.some((m) => normUid(m) === sub)) room.members.push(sub);
-  saveRoomsJSON();
+  const uid = normUid(fromUuid);
+  if (!room.members.some(m => normUid(m) === uid)) {
+    room.members.push(uid);
+    saveRoomsJSON();
+  }
+  const u = getUserLive(uid);
   if (u?.ws) safeWsSend(u.ws, { type: 'room-joined', data: { room } });
-  broadcastRoomToMembers(room);
 }
 
 function handleRoomUpdate(fromUuid, data) {
   const u = getUserLive(fromUuid);
   if (!data?.roomId) return;
-  const rid = String(data.roomId).trim().toLowerCase().replace(/-/g, '');
+  const rid = normUid(data.roomId);
   const room = rooms.get(rid);
   if (!room) {
     if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Комната не найдена' } });
@@ -988,54 +1060,18 @@ function handleMessageReaction(fromUuid, data) {
     }
   };
   if (rooms.has(data.to)) {
-    // Group / channel — broadcast to all members (including sender for multi-device)
     const room = rooms.get(data.to);
     normalizeRoom(room);
+    const src = normUid(fromUuid);
     for (const memberId of room.members) {
+      if (normUid(memberId) === src) continue;
       const u = getUserLive(memberId);
       if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
     }
   } else {
-    // P2P — send to the peer
-    const peer = getUserLive(data.to);
-    if (peer?.ws && peer.ws.readyState === WebSocket.OPEN) safeWsSend(peer.ws, payload);
-    // [FIX: Reaction Sync] Also echo back to sender so all their devices update
-    const sender = getUserLive(fromUuid);
-    if (sender?.ws && sender.ws.readyState === WebSocket.OPEN) safeWsSend(sender.ws, payload);
+    const u = getUserLive(data.to);
+    if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
   }
-}
-
-// ==================== E2EE PUBLIC KEY MANAGEMENT ====================
-function handleSetPublicKey(fromUuid, data) {
-  if (!fromUuid || !data?.publicKey) return;
-  const uid = normUid(fromUuid);
-  const keyStr = String(data.publicKey);
-
-  // Флаг ротации: если ключ уже существовал — это смена пары (новое устройство / переустановка)
-  const isRotation = publicKeys.has(uid) && publicKeys.get(uid) !== keyStr;
-
-  publicKeys.set(uid, keyStr);
-  if (dbModule) {
-    try { dbModule.savePublicKey(uid, keyStr); } catch (_) {}
-  }
-  console.log(`🔑 Public key ${isRotation ? 'rotated' : 'set'} for ${uid.substring(0, 8)}...`);
-
-  // [E2EE] При ротации ключа уведомляем всех пользователей онлайн, чтобы они
-  // инвалидировали кеш производных AES-ключей и подтянули новый ключ при следующей отправке.
-  if (isRotation) {
-    broadcast({ type: 'peer-key-rotated', uuid: uid }, uid);
-    console.log(`🔑 Broadcast peer-key-rotated for ${uid.substring(0, 8)}...`);
-  }
-}
-function handleGetPublicKey(ws, data) {
-  if (!data?.uuid) return;
-  const uid = normUid(data.uuid);
-  // Try memory first, then DB
-  let key = publicKeys.get(uid) || '';
-  if (!key && dbModule) {
-    try { key = dbModule.getPublicKey(uid) || ''; } catch (_) {}
-  }
-  safeWsSend(ws, { type: 'public-key', uuid: uid, publicKey: key || null });
 }
 
 // ==================== PROFILE UPDATE ====================
@@ -1048,7 +1084,6 @@ function handleProfileUpdate(uuid, data) {
   if (data.avatar !== undefined) user.avatar = data.avatar;
   user.lastSeen = Date.now();
 
-  // Update memory
   const memUser = users.get(uuid);
   if (memUser) Object.assign(memUser, { nickname: user.nickname, avatar: user.avatar, lastSeen: user.lastSeen });
 
@@ -1056,16 +1091,6 @@ function handleProfileUpdate(uuid, data) {
   console.log(`👤 Profile update: ${user.nickname}`);
 
   broadcast({ type: 'user-profile', data: { uuid, nickname: user.nickname, avatar: user.avatar } });
-}
-
-// ==================== WEBRTC SIGNALING ====================
-function handleRtcSignal(fromUuid, type, data) {
-  if (!data?.to) return;
-  const toUser = users.get(data.to);
-  if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
-    safeWsSend(toUser.ws, { type, data: { ...data, from: fromUuid } });
-    console.log(`📞 RTC ${type}: ${fromUuid.substring(0, 8)}... → ${data.to.substring(0, 8)}...`);
-  }
 }
 
 // ==================== DELETE FOR BOTH ====================
@@ -1077,7 +1102,6 @@ function handleDeleteForBoth(fromUuid, data) {
   }
 }
 
-/** Удаление одного сообщения у собеседника (только scope both — «у всех») */
 function handleDeleteMessage(fromUuid, data) {
   if (!data?.to || data.ts == null) return;
   if (data.scope !== 'both') return;
@@ -1132,14 +1156,15 @@ loadRoomsJSON();
 app.listen(PORT, HOST, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════╗
-║  Cipher Server v4.1 — Audit Fixed                    ║
+║  Cipher Server v5.0 — E2EE + Blind Router            ║
 ║═══════════════════════════════════════════════════════║
 ║ 🚀 Running on: 0.0.0.0:${PORT}${' '.repeat(18 - String(PORT).length)}║
 ║ 🔐 Passwords: PBKDF2-SHA512 (100k rounds)            ║
+║ 🔑 E2EE: ECDSA (P-384) + ECDH (P-384) + AES-GCM     ║
 ║ 💾 Persistence: ${(dbModule ? 'SQLite AES-256' : 'JSON atomic  ').padEnd(22)}║
 ║ 🛡️  Rate limiting: register + login per IP           ║
 ║ 📦 Max payload: 25MB                                 ║
-║ 📞 WebRTC signaling: offer/answer/ice                ║
+║ 📞 WebRTC signaling: encrypted                       ║
 ╚═══════════════════════════════════════════════════════╝
   `);
   console.log(`✓ WebSocket server listening on port ${PORT}\n`);
