@@ -1909,6 +1909,16 @@ async function hashClient(password) {
 
 // ==================== E2EE (End-to-End Encryption) ====================
 // ECDH P-256 key exchange + AES-GCM-256 message encryption.
+
+// --- Правило 3: Безопасный Base64 для бинарных данных ---
+// Используем String.fromCharCode.apply вместо spread (...), чтобы избежать
+// "Maximum call stack exceeded" при больших буферах (длинные сообщения / файлы).
+function bufferToBase64(buf) {
+  return btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+}
+function base64ToBuffer(b64) {
+  return new Uint8Array(atob(b64).split('').map(c => c.charCodeAt(0))).buffer;
+}
 // Private key lives ONLY in IndexedDB — the server NEVER sees it.
 let _e2eePrivateKey = null;   // CryptoKey
 let _e2eePublicKeyJwk = null; // JWK string (sent to server)
@@ -2050,9 +2060,12 @@ async function e2ee_decryptPrivKey(encObj, passwordHash) {
     { name: 'AES-GCM', length: 256 },
     false, ['decrypt']
   );
-  const ct = Uint8Array.from(atob(encObj.ct), c => c.charCodeAt(0));
-  const iv = Uint8Array.from(atob(encObj.iv), c => c.charCodeAt(0));
-  const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ct);
+  // Правило 3: base64ToBuffer вместо charCodeAt
+  const ct = new Uint8Array(base64ToBuffer(encObj.ct));
+  const iv = new Uint8Array(base64ToBuffer(encObj.iv));
+  // Правило 2: AES-GCM
+  const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, aesKey, ct);
+  // Правило 1: TextDecoder
   return JSON.parse(new TextDecoder().decode(buf));
 }
 
@@ -2159,11 +2172,16 @@ async function e2ee_fetchPeerKey(peerUuid) {
 async function e2ee_encrypt(peerUuid, plaintext) {
   const key = await e2ee_getDerivedKey(peerUuid);
   if (!key) return null; // fallback: send unencrypted
+
+  // Правило 1: TextEncoder для корректного кодирования Unicode / кириллицы
+  const ptUint8 = new TextEncoder().encode(plaintext);
+
+  // Правило 2: AES-GCM, IV строго 12 байт (96 бит)
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const enc = new TextEncoder().encode(plaintext);
-  const ct  = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc);
-  const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
-  return { ct: b64(ct), iv: b64(iv.buffer) };
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, ptUint8);
+
+  // Правило 3: bufferToBase64 (без spread — нет stack overflow на больших буферах)
+  return { ct: bufferToBase64(ct), iv: bufferToBase64(iv.buffer) };
 }
 
 async function e2ee_decrypt(peerUuid, ctBase64, ivBase64) {
@@ -2180,15 +2198,26 @@ async function e2ee_decrypt(peerUuid, ctBase64, ivBase64) {
     throw new Error('deriveKey вернул null — неизвестная ошибка деривации AES-ключа');
   }
 
+  // Правило 3: base64ToBuffer — безопасная конвертация бинарных данных
   let ct, iv;
   try {
-    ct = Uint8Array.from(atob(ctBase64), c => c.charCodeAt(0));
-    iv = Uint8Array.from(atob(ivBase64),  c => c.charCodeAt(0));
+    ct = new Uint8Array(base64ToBuffer(ctBase64));
+    iv = new Uint8Array(base64ToBuffer(ivBase64));
   } catch (e) {
     throw new Error(`Ошибка Base64-декодирования: ${e.message}. Данные не являются валидным Base64.`);
   }
 
-  const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  // Правило 4: явный try/catch вокруг decrypt — никогда не возвращаем мусор
+  let buf;
+  try {
+    // Правило 2: AES-GCM (проверка целостности через GCM Tag встроена)
+    buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, ct);
+  } catch (e) {
+    // DOMException: ключи рассинхронизированы или данные повреждены — не парсим мусор
+    throw new Error(`AES-GCM decrypt failed (${e.name}): ключи рассинхронизированы или данные повреждены.`);
+  }
+
+  // Правило 1: TextDecoder — единственный способ декодировать UTF-8 байты (кириллица, emoji)
   return new TextDecoder().decode(buf);
 }
 
@@ -5033,8 +5062,8 @@ async function importData(){
   try{
     const enc=new TextEncoder();
     const keyMat=await crypto.subtle.importKey('raw',enc.encode(pass.padEnd(32,'x').slice(0,32)),{name:'AES-GCM'},false,['decrypt']);
-    const ivArr=Uint8Array.from(atob(iv),c=>c.charCodeAt(0));
-    const ctArr=Uint8Array.from(atob(data),c=>c.charCodeAt(0));
+    const ivArr=new Uint8Array(base64ToBuffer(iv));
+    const ctArr=new Uint8Array(base64ToBuffer(data));
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:ivArr},keyMat,ctArr);
     const json=JSON.parse(new TextDecoder().decode(pt));
     // FIX: Ensure all imported contacts have type='friend' and are sanitized
