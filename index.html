@@ -615,6 +615,163 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 #sidebar{border-right:1px solid var(--border)!important}
 #infoPanel{border-left:1px solid var(--border)!important}
 
+/* ==================== COMPACT EDIT BAR ==================== */
+.edit-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(135deg, var(--bg4) 0%, var(--bg3) 100%);
+  border-bottom: 1px solid var(--border);
+  display: none;
+  align-items: center;
+  padding: 0 12px;
+  gap: 8px;
+  z-index: 100;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.edit-bar.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.edit-bar .edit-icon {
+  font-size: 14px;
+}
+.edit-bar .edit-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text2);
+  font-weight: 500;
+}
+.edit-bar .edit-cancel {
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+.edit-bar .edit-cancel:hover {
+  background: var(--bg4);
+  color: var(--danger);
+}
+
+/* ==================== MEDIA GROUPING GRID ==================== */
+.media-group {
+  display: grid;
+  gap: 2px;
+  border-radius: var(--r);
+  overflow: hidden;
+  max-width: 320px;
+}
+.media-group .msg-img,
+.media-group .msg-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+}
+/* 1 item - full size */
+.media-group.count-1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 200px;
+}
+/* 2 items - 50/50 */
+.media-group.count-2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 150px;
+}
+/* 3 items - 1 big + 2 small */
+.media-group.count-3 {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 75px 75px;
+}
+.media-group.count-3 > *:first-child {
+  grid-row: 1 / -1;
+}
+/* 4 items - 2x2 grid */
+.media-group.count-4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 100px 100px;
+}
+/* 5+ items - 2x2 + more indicator */
+.media-group.count-5plus {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 100px 100px;
+  position: relative;
+}
+.media-group.count-5plus .media-more {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 50%;
+  height: 100px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ==================== REACTIONS ==================== */
+.msg-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0 4px;
+}
+.reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  background: var(--bg4);
+  border-radius: 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border: 1px solid transparent;
+}
+.reaction-chip:hover {
+  background: var(--bg3);
+  border-color: var(--border);
+}
+.reaction-chip.reacted {
+  background: var(--accent);
+  color: white;
+}
+
+/* ==================== REPLY PREVIEW IN MESSAGE ==================== */
+.msg-reply-preview {
+  background: rgba(0,0,0,0.05);
+  border-left: 3px solid var(--accent);
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  max-width: 100%;
+}
+.msg-reply-preview .reply-author {
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.msg-reply-preview .reply-text {
+  color: var(--text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 </style>
 </head>
 <body>
@@ -1377,6 +1534,16 @@ async function loadKeysAfterAuth(uuid) {
       return;
     }
     
+    // Ensure IndexedDB is ready
+    let db;
+    try {
+      db = await dbOpenE2EE();
+    } catch (dbErr) {
+      console.warn('IndexedDB not ready, waiting...');
+      await new Promise(r => setTimeout(r, 500));
+      db = await dbOpenE2EE();
+    }
+    
     console.log('Loading E2EE keys for', uuid);
     const keys = await dbLoadKeys(uuid, passwordHash);
     
@@ -1384,35 +1551,54 @@ async function loadKeysAfterAuth(uuid) {
       console.error('No keys found for user - need to regenerate');
       // Try to regenerate keys since none exist
       try {
-        console.log('Generating new E2EE keys...');
-        const ecdsaKeyPair = await crypto_engine.generateECDSAKeyPair();
-        const ecdhKeyPair = await crypto_engine.generateECDHKeyPair();
+        console.log('Generating new E2EE keys with extractable: true...');
         
-        // Export public keys
+        // Generate keys with explicit extractable: true
+        const ecdsaKeyPair = await window.crypto.subtle.generateKey(
+          { name: 'ECDSA', namedCurve: 'P-384' },
+          true, // CRITICAL: extractable must be true
+          ['sign', 'verify']
+        );
+        const ecdhKeyPair = await window.crypto.subtle.generateKey(
+          { name: 'ECDH', namedCurve: 'P-384' },
+          true, // CRITICAL: extractable must be true
+          ['deriveKey']
+        );
+        
+        // Export public keys for server
         const pub_ecdsa = await crypto_engine.exportPublicKey(ecdsaKeyPair.publicKey);
         const pub_ecdh = await crypto_engine.exportPublicKey(ecdhKeyPair.publicKey);
         
-        // Encrypt and save private keys
+        // Encrypt private keys
         const encryptedKeys = await crypto_engine.encryptPrivateKeys(
           ecdsaKeyPair.privateKey,
           ecdhKeyPair.privateKey,
           passwordHash
         );
         
+        // CRITICAL: Save to IndexedDB FIRST
+        console.log('Saving keys to IndexedDB...');
         await dbSaveKeys(uuid, encryptedKeys);
         
-        // Reload keys
-        const newKeys = await dbLoadKeys(uuid, passwordHash);
-        if (!newKeys) {
-          throw new Error('Failed to save/load regenerated keys');
+        // Verify save worked by loading back
+        await new Promise(r => setTimeout(r, 200)); // Small delay for IndexedDB
+        const verifyKeys = await dbLoadKeys(uuid, passwordHash);
+        if (!verifyKeys) {
+          throw new Error('Key verification failed after save');
         }
         
-        crypto_engine.myKeys = newKeys;
+        // Set keys in crypto_engine
+        crypto_engine.myKeys = verifyKeys;
         
-        // Publish public keys to server
+        // NOW publish to server (only after successful IndexedDB save)
+        console.log('Publishing public keys to server...');
         sendToServer('publish-keys', { pub_ecdsa, pub_ecdh });
         
-        console.log('✅ New E2EE keys generated and saved');
+        // Save public keys to localStorage for persistence
+        localStorage.setItem('cipher_pub_ecdsa', pub_ecdsa);
+        localStorage.setItem('cipher_pub_ecdh', pub_ecdh);
+        
+        console.log('✅ New E2EE keys generated, saved, and published');
       } catch (genErr) {
         console.error('Failed to regenerate keys:', genErr);
         alert('Ошибка доступа к ключам. Необходима перерегистрация.');
@@ -2009,15 +2195,75 @@ async function upsertRoomContact(room) {
 
 async function handleIncomingReaction(data) {
   if (!data || data.ts == null || !data.emoji) return;
+  
+  const fromUuid = data.from;
   const chatTarget = data.to;
+  const ts = data.ts;
+  const emoji = data.emoji;
+  const remove = data.remove;
+  
+  // Handle E2EE encrypted reaction
+  if (data.payload && data.iv && data.signature && crypto_engine.myKeys) {
+    try {
+      // Get sender's public keys if not cached
+      if (!crypto_engine.pubKeysCache.has(fromUuid)) {
+        sendToServer('get-pub-keys', { targetUuid: fromUuid });
+        await new Promise(r => setTimeout(r, 500));
+      }
+      
+      const pubKeys = crypto_engine.pubKeysCache.get(fromUuid);
+      if (pubKeys) {
+        // Verify signature
+        const senderPubECDSA = await crypto_engine.importPublicKey(pubKeys.pub_ecdsa, 'ECDSA');
+        const isValid = await crypto_engine.verifySignature(senderPubECDSA, data.payload, data.signature);
+        if (!isValid) {
+          console.error('Reaction signature verification failed');
+          return;
+        }
+        
+        // Derive shared secret
+        const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
+        
+        // Decrypt reaction data
+        const plaintext = await crypto_engine.decryptPayload(sharedSecret, { payload: data.payload, iv: data.iv });
+        const reactionData = JSON.parse(plaintext);
+        
+        // Update message with decrypted reaction data
+        const msgs = await dbGetByIndex('messages', 'chatId', chatTarget);
+        const m = msgs.find((x) => x.ts === reactionData.ts);
+        if (!m) return;
+        if (!m.reactions) m.reactions = {};
+        const em = reactionData.emoji;
+        if (!m.reactions[em]) m.reactions[em] = [];
+        const uid = fromUuid;
+        if (reactionData.remove) {
+          m.reactions[em] = (m.reactions[em] || []).filter((u) => u !== uid);
+          if (!m.reactions[em].length) delete m.reactions[em];
+        } else if (!m.reactions[em].includes(uid)) {
+          m.reactions[em].push(uid);
+        }
+        await dbPut('messages', m);
+        if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
+          updateMessageReactionRow(reactionData.ts);
+        }
+        console.log('😀 E2EE reaction processed');
+        return;
+      }
+    } catch (err) {
+      console.error('E2EE reaction decryption failed:', err);
+    }
+  }
+  
+  // Handle plaintext reaction (fallback)
   const msgs = await dbGetByIndex('messages', 'chatId', chatTarget);
-  const m = msgs.find((x) => x.ts === data.ts);
+  const m = msgs.find((x) => x.ts === ts);
   if (!m) return;
   if (!m.reactions) m.reactions = {};
-  const em = data.emoji;
+  const em = emoji;
   if (!m.reactions[em]) m.reactions[em] = [];
-  const uid = data.from;
-  if (data.remove) {
+  const uid = fromUuid;
+  if (remove) {
     m.reactions[em] = (m.reactions[em] || []).filter((u) => u !== uid);
     if (!m.reactions[em].length) delete m.reactions[em];
   } else if (!m.reactions[em].includes(uid)) {
@@ -2025,7 +2271,7 @@ async function handleIncomingReaction(data) {
   }
   await dbPut('messages', m);
   if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
-    updateMessageReactionRow(data.ts);
+    updateMessageReactionRow(ts);
   }
 }
 
@@ -2939,8 +3185,15 @@ async function handleIncomingMessage(msg) {
               } else {
                 content = outerData.content;
                 type = outerData.type;
+                // Extract ALL metadata from encrypted payload
                 if (outerData.replyTo) {
                   msg.replyTo = outerData.replyTo;
+                }
+                if (outerData.forwardFrom) {
+                  msg.forwardFrom = outerData.forwardFrom;
+                }
+                if (outerData.reactions) {
+                  msg.reactions = outerData.reactions;
                 }
                 msg.e2eeDecrypted = true;
               }
@@ -3386,7 +3639,15 @@ async function sendMessage(type, content){
           encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
         } else {
           // Standard encryption for text/voice
-          plaintext = JSON.stringify({ type, content, replyTo: replySnap });
+          // Pack ALL metadata inside encrypted payload: replyTo, forwardFrom, reactions
+          const metadataPayload = { 
+            type, 
+            content, 
+            replyTo: replySnap,
+            forwardFrom: forwardFrom || undefined,
+            reactions: {} // Placeholder for reactions to be added by recipients
+          };
+          plaintext = JSON.stringify(metadataPayload);
           encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
           // Sign encrypted payload
           signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
@@ -3743,28 +4004,59 @@ async function editMessage(ts) {
   input.value = msg.content;
   input.focus();
   
-  // Show edit indicator
-  let editIndicator = document.getElementById('editIndicator');
-  if (!editIndicator) {
-    editIndicator = document.createElement('div');
-    editIndicator.id = 'editIndicator';
-    editIndicator.className = 'edit-indicator';
-    editIndicator.style.cssText = 'padding: 8px 12px; background: var(--bg4); color: var(--text2); font-size: 13px; display: flex; align-items: center; justify-content: space-between;';
-    input.parentNode.insertBefore(editIndicator, input);
+  // Show compact Edit Bar above input area
+  showEditBar();
+  
+  // Scroll to bottom to ensure visibility
+  scrollBottom();
+}
+
+function showEditBar() {
+  let editBar = document.getElementById('editBar');
+  const inputArea = document.getElementById('inputArea');
+  
+  if (!editBar) {
+    editBar = document.createElement('div');
+    editBar.id = 'editBar';
+    editBar.className = 'edit-bar';
+    editBar.innerHTML = `
+      <span class="edit-icon">✏️</span>
+      <span class="edit-text">Редактирование</span>
+      <button class="edit-cancel" onclick="cancelEdit()" title="Отменить">✕</button>
+    `;
+    // Insert before inputArea
+    inputArea.parentNode.insertBefore(editBar, inputArea);
   }
-  editIndicator.innerHTML = `
-    <span>✏️ Редактирование сообщения</span>
-    <button onclick="cancelEdit()" style="background: none; border: none; color: var(--text2); cursor: pointer;">✕</button>
-  `;
-  editIndicator.style.display = 'flex';
+  
+  editBar.style.display = 'flex';
+  editBar.classList.add('show');
+  
+  // Add padding to input area to compensate for edit bar
+  inputArea.style.paddingTop = '44px';
+}
+
+function hideEditBar() {
+  const editBar = document.getElementById('editBar');
+  const inputArea = document.getElementById('inputArea');
+  
+  if (editBar) {
+    editBar.classList.remove('show');
+    setTimeout(() => {
+      editBar.style.display = 'none';
+    }, 200);
+  }
+  
+  // Reset input area padding
+  if (inputArea) {
+    inputArea.style.paddingTop = '';
+  }
 }
 
 function cancelEdit() {
   editingMessageTs = null;
   const input = document.getElementById('msgInput');
   input.value = '';
-  const editIndicator = document.getElementById('editIndicator');
-  if (editIndicator) editIndicator.style.display = 'none';
+  hideEditBar();
 }
 
 async function sendEditMessage(newContent) {
@@ -3828,7 +4120,7 @@ async function sendEditMessage(newContent) {
     await dbPut('messages', msg);
   }
   
-  cancelEdit();
+  hideEditBar();
   await loadMessages();
 }
 
@@ -4063,6 +4355,127 @@ function appendAlbum(msgs, area) {
   area.appendChild(wrapper);
 }
 
+// Global variable to track pending media group
+let pendingMediaGroup = [];
+let mediaGroupTimer = null;
+
+// ==================== MEDIA ALBUM GROUPING ====================
+// Collects consecutive media messages and renders them as an album
+async function queueMediaForAlbum(msg) {
+  // Add to pending group
+  pendingMediaGroup.push(msg);
+  
+  // Clear existing timer
+  if (mediaGroupTimer) {
+    clearTimeout(mediaGroupTimer);
+  }
+  
+  // Set timer to render group after a short delay (allows batching)
+  mediaGroupTimer = setTimeout(() => {
+    renderMediaAlbum();
+  }, 100);
+}
+
+function renderMediaAlbum() {
+  if (pendingMediaGroup.length === 0) return;
+  
+  const area = document.getElementById('messagesArea');
+  const isOut = normUid(pendingMediaGroup[0].from) === normUid(myProfile.uuid);
+  
+  // Create wrapper
+  const wrapper = document.createElement('div');
+  wrapper.className = 'msg ' + (isOut ? 'out' : 'in');
+  wrapper.dataset.ts = pendingMediaGroup[0].ts;
+  
+  // Create bubble
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  
+  // Create media group container
+  const mediaGroup = document.createElement('div');
+  mediaGroup.className = 'media-group';
+  
+  // Determine grid layout based on count
+  const count = pendingMediaGroup.length;
+  if (count === 1) {
+    mediaGroup.classList.add('count-1');
+  } else if (count === 2) {
+    mediaGroup.classList.add('count-2');
+  } else if (count === 3) {
+    mediaGroup.classList.add('count-3');
+  } else if (count === 4) {
+    mediaGroup.classList.add('count-4');
+  } else {
+    mediaGroup.classList.add('count-5plus');
+  }
+  
+  // Render each media item
+  pendingMediaGroup.forEach((m, idx) => {
+    if (idx >= 4 && count > 4) {
+      // Show "+N more" for 5+ items
+      if (idx === 4) {
+        const more = document.createElement('div');
+        more.className = 'media-more';
+        more.textContent = `+${count - 4}`;
+        mediaGroup.appendChild(more);
+      }
+      return;
+    }
+    
+    if (m.type === 'image') {
+      const img = document.createElement('img');
+      img.className = 'msg-img';
+      img.src = m.content;
+      img.onclick = () => openLightbox(m.content);
+      img.alt = 'Изображение';
+      mediaGroup.appendChild(img);
+    } else if (m.type === 'video') {
+      const video = document.createElement('video');
+      video.className = 'msg-video';
+      video.src = m.content;
+      video.controls = true;
+      mediaGroup.appendChild(video);
+    }
+  });
+  
+  bubble.appendChild(mediaGroup);
+  
+  // Add timestamp
+  const mt = document.createElement('div');
+  mt.className = 'mtime';
+  let timeText = fmtTime(pendingMediaGroup[0].ts);
+  if (pendingMediaGroup[0].edited) {
+    timeText += ' (изменено)';
+  }
+  mt.textContent = timeText;
+  if (pendingMediaGroup[0].e2eeDecrypted || (pendingMediaGroup[0].payload && pendingMediaGroup[0].iv && pendingMediaGroup[0].signature)) {
+    mt.innerHTML = '🔒 ' + mt.textContent;
+  }
+  if (isOut) mt.innerHTML += ` <span class="check">✓</span>`;
+  bubble.appendChild(mt);
+  
+  wrapper.appendChild(bubble);
+  
+  // Add reactions if any
+  const reactRow = document.createElement('div');
+  reactRow.className = 'msg-reactions';
+  reactRow.dataset.ts = pendingMediaGroup[0].ts;
+  renderReactionChips(reactRow, pendingMediaGroup[0]);
+  wrapper.appendChild(reactRow);
+  
+  // Event handlers
+  wrapper.oncontextmenu = (ev) => { showMessageCtxMenu(ev, pendingMediaGroup[0]); };
+  
+  area.appendChild(wrapper);
+  
+  // Clear group
+  pendingMediaGroup = [];
+  mediaGroupTimer = null;
+  
+  // Scroll to bottom
+  scrollBottom();
+}
+
 function appendMessage(msg){
   const area=document.getElementById('messagesArea');
   if (msg.type === 'call-log') {
@@ -4117,10 +4530,12 @@ function appendMessage(msg){
   }
 
   // FIX-FORWARD: render "Переслано от" header if message was forwarded
-  if (msg.forwardedFrom) {
+  const forwardInfo = msg.forwardedFrom || msg.forwardFrom;
+  if (forwardInfo) {
     const fwd = document.createElement('div');
     fwd.className = 'fwd-header';
-    fwd.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg> Переслано от: ${escapeHtml(msg.forwardedFrom.name || String(msg.forwardedFrom.uuid||'').slice(0,8) || '?')}`;
+    const forwardName = forwardInfo.name || (forwardInfo.uuid ? String(forwardInfo.uuid).slice(0, 8) : '?');
+    fwd.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg> Переслано от: ${escapeHtml(forwardName)}`;
     bubble.appendChild(fwd);
   }
 
@@ -4295,6 +4710,62 @@ async function sendReactionToggle(ts, emoji) {
   const list = m.reactions[emoji] || [];
   const me = normUid(myProfile.uuid);
   const remove = list.some((u) => normUid(u) === me);
+  
+  // E2EE encrypt reaction if possible (direct messages only, not rooms)
+  const c = contacts.find((x) => normUid(x.uuid) === activeChat);
+  const isRoom = c && (c.kind === 'group' || c.kind === 'channel');
+  
+  if (!isRoom && (!c || c.kind !== 'saved') && crypto_engine.myKeys) {
+    try {
+      // Get recipient's public keys
+      if (!crypto_engine.pubKeysCache.has(activeChat)) {
+        sendToServer('get-pub-keys', { targetUuid: activeChat });
+        await new Promise(r => setTimeout(r, 300));
+      }
+      
+      const pubKeys = crypto_engine.pubKeysCache.get(activeChat);
+      if (pubKeys) {
+        const theirPublicKey = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, theirPublicKey);
+        
+        // Encrypt reaction data
+        const reactionData = JSON.stringify({
+          type: 'message-reaction',
+          ts,
+          emoji,
+          remove
+        });
+        const encPayload = await crypto_engine.encryptPayload(sharedSecret, reactionData);
+        const signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
+        
+        // Send encrypted reaction
+        sendToServer('message-reaction', {
+          to: activeChat,
+          ts,
+          emoji,
+          remove,
+          payload: encPayload.payload,
+          iv: encPayload.iv,
+          signature
+        });
+        
+        // Update local
+        if (remove) {
+          m.reactions[emoji] = list.filter((u) => normUid(u) !== me);
+          if (!m.reactions[emoji].length) delete m.reactions[emoji];
+        } else {
+          m.reactions[emoji] = [...list.filter((u) => normUid(u) !== me), me];
+        }
+        await dbPut('messages', m);
+        updateMessageReactionRow(ts);
+        return;
+      }
+    } catch (err) {
+      console.error('E2EE reaction encryption failed, falling back to plaintext:', err);
+    }
+  }
+  
+  // Fallback: plaintext reaction
   sendToServer('message-reaction', { to: activeChat, ts, emoji, remove });
   if (remove) {
     m.reactions[emoji] = list.filter((u) => normUid(u) !== me);
