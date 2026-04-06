@@ -1010,13 +1010,23 @@ function handleSetPublicKey(fromUuid, data) {
   if (!fromUuid || !data?.publicKey) return;
   const uid = normUid(fromUuid);
   const keyStr = String(data.publicKey);
+
+  // Флаг ротации: если ключ уже существовал — это смена пары (новое устройство / переустановка)
+  const isRotation = publicKeys.has(uid) && publicKeys.get(uid) !== keyStr;
+
   publicKeys.set(uid, keyStr);
   if (dbModule) {
     try { dbModule.savePublicKey(uid, keyStr); } catch (_) {}
   }
-  console.log(`🔑 Public key set for ${uid.substring(0, 8)}...`);
-}
+  console.log(`🔑 Public key ${isRotation ? 'rotated' : 'set'} for ${uid.substring(0, 8)}...`);
 
+  // [E2EE] При ротации ключа уведомляем всех пользователей онлайн, чтобы они
+  // инвалидировали кеш производных AES-ключей и подтянули новый ключ при следующей отправке.
+  if (isRotation) {
+    broadcast({ type: 'peer-key-rotated', uuid: uid }, uid);
+    console.log(`🔑 Broadcast peer-key-rotated for ${uid.substring(0, 8)}...`);
+  }
+}
 function handleGetPublicKey(ws, data) {
   if (!data?.uuid) return;
   const uid = normUid(data.uuid);
