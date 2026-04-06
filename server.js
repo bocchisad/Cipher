@@ -1050,30 +1050,74 @@ function handleRoomJoin(fromUuid, data) {
   if (u?.ws) safeWsSend(u.ws, { type: 'room-joined', data: { room } });
 }
 
+// ==================== MESSAGE REACTION ====================
+// Blind router for reactions - supports both plaintext and E2EE encrypted
 function handleMessageReaction(fromUuid, data) {
   if (!data?.to || data.ts == null || !data.emoji) return;
-  const payload = {
-    type: 'message-reaction',
-    data: {
+  
+  // Check if this is E2EE encrypted reaction (has encrypted payload)
+  if (data.payload && data.iv && data.signature) {
+    // Blind router: just forward the encrypted payload without parsing
+    const message = {
       from: fromUuid,
-      to: data.to,
+      to: normUid(data.to),
+      type: 'message-reaction',
+      payload: data.payload,
+      iv: data.iv,
+      signature: data.signature,
       ts: data.ts,
       emoji: data.emoji,
       remove: !!data.remove
-    }
-  };
-  if (rooms.has(data.to)) {
-    const room = rooms.get(data.to);
-    normalizeRoom(room);
-    const src = normUid(fromUuid);
-    for (const memberId of room.members) {
-      if (normUid(memberId) === src) continue;
-      const u = getUserLive(memberId);
-      if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
+    };
+    
+    if (rooms.has(data.to)) {
+      const room = rooms.get(data.to);
+      normalizeRoom(room);
+      const src = normUid(fromUuid);
+      for (const memberId of room.members) {
+        if (normUid(memberId) === src) continue;
+        const u = getUserLive(memberId);
+        if (u?.ws && u.ws.readyState === WebSocket.OPEN) {
+          safeWsSend(u.ws, { type: 'message-reaction', data: message });
+        }
+      }
+      console.log(`😀 E2EE reaction in room: ${fromUuid.substring(0, 8)}… → ${data.to.substring(0, 8)}…`);
+    } else {
+      const u = getUserLive(data.to);
+      if (u?.ws && u.ws.readyState === WebSocket.OPEN) {
+        safeWsSend(u.ws, { type: 'message-reaction', data: message });
+        console.log(`😀 E2EE reaction: ${fromUuid.substring(0, 8)}… → ${data.to.substring(0, 8)}…`);
+      } else {
+        // Queue for offline delivery
+        enqueueMessageToStore(message);
+        console.log(`⏸️ Queued E2EE reaction for ${data.to.substring(0, 8)}…`);
+      }
     }
   } else {
-    const u = getUserLive(data.to);
-    if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
+    // Legacy plaintext reaction (fallback)
+    const payload = {
+      type: 'message-reaction',
+      data: {
+        from: fromUuid,
+        to: data.to,
+        ts: data.ts,
+        emoji: data.emoji,
+        remove: !!data.remove
+      }
+    };
+    if (rooms.has(data.to)) {
+      const room = rooms.get(data.to);
+      normalizeRoom(room);
+      const src = normUid(fromUuid);
+      for (const memberId of room.members) {
+        if (normUid(memberId) === src) continue;
+        const u = getUserLive(memberId);
+        if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
+      }
+    } else {
+      const u = getUserLive(data.to);
+      if (u?.ws && u.ws.readyState === WebSocket.OPEN) safeWsSend(u.ws, payload);
+    }
   }
 }
 
