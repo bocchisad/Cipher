@@ -1888,8 +1888,24 @@ async function e2ee_generateAndStore() {
     const pubJwk  = await crypto.subtle.exportKey('jwk', kp.publicKey);
     await dbPut('keys', { key: 'ecdh-private', jwk: privJwk });
     await dbPut('keys', { key: 'ecdh-public',  jwk: pubJwk  });
-    _e2eePrivateKey  = kp.privateKey;
-    _e2eePublicKeyJwk = JSON.stringify(pubJwk);
+    _e2eePrivateKey = kp.privateKey;
+
+    // FIX MULTI-DEVICE: Шифруем приватный ключ паролем и кладём его в бандл
+    // вместе с публичным. Другие устройства этого же пользователя смогут
+    // скачать бандл и восстановить ту же пару → все устройства = один ключ.
+    const auth = JSON.parse(localStorage.getItem('cipherAuth') || '{}');
+    if (auth.passwordHash) {
+      try {
+        const encPriv = await e2ee_encryptPrivKey(privJwk, auth.passwordHash);
+        _e2eePublicKeyJwk = JSON.stringify({ pub: pubJwk, priv: encPriv });
+      } catch (e) {
+        console.warn('⚠️ Не удалось зашифровать приватный ключ для синхронизации:', e.message);
+        _e2eePublicKeyJwk = JSON.stringify(pubJwk);
+      }
+    } else {
+      _e2eePublicKeyJwk = JSON.stringify(pubJwk);
+    }
+
     console.log('🔑 E2EE key pair generated and stored');
     return true;
   } catch (e) {
@@ -1908,7 +1924,23 @@ async function e2ee_loadFromDB() {
       { name: 'ECDH', namedCurve: 'P-256' },
       false, ['deriveKey']
     );
-    _e2eePublicKeyJwk = JSON.stringify(pubRec.jwk);
+
+    // FIX MULTI-DEVICE: Пересобираем бандл с зашифрованным приватным ключом.
+    // Это нужно для существующих пользователей, у которых в IndexedDB уже есть ключи —
+    // при следующем e2ee_sendPublicKey() бандл улетит на сервер, и новые устройства
+    // смогут восстановить ту же пару.
+    const auth = JSON.parse(localStorage.getItem('cipherAuth') || '{}');
+    if (auth.passwordHash) {
+      try {
+        const encPriv = await e2ee_encryptPrivKey(privRec.jwk, auth.passwordHash);
+        _e2eePublicKeyJwk = JSON.stringify({ pub: pubRec.jwk, priv: encPriv });
+      } catch (e) {
+        _e2eePublicKeyJwk = JSON.stringify(pubRec.jwk);
+      }
+    } else {
+      _e2eePublicKeyJwk = JSON.stringify(pubRec.jwk);
+    }
+
     console.log('🔑 E2EE keys loaded from IndexedDB');
     return true;
   } catch (e) {
@@ -1921,6 +1953,11 @@ async function e2ee_ensureKeys() {
   if (_e2eePrivateKey && _e2eePublicKeyJwk) return true;
   const loaded = await e2ee_loadFromDB();
   if (loaded) return true;
+  // Нет локальных ключей (новый браузер / очищен IndexedDB).
+  // Пробуем восстановить пару с сервера — другое устройство могло её туда загрузить.
+  const restored = await e2ee_tryRestoreFromServer();
+  if (restored) return true;
+  // Совсем нет ключей — генерируем новую пару и загружаем бандл на сервер.
   return e2ee_generateAndStore();
 }
 
@@ -1930,13 +1967,109 @@ function e2ee_sendPublicKey() {
   }
 }
 
-async function e2ee_importPeerKey(jwkString) {
-  const jwk = typeof jwkString === 'string' ? JSON.parse(jwkString) : jwkString;
+async function e2ee_importPeerKey(jwkStringOrBundle) {
+  const parsed = typeof jwkStringOrBundle === 'string' ? JSON.parse(jwkStringOrBundle) : jwkStringOrBundle;
+  // Если пришёл бандл { pub, priv } — берём только публичный ключ.
+  // Если пришёл голый JWK — используем его напрямую (обратная совместимость).
+  const jwk = (parsed && parsed.pub) ? parsed.pub : parsed;
   return crypto.subtle.importKey(
     'jwk', jwk,
     { name: 'ECDH', namedCurve: 'P-256' },
     false, []
   );
+}
+
+// ==================== E2EE MULTI-DEVICE KEY SYNC ====================
+// Шифруем приватный ключ JWK симметричным AES-ключом, выведенным из пароля.
+// Зашифрованный ключ хранится на сервере рядом с публичным — в поле publicKey как бандл {pub, priv}.
+// Другие устройства того же пользователя скачивают бандл и восстанавливают пару через пароль.
+async function e2ee_encryptPrivKey(privJwk, passwordHash) {
+  const enc = new TextEncoder();
+  // Из passwordHash (hex-строка) берём 32 байта как seed для PBKDF2
+  const rawSeed = enc.encode(passwordHash.slice(0, 32).padEnd(32, '0'));
+  const baseKey = await crypto.subtle.importKey('raw', rawSeed, 'PBKDF2', false, ['deriveKey']);
+  const aesKey = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode('cipher-e2ee-priv-v1'), iterations: 100000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false, ['encrypt']
+  );
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, enc.encode(JSON.stringify(privJwk)));
+  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return { ct: b64(ct), iv: b64(iv.buffer) };
+}
+
+async function e2ee_decryptPrivKey(encObj, passwordHash) {
+  const enc = new TextEncoder();
+  const rawSeed = enc.encode(passwordHash.slice(0, 32).padEnd(32, '0'));
+  const baseKey = await crypto.subtle.importKey('raw', rawSeed, 'PBKDF2', false, ['deriveKey']);
+  const aesKey = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode('cipher-e2ee-priv-v1'), iterations: 100000, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false, ['decrypt']
+  );
+  const ct = Uint8Array.from(atob(encObj.ct), c => c.charCodeAt(0));
+  const iv = Uint8Array.from(atob(encObj.iv), c => c.charCodeAt(0));
+  const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, ct);
+  return JSON.parse(new TextDecoder().decode(buf));
+}
+
+// Запрашивает собственный бандл с сервера и восстанавливает из него ключевую пару.
+// Вызывается из e2ee_ensureKeys() когда в IndexedDB нет ключей (новый браузер).
+async function e2ee_tryRestoreFromServer() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  if (!myProfile?.uuid) return false;
+  const auth = JSON.parse(localStorage.getItem('cipherAuth') || '{}');
+  if (!auth.passwordHash) return false;
+
+  return new Promise((resolve) => {
+    const myId = normUid(myProfile.uuid);
+    const timer = setTimeout(() => {
+      const set = pendingHandlers.get('public-key');
+      if (set) { set.delete(handler); if (!set.size) pendingHandlers.delete('public-key'); }
+      console.warn('⚠️ E2EE server restore: timeout (нет ответа от сервера)');
+      resolve(false);
+    }, 4000);
+
+    const handler = async (msg) => {
+      if (msg.type !== 'public-key' || normUid(msg.uuid) !== myId) return;
+      clearTimeout(timer);
+      const set = pendingHandlers.get('public-key');
+      if (set) { set.delete(handler); if (!set.size) pendingHandlers.delete('public-key'); }
+      try {
+        if (!msg.publicKey) { resolve(false); return; }
+        const bundle = typeof msg.publicKey === 'string' ? JSON.parse(msg.publicKey) : msg.publicKey;
+        // Только бандл содержит зашифрованный приватный ключ
+        if (!bundle.priv || !bundle.pub) {
+          console.log('ℹ️ E2EE: сервер вернул старый формат ключа (без priv) — восстановление невозможно');
+          resolve(false);
+          return;
+        }
+        // Расшифровываем приватный ключ паролем
+        const privJwk = await e2ee_decryptPrivKey(bundle.priv, auth.passwordHash);
+        const pubJwk  = bundle.pub;
+        // Импортируем приватный ключ
+        _e2eePrivateKey = await crypto.subtle.importKey(
+          'jwk', privJwk, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveKey']
+        );
+        _e2eePublicKeyJwk = JSON.stringify(bundle); // сохраняем весь бандл
+        // Кэшируем в IndexedDB чтобы при следующем старте не ходить на сервер
+        await dbPut('keys', { key: 'ecdh-private', jwk: privJwk });
+        await dbPut('keys', { key: 'ecdh-public',  jwk: pubJwk  });
+        console.log('🔑 E2EE: ключевая пара восстановлена с сервера (мульти-устройство ✅)');
+        resolve(true);
+      } catch (e) {
+        console.warn('⚠️ E2EE server restore failed:', e.message);
+        resolve(false);
+      }
+    };
+
+    if (!pendingHandlers.has('public-key')) pendingHandlers.set('public-key', new Set());
+    pendingHandlers.get('public-key').add(handler);
+    sendToServer('get-public-key', { uuid: myProfile.uuid });
+  });
 }
 
 async function e2ee_getDerivedKey(peerUuid) {
