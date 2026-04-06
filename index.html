@@ -1118,6 +1118,20 @@ class CryptoEngine {
   }
 
   async decryptPrivateKeys(encryptedData, passwordHash) {
+    // CRITICAL: Validate input data before attempting decryption
+    if (!encryptedData || typeof encryptedData !== 'object') {
+      console.error('decryptPrivateKeys: encryptedData is null or not an object');
+      throw new Error('Encrypted keys data is missing or invalid');
+    }
+    if (!encryptedData.iv || !encryptedData.encrypted) {
+      console.error('decryptPrivateKeys: missing iv or encrypted property', encryptedData);
+      throw new Error('Encrypted keys missing iv or encrypted payload');
+    }
+    if (!passwordHash || typeof passwordHash !== 'string') {
+      console.error('decryptPrivateKeys: passwordHash is missing or invalid');
+      throw new Error('Password hash is required for key decryption');
+    }
+
     const keyMaterial = await window.crypto.subtle.importKey(
       'raw',
       new TextEncoder().encode(passwordHash),
@@ -1151,6 +1165,12 @@ class CryptoEngine {
     );
 
     const data = JSON.parse(new TextDecoder().decode(decrypted));
+    
+    // Validate decrypted key data
+    if (!data.ecdsa || !data.ecdh) {
+      console.error('decryptPrivateKeys: decrypted data missing ecdsa or ecdh keys');
+      throw new Error('Decrypted keys data is corrupted');
+    }
     
     const ecdsaBuf = new Uint8Array(data.ecdsa.match(/.{1,2}/g).map(b => parseInt(b, 16)));
     const ecdhBuf = new Uint8Array(data.ecdh.match(/.{1,2}/g).map(b => parseInt(b, 16)));
@@ -1329,11 +1349,23 @@ const dbSaveKeys = async (uuid, encryptedKeys) => {
 };
 
 const dbLoadKeys = async (uuid, passwordHash) => {
-  const db = await dbOpenE2EE();
-  const tx = db.transaction('keys', 'readonly');
-  const row = await tx.objectStore('keys').get(uuid);
-  if (!row) return null;
-  return await crypto_engine.decryptPrivateKeys(row.encrypted, passwordHash);
+  try {
+    if (!uuid || !passwordHash) {
+      console.error('dbLoadKeys: missing uuid or passwordHash');
+      return null;
+    }
+    const db = await dbOpenE2EE();
+    const tx = db.transaction('keys', 'readonly');
+    const row = await tx.objectStore('keys').get(uuid);
+    if (!row || !row.encrypted) {
+      console.log('dbLoadKeys: no keys found for', uuid);
+      return null;
+    }
+    return await crypto_engine.decryptPrivateKeys(row.encrypted, passwordHash);
+  } catch (err) {
+    console.error('dbLoadKeys failed:', err);
+    return null;
+  }
 };
 
 // ==================== E2EE KEY LOADING ON AUTH ====================
@@ -1344,24 +1376,62 @@ async function loadKeysAfterAuth(uuid) {
       console.warn('Password hash not found in localStorage');
       return;
     }
-
+    
+    console.log('Loading E2EE keys for', uuid);
     const keys = await dbLoadKeys(uuid, passwordHash);
-    if (keys) {
-      crypto_engine.myKeys = keys;
-      console.log('✅ Private keys loaded and decrypted');
-      
-      // Publish public keys to server
-      const pub_ecdh = localStorage.getItem('cipher_pub_ecdh');
-      const pub_ecdsa = localStorage.getItem('cipher_pub_ecdsa');
-      if (pub_ecdh && pub_ecdsa && ws && ws.readyState === WebSocket.OPEN) {
-        sendToServer('publish-keys', { pub_ecdh, pub_ecdsa });
+    
+    if (!keys) {
+      console.error('No keys found for user - need to regenerate');
+      // Try to regenerate keys since none exist
+      try {
+        console.log('Generating new E2EE keys...');
+        const ecdsaKeyPair = await crypto_engine.generateECDSAKeyPair();
+        const ecdhKeyPair = await crypto_engine.generateECDHKeyPair();
+        
+        // Export public keys
+        const pub_ecdsa = await crypto_engine.exportPublicKey(ecdsaKeyPair.publicKey);
+        const pub_ecdh = await crypto_engine.exportPublicKey(ecdhKeyPair.publicKey);
+        
+        // Encrypt and save private keys
+        const encryptedKeys = await crypto_engine.encryptPrivateKeys(
+          ecdsaKeyPair.privateKey,
+          ecdhKeyPair.privateKey,
+          passwordHash
+        );
+        
+        await dbSaveKeys(uuid, encryptedKeys);
+        
+        // Reload keys
+        const newKeys = await dbLoadKeys(uuid, passwordHash);
+        if (!newKeys) {
+          throw new Error('Failed to save/load regenerated keys');
+        }
+        
+        crypto_engine.myKeys = newKeys;
+        
+        // Publish public keys to server
+        sendToServer('publish-keys', { pub_ecdsa, pub_ecdh });
+        
+        console.log('✅ New E2EE keys generated and saved');
+      } catch (genErr) {
+        console.error('Failed to regenerate keys:', genErr);
+        alert('Ошибка доступа к ключам. Необходима перерегистрация.');
+        await logout();
       }
-    } else {
-      console.warn('Keys not found in IndexedDB');
+      return;
     }
+    
+    crypto_engine.myKeys = keys;
+    console.log('✅ E2EE keys loaded successfully');
   } catch (err) {
-    console.error('Error loading keys:', err);
+    console.error('Failed to load keys:', err);
+    alert('Ошибка доступа к ключам: ' + (err.message || 'Неизвестная ошибка'));
+    await logout();
   }
+}
+
+async function logout() {
+  console.log('Logging out...');
 }
 
 console.log('✅ CryptoEngine loaded - E2EE ready');
@@ -2781,95 +2851,114 @@ async function handleIncomingMessage(msg) {
   if (normUid(from) === normUid(myProfile.uuid)) return;
 
   // E2EE decryption for direct messages
-  if (payload && iv && signature && crypto_engine.myKeys) {
-    try {
-      // Check if sender's public keys are cached
-      if (!crypto_engine.pubKeysCache.has(from)) {
-        sendToServer('get-pub-keys', { targetUuid: from });
-        await new Promise(r => setTimeout(r, 500)); // Wait for keys
-      }
-      
-      const pubKeys = crypto_engine.pubKeysCache.get(from);
-      if (pubKeys) {
-        // Import sender's ECDSA public key for verification
-        const senderPubECDSA = await crypto_engine.importPublicKey(pubKeys.pub_ecdsa, 'ECDSA');
+  if (payload && iv && signature) {
+    if (!crypto_engine.myKeys) {
+      // Keys not available - show error message but don't crash
+      content = '🔒 [Ошибка расшифровки: ключи не найдены]';
+      type = 'text';
+    } else {
+      try {
+        // Check if sender's public keys are cached
+        if (!crypto_engine.pubKeysCache.has(from)) {
+          sendToServer('get-pub-keys', { targetUuid: from });
+          await new Promise(r => setTimeout(r, 500)); // Wait for keys
+        }
         
-        // Derive shared secret with sender
-        const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
-        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
-        
-        // Decrypt outer payload
-        const outerPlaintext = await crypto_engine.decryptPayload(sharedSecret, { payload, iv });
-        const outerData = JSON.parse(outerPlaintext);
-        
-        // Check if this is layered encryption (media files)
-        if (outerData.layered && outerData.fileData && outerData.keyPayload) {
-          // LAYERED DECRYPTION for media
-          // Verify signature on file data
-          const isValid = await crypto_engine.verifySignature(senderPubECDSA, outerData.fileData, signature);
-          if (!isValid) {
-            console.error('Signature verification failed for media from', from);
-            content = '[Подпись недействительна]';
+        const pubKeys = crypto_engine.pubKeysCache.get(from);
+        if (pubKeys) {
+          // Import sender's ECDSA public key for verification
+          const senderPubECDSA = await crypto_engine.importPublicKey(pubKeys.pub_ecdsa, 'ECDSA');
+          
+          // Derive shared secret with sender
+          const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+          const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
+          
+          // Decrypt outer payload - wrapped in try/catch
+          let outerPlaintext;
+          try {
+            outerPlaintext = await crypto_engine.decryptPayload(sharedSecret, { payload, iv });
+          } catch (decryptErr) {
+            console.error('decryptPayload failed:', decryptErr);
+            content = '🔒 [Ошибка расшифровки: неверный ключ]';
             type = 'text';
-          } else {
-            // Decrypt the media using layered decryption
-            const decryptedFileData = await crypto_engine.decryptMediaLayered({
-              fileData: outerData.fileData,
-              fileIv: outerData.fileIv,
-              keyPayload: outerData.keyPayload,
-              keyIv: outerData.keyIv
-            }, sharedSecret);
+            // Skip to saving the message
+            outerPlaintext = null;
+          }
+          
+          if (outerPlaintext) {
+            const outerData = JSON.parse(outerPlaintext);
             
-            // Extract metadata
-            const metadata = outerData.metadata || {};
-            type = metadata.type || 'file';
-            
-            // Reconstruct content based on type
-            if (type === 'file' && metadata.fileName) {
-              content = JSON.stringify({
-                name: metadata.fileName,
-                size: metadata.fileSize || 0,
-                data: decryptedFileData
-              });
+            // Check if this is layered encryption (media files)
+            if (outerData.layered && outerData.fileData && outerData.keyPayload) {
+              // LAYERED DECRYPTION for media
+              // Verify signature on file data
+              const isValid = await crypto_engine.verifySignature(senderPubECDSA, outerData.fileData, signature);
+              if (!isValid) {
+                console.error('Signature verification failed for media from', from);
+                content = '🔒 [Подпись недействительна]';
+                type = 'text';
+              } else {
+                // Decrypt the media using layered decryption
+                const decryptedFileData = await crypto_engine.decryptMediaLayered({
+                  fileData: outerData.fileData,
+                  fileIv: outerData.fileIv,
+                  keyPayload: outerData.keyPayload,
+                  keyIv: outerData.keyIv
+                }, sharedSecret);
+                
+                // Extract metadata
+                const metadata = outerData.metadata || {};
+                type = metadata.type || 'file';
+                
+                // Reconstruct content based on type
+                if (type === 'file' && metadata.fileName) {
+                  content = JSON.stringify({
+                    name: metadata.fileName,
+                    size: metadata.fileSize || 0,
+                    data: decryptedFileData
+                  });
+                } else {
+                  content = decryptedFileData;
+                }
+                
+                if (metadata.replyTo) {
+                  msg.replyTo = metadata.replyTo;
+                }
+                
+                // Mark as E2EE decrypted for UI indicator
+                msg.e2eeDecrypted = true;
+              }
             } else {
-              content = decryptedFileData;
+              // STANDARD DECRYPTION for text/voice
+              // Verify signature
+              const isValid = await crypto_engine.verifySignature(senderPubECDSA, payload, signature);
+              if (!isValid) {
+                console.error('Signature verification failed from', from);
+                content = '🔒 [Подпись недействительна]';
+                type = 'text';
+              } else {
+                content = outerData.content;
+                type = outerData.type;
+                if (outerData.replyTo) {
+                  msg.replyTo = outerData.replyTo;
+                }
+                msg.e2eeDecrypted = true;
+              }
             }
-            
-            if (metadata.replyTo) {
-              msg.replyTo = metadata.replyTo;
-            }
-            
-            // Mark as E2EE decrypted for UI indicator
-            msg.e2eeDecrypted = true;
           }
         } else {
-          // STANDARD DECRYPTION for text/voice
-          // Verify signature
-          const isValid = await crypto_engine.verifySignature(senderPubECDSA, payload, signature);
-          if (!isValid) {
-            console.error('Signature verification failed from', from);
-            content = '[Подпись недействительна]';
-            type = 'text';
-          } else {
-            content = outerData.content;
-            type = outerData.type;
-            if (outerData.replyTo) {
-              msg.replyTo = outerData.replyTo;
-            }
-            msg.e2eeDecrypted = true;
-          }
+          console.warn('No public keys for sender', from);
+          content = '🔒 [Зашифрованное сообщение - ключи недоступны]';
+          type = 'text';
         }
-      } else {
-        console.warn('No public keys for sender', from);
-        content = '[Зашифрованное сообщение - ключи недоступны] 🔒';
+      } catch (err) {
+        console.error('E2EE decryption failed:', err);
+        content = '🔒 [Ошибка расшифровки]';
         type = 'text';
       }
-    } catch (err) {
-      console.error('E2EE decryption failed:', err);
-      content = '[Ошибка расшифровки] 🔒';
-      type = 'text';
     }
   }
+  // If no payload/iv/signature, it's an old plaintext message - use content and type as-is (backward compat)
 
   const chatId = getIncomingChatId(msg);
   const here = activeChat ? normUid(activeChat) : '';
