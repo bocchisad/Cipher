@@ -472,6 +472,9 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'message-reaction':
       handleMessageReaction(uuid, data);
       break;
+    case 'edit-msg':
+      handleEditMessage(uuid, data);
+      break;
     case 'ping':
       break;
     default:
@@ -1111,6 +1114,57 @@ function handleDeleteMessage(fromUuid, data) {
       type: 'message-deleted',
       data: { from: fromUuid, ts: data.ts }
     });
+  }
+}
+
+// ==================== EDIT MESSAGE ====================
+// Blind router for edit messages - server never parses encrypted content
+function handleEditMessage(fromUuid, data) {
+  if (!data?.to || !data?.originalTs) return;
+  
+  const toUuid = normUid(data.to);
+  
+  // Check if this is an E2EE edit (has encrypted payload)
+  if (data.payload && data.iv && data.signature) {
+    // Blind router: just forward the encrypted payload
+    const message = {
+      from: fromUuid,
+      to: toUuid,
+      type: 'edit-msg',
+      payload: data.payload,
+      iv: data.iv,
+      signature: data.signature,
+      originalTs: data.originalTs,
+      ts: data.ts || Date.now()
+    };
+    
+    const toUser = getUserLive(toUuid);
+    if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
+      safeWsSend(toUser.ws, { type: 'edit-msg', data: message });
+      console.log(`✏️ E2EE edit-msg: ${fromUuid.substring(0, 8)}… → ${toUuid.substring(0, 8)}…`);
+    } else {
+      // Queue for offline delivery
+      enqueueMessageToStore(message);
+      console.log(`⏸️ Queued edit-msg for ${toUuid.substring(0, 8)}…`);
+    }
+  } else {
+    // Legacy plaintext edit (fallback)
+    const message = {
+      from: fromUuid,
+      to: toUuid,
+      type: 'edit-msg',
+      originalTs: data.originalTs,
+      newContent: data.newContent,
+      ts: data.ts || Date.now()
+    };
+    
+    const toUser = getUserLive(toUuid);
+    if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
+      safeWsSend(toUser.ws, { type: 'edit-msg', data: message });
+    } else {
+      enqueueMessageToStore(message);
+    }
+    console.log(`✏️ Plaintext edit-msg: ${fromUuid.substring(0, 8)}… → ${toUuid.substring(0, 8)}…`);
   }
 }
 
