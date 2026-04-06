@@ -1500,9 +1500,42 @@ const dbOpenE2EE = () => {
 };
 
 const dbSaveKeys = async (uuid, encryptedKeys) => {
-  const db = await dbOpenE2EE();
-  const tx = db.transaction('keys', 'readwrite');
-  await tx.objectStore('keys').put({ key: uuid || 'pending', encrypted: encryptedKeys });
+  return new Promise(async (resolve, reject) => {
+    try {
+      const db = await dbOpenE2EE();
+      const tx = db.transaction('keys', 'readwrite');
+      const store = tx.objectStore('keys');
+      const request = store.put({ key: uuid || 'pending', encrypted: encryptedKeys });
+      
+      request.onsuccess = () => {
+        console.log('✅ Keys saved to IndexedDB for', uuid || 'pending');
+      };
+      
+      request.onerror = () => {
+        console.error('❌ Failed to save keys to IndexedDB:', request.error);
+        reject(request.error);
+      };
+      
+      // CRITICAL: Wait for transaction to complete, not just the request
+      tx.oncomplete = () => {
+        console.log('✅ IndexedDB transaction completed');
+        resolve();
+      };
+      
+      tx.onerror = () => {
+        console.error('❌ IndexedDB transaction failed:', tx.error);
+        reject(tx.error);
+      };
+      
+      tx.onabort = () => {
+        console.error('❌ IndexedDB transaction aborted');
+        reject(new Error('Transaction aborted'));
+      };
+    } catch (err) {
+      console.error('❌ dbSaveKeys error:', err);
+      reject(err);
+    }
+  });
 };
 
 const dbLoadKeys = async (uuid, passwordHash) => {
@@ -2202,60 +2235,7 @@ async function handleIncomingReaction(data) {
   const emoji = data.emoji;
   const remove = data.remove;
   
-  // Handle E2EE encrypted reaction
-  if (data.payload && data.iv && data.signature && crypto_engine.myKeys) {
-    try {
-      // Get sender's public keys if not cached
-      if (!crypto_engine.pubKeysCache.has(fromUuid)) {
-        sendToServer('get-pub-keys', { targetUuid: fromUuid });
-        await new Promise(r => setTimeout(r, 500));
-      }
-      
-      const pubKeys = crypto_engine.pubKeysCache.get(fromUuid);
-      if (pubKeys) {
-        // Verify signature
-        const senderPubECDSA = await crypto_engine.importPublicKey(pubKeys.pub_ecdsa, 'ECDSA');
-        const isValid = await crypto_engine.verifySignature(senderPubECDSA, data.payload, data.signature);
-        if (!isValid) {
-          console.error('Reaction signature verification failed');
-          return;
-        }
-        
-        // Derive shared secret
-        const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
-        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
-        
-        // Decrypt reaction data
-        const plaintext = await crypto_engine.decryptPayload(sharedSecret, { payload: data.payload, iv: data.iv });
-        const reactionData = JSON.parse(plaintext);
-        
-        // Update message with decrypted reaction data
-        const msgs = await dbGetByIndex('messages', 'chatId', chatTarget);
-        const m = msgs.find((x) => x.ts === reactionData.ts);
-        if (!m) return;
-        if (!m.reactions) m.reactions = {};
-        const em = reactionData.emoji;
-        if (!m.reactions[em]) m.reactions[em] = [];
-        const uid = fromUuid;
-        if (reactionData.remove) {
-          m.reactions[em] = (m.reactions[em] || []).filter((u) => u !== uid);
-          if (!m.reactions[em].length) delete m.reactions[em];
-        } else if (!m.reactions[em].includes(uid)) {
-          m.reactions[em].push(uid);
-        }
-        await dbPut('messages', m);
-        if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
-          updateMessageReactionRow(reactionData.ts);
-        }
-        console.log('😀 E2EE reaction processed');
-        return;
-      }
-    } catch (err) {
-      console.error('E2EE reaction decryption failed:', err);
-    }
-  }
-  
-  // Handle plaintext reaction (fallback)
+  // PLAINTEXT reaction handling - no E2EE, just metadata
   const msgs = await dbGetByIndex('messages', 'chatId', chatTarget);
   const m = msgs.find((x) => x.ts === ts);
   if (!m) return;
@@ -2281,7 +2261,6 @@ async function handleIncomingEditMessage(data) {
   
   const fromUuid = data.from;
   const chatId = normUid(fromUuid);
-  const originalTs = data.originalTs;
   
   // Handle E2EE encrypted edit
   if (data.payload && data.iv && data.signature && crypto_engine.myKeys) {
@@ -2312,7 +2291,7 @@ async function handleIncomingEditMessage(data) {
         
         // Update message in database
         const msgs = await dbGetByIndex('messages', 'chatId', chatId);
-        const msg = msgs.find((m) => m.ts === originalTs);
+        const msg = msgs.find((m) => m.ts === data.originalTs);
         if (msg) {
           msg.content = decrypted.newContent;
           msg.edited = true;
@@ -2323,7 +2302,7 @@ async function handleIncomingEditMessage(data) {
           if (activeChat && normUid(activeChat) === chatId) {
             await loadMessages();
           }
-          console.log('✏️ Message edited (E2EE):', originalTs);
+          console.log('✏️ Message edited (E2EE):', data.originalTs);
         }
       }
     } catch (err) {
@@ -4492,6 +4471,77 @@ function appendMessage(msg){
     area.appendChild(wrapper);
     return;
   }
+
+  // Check for real-time media grouping
+  const isMedia = msg.type === 'image' || msg.type === 'video';
+  if (isMedia) {
+    const lastMsg = area.lastElementChild;
+    if (lastMsg) {
+      const lastTs = parseInt(lastMsg.dataset.ts) || 0;
+      const timeDiff = msg.ts - lastTs;
+      const lastFrom = lastMsg.classList.contains('out') ? myProfile.uuid : msg.from;
+      const isSameUser = (lastMsg.classList.contains('out') && normUid(msg.from) === normUid(myProfile.uuid)) ||
+                         (lastMsg.classList.contains('in') && normUid(msg.from) !== normUid(myProfile.uuid));
+      
+      // Check if last message has a media grid
+      const lastGrid = lastMsg.querySelector('.media-group');
+      
+      if (lastGrid && isSameUser && timeDiff < 30000) {
+        // Append to existing media group
+        const count = lastGrid.children.length;
+        if (count < 4) {
+          // Add to grid
+          if (msg.type === 'image') {
+            const img = document.createElement('img');
+            img.className = 'msg-img';
+            img.src = msg.content;
+            img.onclick = () => openLightbox(msg.content);
+            lastGrid.appendChild(img);
+          } else if (msg.type === 'video') {
+            const video = document.createElement('video');
+            video.className = 'msg-video';
+            video.src = msg.content;
+            video.controls = true;
+            lastGrid.appendChild(video);
+          }
+          
+          // Update grid class for layout
+          const newCount = lastGrid.children.length;
+          lastGrid.className = 'media-group';
+          if (newCount === 1) lastGrid.classList.add('count-1');
+          else if (newCount === 2) lastGrid.classList.add('count-2');
+          else if (newCount === 3) lastGrid.classList.add('count-3');
+          else if (newCount === 4) lastGrid.classList.add('count-4');
+          else lastGrid.classList.add('count-5plus');
+          
+          // Update timestamp
+          const mt = lastMsg.querySelector('.mtime');
+          if (mt) {
+            let timeText = fmtTime(msg.ts);
+            if (msg.edited) timeText += ' (изменено)';
+            mt.textContent = timeText;
+            if (msg.e2eeDecrypted || (msg.payload && msg.iv && msg.signature)) {
+              mt.innerHTML = '🔒 ' + mt.textContent;
+            }
+          }
+          
+          scrollBottom();
+          return;
+        } else if (count === 4) {
+          // Show +1 more indicator
+          const more = document.createElement('div');
+          more.className = 'media-more';
+          more.textContent = '+1';
+          lastGrid.appendChild(more);
+          lastGrid.classList.add('count-5plus');
+          scrollBottom();
+          return;
+        }
+      }
+    }
+  }
+  
+  // Regular message rendering (existing code continues...)
   const isOut = normUid(msg.from) === normUid(myProfile.uuid);
   const contact = contacts.find((c) => normUid(c.uuid) === activeChat) || {};
   const wrapper=document.createElement('div');
@@ -4711,62 +4761,10 @@ async function sendReactionToggle(ts, emoji) {
   const me = normUid(myProfile.uuid);
   const remove = list.some((u) => normUid(u) === me);
   
-  // E2EE encrypt reaction if possible (direct messages only, not rooms)
-  const c = contacts.find((x) => normUid(x.uuid) === activeChat);
-  const isRoom = c && (c.kind === 'group' || c.kind === 'channel');
-  
-  if (!isRoom && (!c || c.kind !== 'saved') && crypto_engine.myKeys) {
-    try {
-      // Get recipient's public keys
-      if (!crypto_engine.pubKeysCache.has(activeChat)) {
-        sendToServer('get-pub-keys', { targetUuid: activeChat });
-        await new Promise(r => setTimeout(r, 300));
-      }
-      
-      const pubKeys = crypto_engine.pubKeysCache.get(activeChat);
-      if (pubKeys) {
-        const theirPublicKey = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
-        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, theirPublicKey);
-        
-        // Encrypt reaction data
-        const reactionData = JSON.stringify({
-          type: 'message-reaction',
-          ts,
-          emoji,
-          remove
-        });
-        const encPayload = await crypto_engine.encryptPayload(sharedSecret, reactionData);
-        const signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
-        
-        // Send encrypted reaction
-        sendToServer('message-reaction', {
-          to: activeChat,
-          ts,
-          emoji,
-          remove,
-          payload: encPayload.payload,
-          iv: encPayload.iv,
-          signature
-        });
-        
-        // Update local
-        if (remove) {
-          m.reactions[emoji] = list.filter((u) => normUid(u) !== me);
-          if (!m.reactions[emoji].length) delete m.reactions[emoji];
-        } else {
-          m.reactions[emoji] = [...list.filter((u) => normUid(u) !== me), me];
-        }
-        await dbPut('messages', m);
-        updateMessageReactionRow(ts);
-        return;
-      }
-    } catch (err) {
-      console.error('E2EE reaction encryption failed, falling back to plaintext:', err);
-    }
-  }
-  
-  // Fallback: plaintext reaction
+  // PLAINTEXT reaction - no E2EE, just metadata
   sendToServer('message-reaction', { to: activeChat, ts, emoji, remove });
+  
+  // Update local state immediately
   if (remove) {
     m.reactions[emoji] = list.filter((u) => normUid(u) !== me);
     if (!m.reactions[emoji].length) delete m.reactions[emoji];
@@ -6394,41 +6392,85 @@ async function startOutgoingCall(video) {
   }
   
   try {
+    // Check if already in call
+    if (rtcPc) {
+      console.warn('⚠️ Already in a call');
+      showToast('Вы уже в звонке');
+      return;
+    }
+    
+    // Get user media
+    console.log('🎤 Requesting media permissions...');
+    const stream = await navigator.mediaDevices.getUserMedia({ 
+      video: video ? { width: 640, height: 480 } : false, 
+      audio: true 
+    });
+    console.log('✅ Media permissions granted');
+    
+    // Create peer connection
+    console.log('🔗 Creating peer connection...');
+    rtcPc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
     rtcRemoteUuid = peer;
-    rtcLocal = await navigator.mediaDevices.getUserMedia({ audio: true, video: !!video });
-    rtcCamTrack = rtcLocal.getVideoTracks()[0] || null;
-    rtcPc = new RTCPeerConnection(RTC_CFG);
-    rtcLocal.getTracks().forEach((t) => rtcPc.addTrack(t, rtcLocal));
+    rtcLocal = stream;
+    
+    // Add local tracks
+    stream.getTracks().forEach(track => {
+      console.log('➕ Adding track:', track.kind);
+      rtcPc.addTrack(track, stream);
+    });
+    
+    // Show local video
+    const localVideo = document.getElementById('callLocalVideo');
+    if (localVideo) {
+      localVideo.srcObject = stream;
+      localVideo.style.display = 'block';
+    }
+    
+    // ICE candidate handler
     rtcPc.onicecandidate = async (e) => {
-      if (e.candidate && rtcRemoteUuid) {
-        // E2EE encrypt ICE candidate
-        const encryptedIce = await encryptCallSignal({ candidate: iceToJSON(e.candidate) }, peer);
-        if (encryptedIce) {
-          sendToServer('rtc-ice', { to: rtcRemoteUuid, ...encryptedIce });
+      if (e.candidate) {
+        console.log('🧊 Sending ICE candidate');
+        try {
+          // E2EE encrypt ICE candidate
+          const encryptedIce = await encryptCallSignal({ candidate: iceToJSON(e.candidate) }, peer);
+          if (encryptedIce) {
+            sendToServer('rtc-ice', { to: rtcRemoteUuid, ...encryptedIce });
+          }
+        } catch (err) {
+          console.error('❌ Failed to encrypt/send ICE:', err);
         }
       }
     };
+    
+    // Track handler
     rtcPc.ontrack = (e) => {
+      console.log('📺 Received remote track:', e.track.kind);
       if (e.streams[0]) attachRemoteStream(e.streams[0]);
     };
+    
+    // Create offer
+    console.log('📤 Creating offer...');
     const offer = await rtcPc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
     await rtcPc.setLocalDescription(offer);
+    console.log('✅ Offer created and set');
     
     // E2EE encrypt SDP offer
+    console.log('🔐 Encrypting offer...');
     const encryptedOffer = await encryptCallSignal({ sdp: sdpToJSON(offer), video: !!video }, peer);
-    if (encryptedOffer) {
-      sendToServer('rtc-offer', { to: peer, ...encryptedOffer });
+    if (!encryptedOffer) {
+      throw new Error('Failed to encrypt offer');
     }
     
+    // Send offer
+    console.log('📤 Sending encrypted offer...');
+    sendToServer('rtc-offer', { to: peer, ...encryptedOffer });
+    
     rtcVideoOffer = !!video;
+    document.getElementById('callStatus').textContent = '⏳ Ожидание ответа...';
     document.getElementById('callOverlay').style.display = 'flex';
-    document.getElementById('callName').textContent =
-      contacts.find((x) => normUid(x.uuid) === peer)?.nickname || peer.slice(0, 8);
-    document.getElementById('callStatus').textContent = video ? '🔒 Защищенный видеозвонок…' : '🔒 Защищенный звонок…';
-    document.getElementById('callIncomingRow').style.display = 'none';
-    document.getElementById('callActiveRow').style.display = 'flex';
-    const loc = document.getElementById('callLocalVideo');
-    if (loc) loc.srcObject = rtcLocal;
+    document.getElementById('callOverlay').style.opacity = '1';
     syncCallControlButtons();
     startCallTimer();
   } catch (e) {
@@ -6455,7 +6497,10 @@ async function handleRtcSignalIncoming(kind, data) {
   if (kind === 'rtc-offer') {
     const video = !!decryptedData.video;
     const sdp = decryptedData.sdp;
-    if (!sdp || !sdp.sdp) return;
+    if (!sdp || !sdp.sdp) {
+      console.error('❌ Invalid SDP in offer');
+      return;
+    }
     document.getElementById('callOverlay').style.display = 'flex';
     document.getElementById('callName').textContent =
       contacts.find((x) => normUid(x.uuid) === normUid(data.from))?.nickname || String(data.from).slice(0, 8);
@@ -6482,9 +6527,10 @@ async function handleRtcSignalIncoming(kind, data) {
           if (e.streams[0]) attachRemoteStream(e.streams[0]);
         };
         await rtcPc.setRemoteDescription(new RTCSessionDescription(sdp));
+        console.log('✅ Remote description set (offer)');
         const answer = await rtcPc.createAnswer();
         await rtcPc.setLocalDescription(answer);
-        
+      
         // E2EE encrypt answer
         const encryptedAnswer = await encryptCallSignal({ sdp: sdpToJSON(answer) }, data.from);
         if (encryptedAnswer) {
@@ -6500,23 +6546,24 @@ async function handleRtcSignalIncoming(kind, data) {
       } catch (e) {
         console.error(e);
         showToast('Не удалось принять звонок');
-        sendToServer('rtc-hangup', { to: data.from });
         endCall(null, false);
       }
     };
-    document.getElementById('callAcceptBtn').onclick = accept;
-    document.getElementById('callRejectBtn').onclick = () => {
-      sendToServer('rtc-hangup', { to: data.from });
-      endCall(null, false);
-    };
   } else if (kind === 'rtc-answer' && rtcPc && decryptedData.sdp) {
-    await rtcPc.setRemoteDescription(new RTCSessionDescription(decryptedData.sdp));
-    document.getElementById('callStatus').textContent = '🔒 Защищенное соединение';
-    syncCallControlButtons();
+    try {
+      await rtcPc.setRemoteDescription(new RTCSessionDescription(decryptedData.sdp));
+      console.log('✅ Answer received, connection established');
+      document.getElementById('callStatus').textContent = '🔒 Защищенное соединение';
+      syncCallControlButtons();
+    } catch (err) {
+      console.error('❌ Failed to set remote description (answer):', err);
+    }
   } else if (kind === 'rtc-ice' && rtcPc && decryptedData.candidate) {
     try {
       await rtcPc.addIceCandidate(new RTCIceCandidate(decryptedData.candidate));
-    } catch (_) {}
+    } catch (err) {
+      console.error('❌ Failed to add ICE candidate:', err);
+    }
   }
 }
 
