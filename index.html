@@ -1042,7 +1042,7 @@ class CryptoEngine {
   async generateECDSAKeyPair() {
     return await window.crypto.subtle.generateKey(
       { name: 'ECDSA', namedCurve: 'P-384' },
-      false,
+      true, // CRITICAL: extractable must be true to export private key
       ['sign', 'verify']
     );
   }
@@ -1050,7 +1050,7 @@ class CryptoEngine {
   async generateECDHKeyPair() {
     return await window.crypto.subtle.generateKey(
       { name: 'ECDH', namedCurve: 'P-384' },
-      false,
+      true, // CRITICAL: extractable must be true to export private key
       ['deriveKey']
     );
   }
@@ -1230,6 +1230,74 @@ class CryptoEngine {
       ciphertext
     );
     return new TextDecoder().decode(decrypted);
+  }
+
+  // ==================== LAYERED ENCRYPTION FOR MEDIA ====================
+  // Encrypts large files with a random AES key, then encrypts that key with shared secret
+  async encryptMediaLayered(fileBase64, sharedSecret, metadata = {}) {
+    // Generate random AES-GCM key for this file only
+    const fileKey = await window.crypto.subtle.generateKey(
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['encrypt', 'decrypt']
+    );
+
+    // Encrypt file with random key
+    const fileIv = window.crypto.getRandomValues(new Uint8Array(12));
+    const fileData = Uint8Array.from(atob(fileBase64), c => c.charCodeAt(0));
+    const encryptedFile = await window.crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: fileIv },
+      fileKey,
+      fileData
+    );
+
+    // Export and encrypt the file key with shared secret
+    const fileKeyJwk = await window.crypto.subtle.exportKey('jwk', fileKey);
+    const keyPayload = JSON.stringify(fileKeyJwk);
+    const encryptedKeyData = await this.encryptPayload(sharedSecret, keyPayload);
+
+    return {
+      // Encrypted file data
+      fileData: btoa(String.fromCharCode(...new Uint8Array(encryptedFile))),
+      fileIv: Array.from(fileIv).map(b => b.toString(16).padStart(2, '0')).join(''),
+      // Encrypted file key
+      keyPayload: encryptedKeyData.payload,
+      keyIv: encryptedKeyData.iv,
+      // Metadata
+      metadata
+    };
+  }
+
+  // Decrypt media using layered encryption
+  async decryptMediaLayered(layeredData, sharedSecret) {
+    // Decrypt the file key
+    const decryptedKeyJson = await this.decryptPayload(sharedSecret, {
+      payload: layeredData.keyPayload,
+      iv: layeredData.keyIv
+    });
+    const keyJwk = JSON.parse(decryptedKeyJson);
+
+    // Import the file key
+    const fileKey = await window.crypto.subtle.importKey(
+      'jwk',
+      keyJwk,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['decrypt']
+    );
+
+    // Decrypt the file
+    const fileIv = new Uint8Array(
+      layeredData.fileIv.match(/.{1,2}/g).map(b => parseInt(b, 16))
+    );
+    const encryptedFileData = Uint8Array.from(atob(layeredData.fileData), c => c.charCodeAt(0));
+    const decryptedFile = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: fileIv },
+      fileKey,
+      encryptedFileData
+    );
+
+    return btoa(String.fromCharCode(...new Uint8Array(decryptedFile)));
   }
 }
 
@@ -1745,6 +1813,9 @@ function handleServerMessage(msg) {
     case 'message-reaction':
       handleIncomingReaction(data);
       break;
+    case 'edit-msg':
+      handleIncomingEditMessage(data);
+      break;
     case 'rtc-offer':
       handleRtcSignalIncoming('rtc-offer', data);
       break;
@@ -1885,6 +1956,78 @@ async function handleIncomingReaction(data) {
   await dbPut('messages', m);
   if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
     updateMessageReactionRow(data.ts);
+  }
+}
+
+// ==================== INCOMING EDIT MESSAGE ====================
+async function handleIncomingEditMessage(data) {
+  if (!data || !data.originalTs) return;
+  
+  const fromUuid = data.from;
+  const chatId = normUid(fromUuid);
+  const originalTs = data.originalTs;
+  
+  // Handle E2EE encrypted edit
+  if (data.payload && data.iv && data.signature && crypto_engine.myKeys) {
+    try {
+      // Get sender's public keys if not cached
+      if (!crypto_engine.pubKeysCache.has(fromUuid)) {
+        sendToServer('get-pub-keys', { targetUuid: fromUuid });
+        await new Promise(r => setTimeout(r, 500));
+      }
+      
+      const pubKeys = crypto_engine.pubKeysCache.get(fromUuid);
+      if (pubKeys) {
+        // Verify signature
+        const senderPubECDSA = await crypto_engine.importPublicKey(pubKeys.pub_ecdsa, 'ECDSA');
+        const isValid = await crypto_engine.verifySignature(senderPubECDSA, data.payload, data.signature);
+        if (!isValid) {
+          console.error('Edit message signature verification failed');
+          return;
+        }
+        
+        // Derive shared secret
+        const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
+        
+        // Decrypt payload
+        const plaintext = await crypto_engine.decryptPayload(sharedSecret, { payload: data.payload, iv: data.iv });
+        const decrypted = JSON.parse(plaintext);
+        
+        // Update message in database
+        const msgs = await dbGetByIndex('messages', 'chatId', chatId);
+        const msg = msgs.find((m) => m.ts === originalTs);
+        if (msg) {
+          msg.content = decrypted.newContent;
+          msg.edited = true;
+          msg.editTs = data.ts || Date.now();
+          await dbPut('messages', msg);
+          
+          // Refresh UI if in this chat
+          if (activeChat && normUid(activeChat) === chatId) {
+            await loadMessages();
+          }
+          console.log('✏️ Message edited (E2EE):', originalTs);
+        }
+      }
+    } catch (err) {
+      console.error('E2EE edit decryption failed:', err);
+    }
+  } else {
+    // Handle plaintext edit (fallback)
+    const msgs = await dbGetByIndex('messages', 'chatId', chatId);
+    const msg = msgs.find((m) => m.ts === originalTs);
+    if (msg && data.newContent) {
+      msg.content = data.newContent;
+      msg.edited = true;
+      msg.editTs = data.ts || Date.now();
+      await dbPut('messages', msg);
+      
+      if (activeChat && normUid(activeChat) === chatId) {
+        await loadMessages();
+      }
+      console.log('✏️ Message edited (plaintext):', originalTs);
+    }
   }
 }
 
@@ -2426,7 +2569,21 @@ async function loginWithCredentials(uuidRaw, passwordRaw) {
   const loginResp = await Promise.race([loginOkPromise, errPromise]);
 
   if (!loginResp) throw new Error('Сервер не ответил (timeout)');
-  if (loginResp.type === 'error') throw new Error(loginResp.error || loginResp.data?.error || 'Ошибка входа');
+  if (loginResp.type === 'error') {
+    const errorMsg = loginResp.error || loginResp.data?.error || 'Ошибка входа';
+    // CRITICAL: Auto-clear storage and redirect on "User not found"
+    if (errorMsg.toLowerCase().includes('user not found') || errorMsg.toLowerCase().includes('пользователь не найден')) {
+      console.warn('⚠️ User not found - clearing localStorage and redirecting to registration');
+      localStorage.removeItem('cipherAuth');
+      localStorage.removeItem('cipher_passwordHash');
+      localStorage.removeItem('cipher_pub_ecdsa');
+      localStorage.removeItem('cipher_pub_ecdh');
+      showToast('❌ Пользователь не найден. Перенаправление на регистрацию...');
+      setupReg();
+      return;
+    }
+    throw new Error(errorMsg);
+  }
 
   const auth = { uuid, passwordHash, server: serverAddress };
   localStorage.setItem('cipherAuth', JSON.stringify(auth));
@@ -2637,35 +2794,79 @@ async function handleIncomingMessage(msg) {
         // Import sender's ECDSA public key for verification
         const senderPubECDSA = await crypto_engine.importPublicKey(pubKeys.pub_ecdsa, 'ECDSA');
         
-        // Verify signature
-        const isValid = await crypto_engine.verifySignature(senderPubECDSA, payload, signature);
-        if (!isValid) {
-          console.error('Signature verification failed from', from);
-          content = '[Подпись недействительна]';
-          type = 'text';
+        // Derive shared secret with sender
+        const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
+        
+        // Decrypt outer payload
+        const outerPlaintext = await crypto_engine.decryptPayload(sharedSecret, { payload, iv });
+        const outerData = JSON.parse(outerPlaintext);
+        
+        // Check if this is layered encryption (media files)
+        if (outerData.layered && outerData.fileData && outerData.keyPayload) {
+          // LAYERED DECRYPTION for media
+          // Verify signature on file data
+          const isValid = await crypto_engine.verifySignature(senderPubECDSA, outerData.fileData, signature);
+          if (!isValid) {
+            console.error('Signature verification failed for media from', from);
+            content = '[Подпись недействительна]';
+            type = 'text';
+          } else {
+            // Decrypt the media using layered decryption
+            const decryptedFileData = await crypto_engine.decryptMediaLayered({
+              fileData: outerData.fileData,
+              fileIv: outerData.fileIv,
+              keyPayload: outerData.keyPayload,
+              keyIv: outerData.keyIv
+            }, sharedSecret);
+            
+            // Extract metadata
+            const metadata = outerData.metadata || {};
+            type = metadata.type || 'file';
+            
+            // Reconstruct content based on type
+            if (type === 'file' && metadata.fileName) {
+              content = JSON.stringify({
+                name: metadata.fileName,
+                size: metadata.fileSize || 0,
+                data: decryptedFileData
+              });
+            } else {
+              content = decryptedFileData;
+            }
+            
+            if (metadata.replyTo) {
+              msg.replyTo = metadata.replyTo;
+            }
+            
+            // Mark as E2EE decrypted for UI indicator
+            msg.e2eeDecrypted = true;
+          }
         } else {
-          // Derive shared secret with sender
-          const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
-          const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
-          
-          // Decrypt payload
-          const plaintext = await crypto_engine.decryptPayload(sharedSecret, { payload, iv });
-          const decrypted = JSON.parse(plaintext);
-          
-          content = decrypted.content;
-          type = decrypted.type;
-          if (decrypted.replyTo) {
-            msg.replyTo = decrypted.replyTo;
+          // STANDARD DECRYPTION for text/voice
+          // Verify signature
+          const isValid = await crypto_engine.verifySignature(senderPubECDSA, payload, signature);
+          if (!isValid) {
+            console.error('Signature verification failed from', from);
+            content = '[Подпись недействительна]';
+            type = 'text';
+          } else {
+            content = outerData.content;
+            type = outerData.type;
+            if (outerData.replyTo) {
+              msg.replyTo = outerData.replyTo;
+            }
+            msg.e2eeDecrypted = true;
           }
         }
       } else {
         console.warn('No public keys for sender', from);
-        content = '[Зашифрованное сообщение - ключи недоступны]';
+        content = '[Зашифрованное сообщение - ключи недоступны] 🔒';
         type = 'text';
       }
     } catch (err) {
       console.error('E2EE decryption failed:', err);
-      content = '[Ошибка расшифровки]';
+      content = '[Ошибка расшифровки] 🔒';
       type = 'text';
     }
   }
@@ -3006,6 +3207,12 @@ async function startApp(uuid) {
 // ==================== SEND ====================
 async function sendMessage(type, content){
   if(!activeChat) return;
+  
+  // Handle edit mode
+  if (editingMessageTs && type === 'text') {
+    await sendEditMessage(content);
+    return;
+  }
 
   const c = contacts.find((x) => normUid(x.uuid) === activeChat);
   if (c && !isChannelPublisher(c)) {
@@ -3050,12 +3257,51 @@ async function sendMessage(type, content){
         const theirPublicKey = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
         const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, theirPublicKey);
         
-        // Encrypt payload
-        const plaintext = JSON.stringify({ type, content, replyTo: replySnap });
-        const encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
+        let plaintext, encPayload, signature;
+        const isMedia = ['image', 'video', 'file'].includes(type);
         
-        // Sign encrypted payload
-        const signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
+        if (isMedia) {
+          // LAYERED ENCRYPTION for media: file encrypted with random key, key encrypted with shared secret
+          const metadata = { type, replyTo: replySnap };
+          if (type === 'file') {
+            // Parse file metadata
+            try {
+              const fd = JSON.parse(content);
+              metadata.fileName = fd.name;
+              metadata.fileSize = fd.size;
+            } catch (_) {}
+          }
+          
+          // Encrypt media with layered encryption
+          const layered = await crypto_engine.encryptMediaLayered(
+            type === 'file' ? JSON.parse(content).data : content,
+            sharedSecret,
+            metadata
+          );
+          
+          // Create payload structure
+          const payloadObj = {
+            layered: true,
+            fileData: layered.fileData,
+            fileIv: layered.fileIv,
+            keyPayload: layered.keyPayload,
+            keyIv: layered.keyIv,
+            metadata: layered.metadata
+          };
+          
+          // Sign only the file data (encrypted file content)
+          signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, layered.fileData);
+          
+          // Encrypt the outer payload containing layered info
+          plaintext = JSON.stringify(payloadObj);
+          encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
+        } else {
+          // Standard encryption for text/voice
+          plaintext = JSON.stringify({ type, content, replyTo: replySnap });
+          encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
+          // Sign encrypted payload
+          signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
+        }
         
         // Replace message with E2EE format
         message.payload = encPayload.payload;
@@ -3232,6 +3478,8 @@ document.addEventListener('click',e=>{
       if(action.dataset.action==='msg-forward') forwardMessage(ts);
       if(action.dataset.action==='msg-del-me') deleteMessageForMe(ts);
       if(action.dataset.action==='msg-del-both') deleteMessageForEveryone(ts);
+      if(action.dataset.action==='msg-edit') editMessage(ts);
+      if(action.dataset.action==='msg-copy') copyMessageText(ts);
     } else {
       const chatId=menu.dataset.chatId;
       if(action.dataset.action==='delete-local') deleteChatLocal(chatId);
@@ -3392,6 +3640,138 @@ async function deleteMessageForEveryone(ts){
   await deleteMessageForMe(ts);
 }
 
+// ==================== EDIT MESSAGE ====================
+let editingMessageTs = null;
+
+async function editMessage(ts) {
+  if (!activeChat) return;
+  const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
+  const msg = msgs.find((m) => m.ts === ts);
+  if (!msg || msg.type !== 'text') return;
+  
+  editingMessageTs = ts;
+  const input = document.getElementById('msgInput');
+  input.value = msg.content;
+  input.focus();
+  
+  // Show edit indicator
+  let editIndicator = document.getElementById('editIndicator');
+  if (!editIndicator) {
+    editIndicator = document.createElement('div');
+    editIndicator.id = 'editIndicator';
+    editIndicator.className = 'edit-indicator';
+    editIndicator.style.cssText = 'padding: 8px 12px; background: var(--bg4); color: var(--text2); font-size: 13px; display: flex; align-items: center; justify-content: space-between;';
+    input.parentNode.insertBefore(editIndicator, input);
+  }
+  editIndicator.innerHTML = `
+    <span>✏️ Редактирование сообщения</span>
+    <button onclick="cancelEdit()" style="background: none; border: none; color: var(--text2); cursor: pointer;">✕</button>
+  `;
+  editIndicator.style.display = 'flex';
+}
+
+function cancelEdit() {
+  editingMessageTs = null;
+  const input = document.getElementById('msgInput');
+  input.value = '';
+  const editIndicator = document.getElementById('editIndicator');
+  if (editIndicator) editIndicator.style.display = 'none';
+}
+
+async function sendEditMessage(newContent) {
+  if (!activeChat || !editingMessageTs) return;
+  
+  const c = contacts.find((x) => normUid(x.uuid) === activeChat);
+  const isRoom = c && (c.kind === 'group' || c.kind === 'channel');
+  
+  // Send edit-msg to server
+  const editData = {
+    to: activeChat,
+    originalTs: editingMessageTs,
+    newContent,
+    ts: Date.now()
+  };
+  
+  // E2EE encrypt if possible
+  if (!isRoom && (!c || c.kind !== 'saved') && crypto_engine.myKeys) {
+    try {
+      if (!crypto_engine.pubKeysCache.has(activeChat)) {
+        sendToServer('get-pub-keys', { targetUuid: activeChat });
+        await new Promise(r => setTimeout(r, 300));
+      }
+      
+      const pubKeys = crypto_engine.pubKeysCache.get(activeChat);
+      if (pubKeys) {
+        const theirPublicKey = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, theirPublicKey);
+        
+        const plaintext = JSON.stringify({ 
+          type: 'edit-msg', 
+          originalTs: editingMessageTs,
+          newContent 
+        });
+        const encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
+        const signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
+        
+        sendToServer('edit-msg', {
+          to: activeChat,
+          payload: encPayload.payload,
+          iv: encPayload.iv,
+          signature,
+          originalTs: editingMessageTs
+        });
+      }
+    } catch (err) {
+      console.error('E2EE edit encryption failed:', err);
+      sendToServer('edit-msg', editData);
+    }
+  } else {
+    sendToServer('edit-msg', editData);
+  }
+  
+  // Update local message
+  const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
+  const msg = msgs.find((m) => m.ts === editingMessageTs);
+  if (msg) {
+    msg.content = newContent;
+    msg.edited = true;
+    msg.editTs = Date.now();
+    await dbPut('messages', msg);
+  }
+  
+  cancelEdit();
+  await loadMessages();
+}
+
+// ==================== COPY MESSAGE ====================
+async function copyMessageText(ts) {
+  if (!activeChat) return;
+  const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
+  const msg = msgs.find((m) => m.ts === ts);
+  if (!msg || !msg.content) return;
+  
+  try {
+    await navigator.clipboard.writeText(msg.content);
+    showToast('📋 Текст скопирован');
+  } catch (err) {
+    console.error('Copy failed:', err);
+    // Fallback for older browsers
+    const textarea = document.createElement('textarea');
+    textarea.value = msg.content;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      showToast('📋 Текст скопирован');
+    } catch (e) {
+      showToast('❌ Не удалось скопировать');
+    }
+    document.body.removeChild(textarea);
+  }
+}
+
 const REACTION_PICK_EMOJIS = ['👍','❤️','🔥','😂','😮','😢','🙏','👏'];
 
 function showMessageCtxMenu(e, msg){
@@ -3405,6 +3785,17 @@ function showMessageCtxMenu(e, msg){
   let html = `<div class="ctx-react-bar">${reactBar}</div>`;
   html += `<div class="ctx-item" data-action="msg-reply">↩ Ответить</div>`;
   html += `<div class="ctx-item" data-action="msg-forward">↪ Переслать</div>`;
+  
+  // Add edit option for text messages from me
+  if (isMine && msg.type === 'text') {
+    html += `<div class="ctx-item" data-action="msg-edit">✏️ Изменить</div>`;
+  }
+  
+  // Add copy option for text messages
+  if (msg.type === 'text' && msg.content) {
+    html += `<div class="ctx-item" data-action="msg-copy">📋 Копировать</div>`;
+  }
+  
   html += `<div class="ctx-item" data-action="msg-del-me">🗑 Удалить у меня</div>`;
   if (isMine) html += `<div class="ctx-item danger" data-action="msg-del-both">Удалить у всех</div>`;
   menu.innerHTML = html;
@@ -3706,7 +4097,16 @@ function appendMessage(msg){
 
   const mt=document.createElement('div');
   mt.className='mtime';
-  mt.textContent=fmtTime(msg.ts);
+  let timeText = fmtTime(msg.ts);
+  // Add edited indicator
+  if (msg.edited) {
+    timeText += ' (изменено)';
+  }
+  mt.textContent = timeText;
+  // E2EE lock icon for encrypted messages
+  if (msg.e2eeDecrypted || (msg.payload && msg.iv && msg.signature)) {
+    mt.innerHTML = '🔒 ' + mt.textContent;
+  }
   // FIX (Недочёт #6): single checkmark initially, becomes ✓✓ on delivered receipt
   if(isOut) mt.innerHTML+=` <span class="check${msg.delivered ? ' delivered' : ''}">${msg.delivered ? '✓✓' : '✓'}</span>`;
   bubble.appendChild(mt);
@@ -5357,6 +5757,7 @@ function syncCallControlButtons() {
 }
 
 function endCall(reason, notifyPeer) {
+  stopCallTimer(); // Stop the call timer
   const peer = rtcRemoteUuid ? normUid(rtcRemoteUuid) : null;
   const logLocalHangup = !!(peer && notifyPeer);
   if (notifyPeer && rtcRemoteUuid && ws && ws.readyState === WebSocket.OPEN) {
@@ -5413,15 +5814,38 @@ async function startOutgoingCall(video) {
     showToast('Звонки только в личном чате');
     return;
   }
+  
+  // Check if we have E2EE keys for encrypted signaling
+  if (!crypto_engine.myKeys) {
+    showToast('🔒 E2EE ключи не загружены. Перезайдите в аккаунт.');
+    return;
+  }
+  
+  // Get peer's public keys for E2EE call signaling
+  if (!crypto_engine.pubKeysCache.has(peer)) {
+    sendToServer('get-pub-keys', { targetUuid: peer });
+    showToast('Запрос ключей для защищенного звонка...');
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  
+  if (!crypto_engine.pubKeysCache.has(peer)) {
+    showToast('❌ Нет публичных ключей собеседника. Звонок невозможен.');
+    return;
+  }
+  
   try {
     rtcRemoteUuid = peer;
     rtcLocal = await navigator.mediaDevices.getUserMedia({ audio: true, video: !!video });
     rtcCamTrack = rtcLocal.getVideoTracks()[0] || null;
     rtcPc = new RTCPeerConnection(RTC_CFG);
     rtcLocal.getTracks().forEach((t) => rtcPc.addTrack(t, rtcLocal));
-    rtcPc.onicecandidate = (e) => {
+    rtcPc.onicecandidate = async (e) => {
       if (e.candidate && rtcRemoteUuid) {
-        sendToServer('rtc-ice', { to: rtcRemoteUuid, candidate: iceToJSON(e.candidate) });
+        // E2EE encrypt ICE candidate
+        const encryptedIce = await encryptCallSignal({ candidate: iceToJSON(e.candidate) }, peer);
+        if (encryptedIce) {
+          sendToServer('rtc-ice', { to: rtcRemoteUuid, ...encryptedIce });
+        }
       }
     };
     rtcPc.ontrack = (e) => {
@@ -5429,17 +5853,24 @@ async function startOutgoingCall(video) {
     };
     const offer = await rtcPc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
     await rtcPc.setLocalDescription(offer);
-    sendToServer('rtc-offer', { to: peer, sdp: sdpToJSON(offer), video: !!video });
+    
+    // E2EE encrypt SDP offer
+    const encryptedOffer = await encryptCallSignal({ sdp: sdpToJSON(offer), video: !!video }, peer);
+    if (encryptedOffer) {
+      sendToServer('rtc-offer', { to: peer, ...encryptedOffer });
+    }
+    
     rtcVideoOffer = !!video;
     document.getElementById('callOverlay').style.display = 'flex';
     document.getElementById('callName').textContent =
       contacts.find((x) => normUid(x.uuid) === peer)?.nickname || peer.slice(0, 8);
-    document.getElementById('callStatus').textContent = video ? 'Видеозвонок…' : 'Звонок…';
+    document.getElementById('callStatus').textContent = video ? '🔒 Защищенный видеозвонок…' : '🔒 Защищенный звонок…';
     document.getElementById('callIncomingRow').style.display = 'none';
     document.getElementById('callActiveRow').style.display = 'flex';
     const loc = document.getElementById('callLocalVideo');
     if (loc) loc.srcObject = rtcLocal;
     syncCallControlButtons();
+    startCallTimer();
   } catch (e) {
     console.error(e);
     showToast('Нет доступа к микрофону/камере');
@@ -5449,9 +5880,21 @@ async function startOutgoingCall(video) {
 
 async function handleRtcSignalIncoming(kind, data) {
   if (!data || !data.from) return;
+  
+  // Decrypt call signaling data if encrypted
+  let decryptedData = data;
+  if (data.payload && data.iv && data.signature) {
+    decryptedData = await decryptCallSignal(data, data.from);
+    if (!decryptedData) {
+      console.error('Failed to decrypt call signal from', data.from);
+      showToast('❌ Не удалось расшифровать сигнал звонка');
+      return;
+    }
+  }
+  
   if (kind === 'rtc-offer') {
-    const video = !!data.video;
-    const sdp = data.sdp;
+    const video = !!decryptedData.video;
+    const sdp = decryptedData.sdp;
     if (!sdp || !sdp.sdp) return;
     document.getElementById('callOverlay').style.display = 'flex';
     document.getElementById('callName').textContent =
@@ -5466,9 +5909,13 @@ async function handleRtcSignalIncoming(kind, data) {
         rtcCamTrack = rtcLocal.getVideoTracks()[0] || null;
         rtcPc = new RTCPeerConnection(RTC_CFG);
         rtcLocal.getTracks().forEach((t) => rtcPc.addTrack(t, rtcLocal));
-        rtcPc.onicecandidate = (e) => {
+        rtcPc.onicecandidate = async (e) => {
           if (e.candidate && rtcRemoteUuid) {
-            sendToServer('rtc-ice', { to: rtcRemoteUuid, candidate: iceToJSON(e.candidate) });
+            // E2EE encrypt ICE candidate
+            const encryptedIce = await encryptCallSignal({ candidate: iceToJSON(e.candidate) }, rtcRemoteUuid);
+            if (encryptedIce) {
+              sendToServer('rtc-ice', { to: data.from, ...encryptedIce });
+            }
           }
         };
         rtcPc.ontrack = (e) => {
@@ -5477,12 +5924,19 @@ async function handleRtcSignalIncoming(kind, data) {
         await rtcPc.setRemoteDescription(new RTCSessionDescription(sdp));
         const answer = await rtcPc.createAnswer();
         await rtcPc.setLocalDescription(answer);
-        sendToServer('rtc-answer', { to: data.from, sdp: sdpToJSON(answer) });
+        
+        // E2EE encrypt answer
+        const encryptedAnswer = await encryptCallSignal({ sdp: sdpToJSON(answer) }, data.from);
+        if (encryptedAnswer) {
+          sendToServer('rtc-answer', { to: data.from, ...encryptedAnswer });
+        }
+        
         document.getElementById('callLocalVideo').srcObject = rtcLocal;
         document.getElementById('callIncomingRow').style.display = 'none';
         document.getElementById('callActiveRow').style.display = 'flex';
-        document.getElementById('callStatus').textContent = 'Соединено';
+        document.getElementById('callStatus').textContent = '🔒 Защищенное соединение';
         syncCallControlButtons();
+        startCallTimer();
       } catch (e) {
         console.error(e);
         showToast('Не удалось принять звонок');
@@ -5495,13 +5949,13 @@ async function handleRtcSignalIncoming(kind, data) {
       sendToServer('rtc-hangup', { to: data.from });
       endCall(null, false);
     };
-  } else if (kind === 'rtc-answer' && rtcPc && data.sdp) {
-    await rtcPc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-    document.getElementById('callStatus').textContent = 'Соединено';
+  } else if (kind === 'rtc-answer' && rtcPc && decryptedData.sdp) {
+    await rtcPc.setRemoteDescription(new RTCSessionDescription(decryptedData.sdp));
+    document.getElementById('callStatus').textContent = '🔒 Защищенное соединение';
     syncCallControlButtons();
-  } else if (kind === 'rtc-ice' && rtcPc && data.candidate) {
+  } else if (kind === 'rtc-ice' && rtcPc && decryptedData.candidate) {
     try {
-      await rtcPc.addIceCandidate(new RTCIceCandidate(data.candidate));
+      await rtcPc.addIceCandidate(new RTCIceCandidate(decryptedData.candidate));
     } catch (_) {}
   }
 }
@@ -5517,6 +5971,104 @@ function wireCallUiOnce() {
   if (c) c.onclick = () => onCallToggleCam().catch(() => {});
   const s = document.getElementById('callToggleScreen');
   if (s) s.onclick = () => onCallToggleScreen().catch(() => {});
+}
+
+// ==================== E2EE CALL SIGNALING HELPERS ====================
+let callTimerInterval = null;
+let callStartTime = 0;
+
+function startCallTimer() {
+  callStartTime = Date.now();
+  if (callTimerInterval) clearInterval(callTimerInterval);
+  const timerEl = document.getElementById('callTimer');
+  if (timerEl) {
+    callTimerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+      const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const secs = String(elapsed % 60).padStart(2, '0');
+      timerEl.textContent = `${mins}:${secs}`;
+    }, 1000);
+  }
+}
+
+function stopCallTimer() {
+  if (callTimerInterval) {
+    clearInterval(callTimerInterval);
+    callTimerInterval = null;
+  }
+  const timerEl = document.getElementById('callTimer');
+  if (timerEl) timerEl.textContent = '';
+}
+
+// Encrypt call signaling data (SDP/ICE) using E2EE
+async function encryptCallSignal(data, peerUuid) {
+  try {
+    if (!crypto_engine.myKeys) return null;
+    
+    // Get peer's public keys
+    let pubKeys = crypto_engine.pubKeysCache.get(peerUuid);
+    if (!pubKeys) {
+      sendToServer('get-pub-keys', { targetUuid: peerUuid });
+      await new Promise(r => setTimeout(r, 500));
+      pubKeys = crypto_engine.pubKeysCache.get(peerUuid);
+      if (!pubKeys) return null;
+    }
+    
+    // Derive shared secret
+    const theirPublicKey = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+    const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, theirPublicKey);
+    
+    // Encrypt data
+    const plaintext = JSON.stringify(data);
+    const encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
+    
+    // Sign the encrypted payload
+    const signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
+    
+    return {
+      payload: encPayload.payload,
+      iv: encPayload.iv,
+      signature
+    };
+  } catch (err) {
+    console.error('Failed to encrypt call signal:', err);
+    return null;
+  }
+}
+
+// Decrypt call signaling data (SDP/ICE) using E2EE
+async function decryptCallSignal(data, fromUuid) {
+  try {
+    if (!crypto_engine.myKeys) return null;
+    
+    // Get sender's public keys
+    let pubKeys = crypto_engine.pubKeysCache.get(fromUuid);
+    if (!pubKeys) {
+      sendToServer('get-pub-keys', { targetUuid: fromUuid });
+      await new Promise(r => setTimeout(r, 500));
+      pubKeys = crypto_engine.pubKeysCache.get(fromUuid);
+      if (!pubKeys) return null;
+    }
+    
+    // Verify signature
+    const senderPubECDSA = await crypto_engine.importPublicKey(pubKeys.pub_ecdsa, 'ECDSA');
+    const isValid = await crypto_engine.verifySignature(senderPubECDSA, data.payload, data.signature);
+    if (!isValid) {
+      console.error('Call signal signature verification failed');
+      return null;
+    }
+    
+    // Derive shared secret
+    const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+    const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
+    
+    // Decrypt payload
+    const plaintext = await crypto_engine.decryptPayload(sharedSecret, { payload: data.payload, iv: data.iv });
+    return JSON.parse(plaintext);
+  } catch (err) {
+    console.error('Failed to decrypt call signal:', err);
+    return null;
+  }
 }
 
 // ==================== BOOT ====================
