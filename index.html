@@ -1032,6 +1032,272 @@ function initAuthTabs() {
   }
 }
 
+// ==================== CRYPTO ENGINE (E2EE) ====================
+class CryptoEngine {
+  constructor() {
+    this.myKeys = null; // { ecdsaPrivKey, ecdhPrivKey }
+    this.pubKeysCache = new Map(); // uuid -> { pub_ecdh, pub_ecdsa }
+  }
+
+  async generateECDSAKeyPair() {
+    return await window.crypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-384' },
+      false,
+      ['sign', 'verify']
+    );
+  }
+
+  async generateECDHKeyPair() {
+    return await window.crypto.subtle.generateKey(
+      { name: 'ECDH', namedCurve: 'P-384' },
+      false,
+      ['deriveKey']
+    );
+  }
+
+  async exportPublicKey(pubKey) {
+    const jwk = await window.crypto.subtle.exportKey('jwk', pubKey);
+    return JSON.stringify(jwk);
+  }
+
+  async importPublicKey(jwkString, keyType = 'ECDH') {
+    const jwk = JSON.parse(jwkString);
+    const alg = keyType === 'ECDSA' ? 'ECDSA' : 'ECDH';
+    const usage = keyType === 'ECDSA' ? ['verify'] : [];
+    return await window.crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: alg, namedCurve: 'P-384' },
+      false,
+      usage
+    );
+  }
+
+  async encryptPrivateKeys(ecdsaPriv, ecdhPriv, passwordHash) {
+    const keyMaterial = await window.crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(passwordHash),
+      'PBKDF2',
+      false,
+      ['deriveKey']
+    );
+
+    const derivedKey = await window.crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        hash: 'SHA-256',
+        salt: new TextEncoder().encode('cipher-salt-1'),
+        iterations: 100000
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt']
+    );
+
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    
+    const ecdsaExported = await window.crypto.subtle.exportKey('pkcs8', ecdsaPriv);
+    const ecdhExported = await window.crypto.subtle.exportKey('pkcs8', ecdhPriv);
+    
+    const plaintext = JSON.stringify({
+      ecdsa: Array.from(new Uint8Array(ecdsaExported)).map(b => b.toString(16).padStart(2, '0')).join(''),
+      ecdh: Array.from(new Uint8Array(ecdhExported)).map(b => b.toString(16).padStart(2, '0')).join('')
+    });
+
+    const encrypted = await window.crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      derivedKey,
+      new TextEncoder().encode(plaintext)
+    );
+
+    return {
+      iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
+      encrypted: btoa(String.fromCharCode(...new Uint8Array(encrypted)))
+    };
+  }
+
+  async decryptPrivateKeys(encryptedData, passwordHash) {
+    const keyMaterial = await window.crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(passwordHash),
+      'PBKDF2',
+      false,
+      ['deriveKey']
+    );
+
+    const derivedKey = await window.crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        hash: 'SHA-256',
+        salt: new TextEncoder().encode('cipher-salt-1'),
+        iterations: 100000
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['decrypt']
+    );
+
+    const iv = new Uint8Array(
+      encryptedData.iv.match(/.{1,2}/g).map(b => parseInt(b, 16))
+    );
+    const ciphertext = Uint8Array.from(atob(encryptedData.encrypted), c => c.charCodeAt(0));
+
+    const decrypted = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      derivedKey,
+      ciphertext
+    );
+
+    const data = JSON.parse(new TextDecoder().decode(decrypted));
+    
+    const ecdsaBuf = new Uint8Array(data.ecdsa.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+    const ecdhBuf = new Uint8Array(data.ecdh.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+
+    return {
+      ecdsa: await window.crypto.subtle.importKey(
+        'pkcs8',
+        ecdsaBuf,
+        { name: 'ECDSA', namedCurve: 'P-384' },
+        false,
+        ['sign']
+      ),
+      ecdh: await window.crypto.subtle.importKey(
+        'pkcs8',
+        ecdhBuf,
+        { name: 'ECDH', namedCurve: 'P-384' },
+        false,
+        ['deriveKey']
+      )
+    };
+  }
+
+  async deriveSharedSecret(myPrivateKey, theirPublicKey) {
+    return await window.crypto.subtle.deriveKey(
+      { name: 'ECDH', public: theirPublicKey },
+      myPrivateKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  async signMessage(privateKey, message) {
+    const signature = await window.crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-384' },
+      privateKey,
+      new TextEncoder().encode(message)
+    );
+    return btoa(String.fromCharCode(...new Uint8Array(signature)));
+  }
+
+  async verifySignature(publicKey, message, signatureB64) {
+    try {
+      const signature = Uint8Array.from(atob(signatureB64), c => c.charCodeAt(0));
+      return await window.crypto.subtle.verify(
+        { name: 'ECDSA', hash: 'SHA-384' },
+        publicKey,
+        signature,
+        new TextEncoder().encode(message)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async encryptPayload(sharedSecret, plaintext) {
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await window.crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      sharedSecret,
+      new TextEncoder().encode(plaintext)
+    );
+    return {
+      iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
+      payload: btoa(String.fromCharCode(...new Uint8Array(encrypted)))
+    };
+  }
+
+  async decryptPayload(sharedSecret, encryptedData) {
+    const iv = new Uint8Array(
+      encryptedData.iv.match(/.{1,2}/g).map(b => parseInt(b, 16))
+    );
+    const ciphertext = Uint8Array.from(atob(encryptedData.payload), c => c.charCodeAt(0));
+    const decrypted = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      sharedSecret,
+      ciphertext
+    );
+    return new TextDecoder().decode(decrypted);
+  }
+}
+
+const crypto_engine = new CryptoEngine();
+
+// ==================== E2EE INDEXEDDB FUNCTIONS ====================
+// Uses existing Cipher DB - adds 'keys' and 'roomKeys' stores if needed
+const dbOpenE2EE = () => {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('Cipher', 3);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('keys')) {
+        db.createObjectStore('keys', { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains('roomKeys')) {
+        db.createObjectStore('roomKeys', { keyPath: 'roomId' });
+      }
+    };
+  });
+};
+
+const dbSaveKeys = async (uuid, encryptedKeys) => {
+  const db = await dbOpenE2EE();
+  const tx = db.transaction('keys', 'readwrite');
+  await tx.objectStore('keys').put({ key: uuid || 'pending', encrypted: encryptedKeys });
+};
+
+const dbLoadKeys = async (uuid, passwordHash) => {
+  const db = await dbOpenE2EE();
+  const tx = db.transaction('keys', 'readonly');
+  const row = await tx.objectStore('keys').get(uuid);
+  if (!row) return null;
+  return await crypto_engine.decryptPrivateKeys(row.encrypted, passwordHash);
+};
+
+// ==================== E2EE KEY LOADING ON AUTH ====================
+async function loadKeysAfterAuth(uuid) {
+  try {
+    const passwordHash = localStorage.getItem('cipher_passwordHash');
+    if (!passwordHash) {
+      console.warn('Password hash not found in localStorage');
+      return;
+    }
+
+    const keys = await dbLoadKeys(uuid, passwordHash);
+    if (keys) {
+      crypto_engine.myKeys = keys;
+      console.log('✅ Private keys loaded and decrypted');
+      
+      // Publish public keys to server
+      const pub_ecdh = localStorage.getItem('cipher_pub_ecdh');
+      const pub_ecdsa = localStorage.getItem('cipher_pub_ecdsa');
+      if (pub_ecdh && pub_ecdsa && ws && ws.readyState === WebSocket.OPEN) {
+        sendToServer('publish-keys', { pub_ecdh, pub_ecdsa });
+      }
+    } else {
+      console.warn('Keys not found in IndexedDB');
+    }
+  } catch (err) {
+    console.error('Error loading keys:', err);
+  }
+}
+
+console.log('✅ CryptoEngine loaded - E2EE ready');
+
 // ==================== CONFIG ====================
 // FIX #2: Set your Fly.io server URL here after deployment
 // Replace 'wss://YOUR-APP.fly.dev' with your actual Fly.io URL
@@ -1264,16 +1530,6 @@ function attemptReconnect() {
           if (uuid && passwordHash) {
             ws.send(JSON.stringify({ type: 'login', uuid, password: passwordHash, timestamp: Date.now() }));
             console.log('🔐 Re-authenticating after reconnect');
-
-            // [E2EE] Переотправляем наш публичный ключ на сервер.
-            // После перезапуска сервера или смены хранилища ключ может быть утерян.
-            // Небольшая задержка — ждём обработки login на сервере.
-            setTimeout(() => {
-              if (ws && ws.readyState === WebSocket.OPEN) {
-                e2ee_sendPublicKey();
-                console.log('🔑 E2EE: публичный ключ переотправлен после reconnect');
-              }
-            }, 1500);
           }
         }
       }
@@ -1417,14 +1673,12 @@ function handleServerMessage(msg) {
           renderChatHeader();
         }
       }
-      // [FIX: Offline Delivery] Store pending offline messages to be processed
-      // in startApp() AFTER myProfile.uuid and contacts are fully loaded.
-      if (msg.pending && Array.isArray(msg.pending) && msg.pending.length > 0) {
-        console.log(`📨 ${msg.pending.length} offline messages queued for delivery after startApp`);
-        window._pendingOfflineMessages = msg.pending;
-      }
       flushPendingOutbound();
       startClientWsPing();
+      // Load E2EE keys after successful login
+      if (myProfile.uuid) {
+        loadKeysAfterAuth(myProfile.uuid);
+      }
       break;
     case 'error': {
       const errText = data?.error || msg.error;
@@ -1499,38 +1753,37 @@ function handleServerMessage(msg) {
       break;
     case 'rtc-ice':
       handleRtcSignalIncoming('rtc-ice', data);
-      break;case 'rtc-hangup':
+      break;
+    case 'rtc-hangup':
       handleRtcHangupFromPeer(data);
       break;
-
-    // ── E2EE ──────────────────────────────────────────────────────────
-    case 'public-key':
-      // Кешируем публичный ключ пира — как ответ на get-public-key,
-      // так и server-push при обновлении ключа другим устройством.
-      if (msg.uuid && msg.publicKey) {
-        const uid = normUid(msg.uuid);
-        e2ee_importPeerKey(msg.publicKey)
-          .then(key => {
-            _peerPublicKeys.set(uid, key);
-            _sharedAesKeys.delete(uid); // инвалидируем производный AES-ключ
-            console.log(`🔑 E2EE: ключ пира закеширован (${uid.slice(0, 8)}…)`);
-          })
-          .catch(e => console.warn(`⚠️ E2EE: не удалось импортировать ключ пира ${uid.slice(0, 8)}:`, e.message));
+    // E2EE handlers
+    case 'pub-keys-response':
+      if (data?.uuid && data?.pub_ecdh && data?.pub_ecdsa) {
+        crypto_engine.pubKeysCache.set(normUid(data.uuid), {
+          pub_ecdh: data.pub_ecdh,
+          pub_ecdsa: data.pub_ecdsa
+        });
+        console.log('🔑 Cached public keys for', data.uuid.substring(0, 8));
       }
       break;
-
-    case 'peer-key-rotated':
-      // Пир сменил ключевую пару — инвалидируем наш кеш, при следующей отправке
-      // e2ee_fetchPeerKey() запросит свежий ключ.
-      if (msg.uuid) {
-        const uid = normUid(msg.uuid);
-        _peerPublicKeys.delete(uid);
-        _sharedAesKeys.delete(uid);
-        console.log(`🔑 E2EE: ключ пира обновился (${uid.slice(0, 8)}…), кеш сброшен`);
+    case 'room-key-share':
+      console.log('🔑 Received room key share from', data?.from);
+      // Store encrypted room key for later use
+      if (data?.roomId && data?.encryptedKey) {
+        dbOpenE2EE().then(db => {
+          const tx = db.transaction('roomKeys', 'readwrite');
+          tx.objectStore('roomKeys').put({
+            roomId: normUid(data.roomId),
+            encryptedKey: data.encryptedKey,
+            from: data.from
+          });
+        });
       }
       break;
-    // ── /E2EE ─────────────────────────────────────────────────────────
-
+    case 'keys-published':
+      console.log('✅ Keys published to server');
+      break;
     default:
       console.log('📨 Unknown message type:', type);
   }
@@ -1615,21 +1868,7 @@ async function upsertRoomContact(room) {
 
 async function handleIncomingReaction(data) {
   if (!data || data.ts == null || !data.emoji) return;
-  // [FIX: Reaction Sync] For P2P chats the message is stored under the *other* person's UUID.
-  // data.from = reactor, data.to = target (may be our own UUID in DM or a room ID).
-  // We need to find which chatId the reacted-to message lives under.
-  let chatTarget;
-  if (normUid(data.from) === normUid(myProfile.uuid)) {
-    // We are the sender of the reaction — chat is with data.to
-    chatTarget = normUid(data.to);
-  } else {
-    // We are the recipient of the reaction — chat is with data.from
-    chatTarget = normUid(data.from);
-  }
-  // Also check rooms (room reactions use roomId as data.to)
-  const isRoom = contacts.some(c => normUid(c.uuid) === normUid(data.to) && (c.kind === 'group' || c.kind === 'channel'));
-  if (isRoom) chatTarget = normUid(data.to);
-
+  const chatTarget = data.to;
   const msgs = await dbGetByIndex('messages', 'chatId', chatTarget);
   const m = msgs.find((x) => x.ts === data.ts);
   if (!m) return;
@@ -1644,7 +1883,7 @@ async function handleIncomingReaction(data) {
     m.reactions[em].push(uid);
   }
   await dbPut('messages', m);
-  if (activeChat && normUid(activeChat) === chatTarget) {
+  if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
     updateMessageReactionRow(data.ts);
   }
 }
@@ -1686,7 +1925,7 @@ function updateConnStatus(connected) {
 }
 
 // ==================== DB (IndexedDB) ====================
-// FIX (FIXES_REPORT 2.7): Bump DB_VER to 3 — adds 'keys' store for E2EE private key
+// FIX (FIXES_REPORT 2.7): Bump DB_VER to 2 — migration clears orphaned contacts store
 const DB_NAME='Cipher', DB_VER=3;
 let db;
 
@@ -1706,8 +1945,13 @@ async function openDB(){
         const ms=d.createObjectStore('messages',{keyPath:'id',autoIncrement:true});
         ms.createIndex('chatId','chatId',{unique:false});
       }
-      // v3: E2EE key storage — private key never leaves the browser
-      if(!d.objectStoreNames.contains('keys')) d.createObjectStore('keys',{keyPath:'key'});
+      // E2EE stores for keys
+      if(!d.objectStoreNames.contains('keys')){
+        d.createObjectStore('keys',{keyPath:'key'});
+      }
+      if(!d.objectStoreNames.contains('roomKeys')){
+        d.createObjectStore('roomKeys',{keyPath:'roomId'});
+      }
     };
     req.onsuccess=e=>{db=e.target.result;res(db)};
     req.onerror=rej;
@@ -1907,320 +2151,6 @@ async function hashClient(password) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-// ==================== E2EE (End-to-End Encryption) ====================
-// ECDH P-256 key exchange + AES-GCM-256 message encryption.
-
-// --- Правило 3: Безопасный Base64 для бинарных данных ---
-// Используем String.fromCharCode.apply вместо spread (...), чтобы избежать
-// "Maximum call stack exceeded" при больших буферах (длинные сообщения / файлы).
-function bufferToBase64(buf) {
-  return btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
-}
-function base64ToBuffer(b64) {
-  return new Uint8Array(atob(b64).split('').map(c => c.charCodeAt(0))).buffer;
-}
-// Private key lives ONLY in IndexedDB — the server NEVER sees it.
-let _e2eePrivateKey = null;   // CryptoKey
-let _e2eePublicKeyJwk = null; // JWK string (sent to server)
-const _peerPublicKeys  = new Map(); // normUid → CryptoKey
-const _sharedAesKeys   = new Map(); // normUid → CryptoKey (cached derived keys)
-
-async function e2ee_generateAndStore() {
-  try {
-    const kp = await crypto.subtle.generateKey(
-      { name: 'ECDH', namedCurve: 'P-256' },
-      true,          // extractable so we can persist as JWK
-      ['deriveKey']
-    );
-    const privJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
-    const pubJwk  = await crypto.subtle.exportKey('jwk', kp.publicKey);
-    await dbPut('keys', { key: 'ecdh-private', jwk: privJwk });
-    await dbPut('keys', { key: 'ecdh-public',  jwk: pubJwk  });
-    _e2eePrivateKey = kp.privateKey;
-    _sharedAesKeys.clear();
-    console.log('🔑 E2EE: AES-кеш сброшен после генерации новой пары ключей');
-
-    // FIX MULTI-DEVICE: Шифруем приватный ключ паролем и кладём его в бандл
-    // вместе с публичным. Другие устройства этого же пользователя смогут
-    // скачать бандл и восстановить ту же пару → все устройства = один ключ.
-    const auth = JSON.parse(localStorage.getItem('cipherAuth') || '{}');
-    if (auth.passwordHash) {
-      try {
-        const encPriv = await e2ee_encryptPrivKey(privJwk, auth.passwordHash);
-        _e2eePublicKeyJwk = JSON.stringify({ pub: pubJwk, priv: encPriv });
-      } catch (e) {
-        console.warn('⚠️ Не удалось зашифровать приватный ключ для синхронизации:', e.message);
-        _e2eePublicKeyJwk = JSON.stringify(pubJwk);
-      }
-    } else {
-      _e2eePublicKeyJwk = JSON.stringify(pubJwk);
-    }
-
-    console.log('🔑 E2EE key pair generated and stored');
-    return true;
-  } catch (e) {
-    console.error('E2EE keygen error:', e);
-    return false;
-  }
-}
-
-async function e2ee_loadFromDB() {
-  try {
-    const privRec = await dbGet('keys', 'ecdh-private');
-    const pubRec  = await dbGet('keys', 'ecdh-public');
-    if (!privRec || !pubRec) return false;
-    _e2eePrivateKey = await crypto.subtle.importKey(
-      'jwk', privRec.jwk,
-      { name: 'ECDH', namedCurve: 'P-256' },
-      false, ['deriveKey']
-    );
-
-    // FIX MULTI-DEVICE: Пересобираем бандл с зашифрованным приватным ключом.
-    // Это нужно для существующих пользователей, у которых в IndexedDB уже есть ключи —
-    // при следующем e2ee_sendPublicKey() бандл улетит на сервер, и новые устройства
-    // смогут восстановить ту же пару.
-    const auth = JSON.parse(localStorage.getItem('cipherAuth') || '{}');
-    if (auth.passwordHash) {
-      try {
-        const encPriv = await e2ee_encryptPrivKey(privRec.jwk, auth.passwordHash);
-        _e2eePublicKeyJwk = JSON.stringify({ pub: pubRec.jwk, priv: encPriv });
-      } catch (e) {
-        _e2eePublicKeyJwk = JSON.stringify(pubRec.jwk);
-      }
-    } else {
-      _e2eePublicKeyJwk = JSON.stringify(pubRec.jwk);
-    }
-
-    console.log('🔑 E2EE keys loaded from IndexedDB');
-    return true;
-  } catch (e) {
-    console.error('E2EE key load error:', e);
-    return false;
-  }
-}
-
-async function e2ee_ensureKeys() {
-  if (_e2eePrivateKey && _e2eePublicKeyJwk) return true;
-  const loaded = await e2ee_loadFromDB();
-  if (loaded) return true;
-  // Нет локальных ключей (новый браузер / очищен IndexedDB).
-  // Пробуем восстановить пару с сервера — другое устройство могло её туда загрузить.
-  const restored = await e2ee_tryRestoreFromServer();
-  if (restored) return true;
-  // Совсем нет ключей — генерируем новую пару и загружаем бандл на сервер.
-  return e2ee_generateAndStore();
-}
-
-function e2ee_sendPublicKey() {
-  if (_e2eePublicKeyJwk) {
-    sendToServer('set-public-key', { publicKey: _e2eePublicKeyJwk });
-  }
-}
-
-async function e2ee_importPeerKey(jwkStringOrBundle) {
-  const parsed = typeof jwkStringOrBundle === 'string' ? JSON.parse(jwkStringOrBundle) : jwkStringOrBundle;
-  // Если пришёл бандл { pub, priv } — берём только публичный ключ.
-  // Если пришёл голый JWK — используем его напрямую (обратная совместимость).
-  const jwk = (parsed && parsed.pub) ? parsed.pub : parsed;
-  return crypto.subtle.importKey(
-    'jwk', jwk,
-    { name: 'ECDH', namedCurve: 'P-256' },
-    false, []
-  );
-}
-
-// ==================== E2EE MULTI-DEVICE KEY SYNC ====================
-// Шифруем приватный ключ JWK симметричным AES-ключом, выведенным из пароля.
-// Зашифрованный ключ хранится на сервере рядом с публичным — в поле publicKey как бандл {pub, priv}.
-// Другие устройства того же пользователя скачивают бандл и восстанавливают пару через пароль.
-async function e2ee_encryptPrivKey(privJwk, passwordHash) {
-  const enc = new TextEncoder();
-  // Из passwordHash (hex-строка) берём 32 байта как seed для PBKDF2
-  const rawSeed = enc.encode(passwordHash.slice(0, 32).padEnd(32, '0'));
-  const baseKey = await crypto.subtle.importKey('raw', rawSeed, 'PBKDF2', false, ['deriveKey']);
-  const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: enc.encode('cipher-e2ee-priv-v1'), iterations: 100000, hash: 'SHA-256' },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false, ['encrypt']
-  );
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, enc.encode(JSON.stringify(privJwk)));
-  const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
-  return { ct: b64(ct), iv: b64(iv.buffer) };
-}
-
-async function e2ee_decryptPrivKey(encObj, passwordHash) {
-  const enc = new TextEncoder();
-  const rawSeed = enc.encode(passwordHash.slice(0, 32).padEnd(32, '0'));
-  const baseKey = await crypto.subtle.importKey('raw', rawSeed, 'PBKDF2', false, ['deriveKey']);
-  const aesKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: enc.encode('cipher-e2ee-priv-v1'), iterations: 100000, hash: 'SHA-256' },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false, ['decrypt']
-  );
-  // Правило 3: base64ToBuffer вместо charCodeAt
-  const ct = new Uint8Array(base64ToBuffer(encObj.ct));
-  const iv = new Uint8Array(base64ToBuffer(encObj.iv));
-  // Правило 2: AES-GCM
-  const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, aesKey, ct);
-  // Правило 1: TextDecoder
-  return JSON.parse(new TextDecoder().decode(buf));
-}
-
-// Запрашивает собственный бандл с сервера и восстанавливает из него ключевую пару.
-// Вызывается из e2ee_ensureKeys() когда в IndexedDB нет ключей (новый браузер).
-async function e2ee_tryRestoreFromServer() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-  if (!myProfile?.uuid) return false;
-  const auth = JSON.parse(localStorage.getItem('cipherAuth') || '{}');
-  if (!auth.passwordHash) return false;
-
-  return new Promise((resolve) => {
-    const myId = normUid(myProfile.uuid);
-    const timer = setTimeout(() => {
-      const set = pendingHandlers.get('public-key');
-      if (set) { set.delete(handler); if (!set.size) pendingHandlers.delete('public-key'); }
-      console.warn('⚠️ E2EE server restore: timeout (нет ответа от сервера)');
-      resolve(false);
-    }, 4000);
-
-    const handler = async (msg) => {
-      if (msg.type !== 'public-key' || normUid(msg.uuid) !== myId) return;
-      clearTimeout(timer);
-      const set = pendingHandlers.get('public-key');
-      if (set) { set.delete(handler); if (!set.size) pendingHandlers.delete('public-key'); }
-      try {
-        if (!msg.publicKey) { resolve(false); return; }
-        const bundle = typeof msg.publicKey === 'string' ? JSON.parse(msg.publicKey) : msg.publicKey;
-        // Только бандл содержит зашифрованный приватный ключ
-        if (!bundle.priv || !bundle.pub) {
-          console.log('ℹ️ E2EE: сервер вернул старый формат ключа (без priv) — восстановление невозможно');
-          resolve(false);
-          return;
-        }
-        // Расшифровываем приватный ключ паролем
-        const privJwk = await e2ee_decryptPrivKey(bundle.priv, auth.passwordHash);
-        const pubJwk  = bundle.pub;
-        // Импортируем приватный ключ
-        _e2eePrivateKey = await crypto.subtle.importKey(
-          'jwk', privJwk, { name: 'ECDH', namedCurve: 'P-256' }, false, ['deriveKey']
-        );
-        _e2eePublicKeyJwk = JSON.stringify(bundle); // сохраняем весь бандл
-        // Кэшируем в IndexedDB чтобы при следующем старте не ходить на сервер
-        await dbPut('keys', { key: 'ecdh-private', jwk: privJwk });
-        await dbPut('keys', { key: 'ecdh-public',  jwk: pubJwk  });
-        console.log('🔑 E2EE: ключевая пара восстановлена с сервера (мульти-устройство ✅)');
-        resolve(true);
-      } catch (e) {
-        console.warn('⚠️ E2EE server restore failed:', e.message);
-        resolve(false);
-      }
-    };
-
-    if (!pendingHandlers.has('public-key')) pendingHandlers.set('public-key', new Set());
-    pendingHandlers.get('public-key').add(handler);
-    sendToServer('get-public-key', { uuid: myProfile.uuid });
-  });
-}
-
-async function e2ee_getDerivedKey(peerUuid) {
-  const id = normUid(peerUuid);
-  if (_sharedAesKeys.has(id)) return _sharedAesKeys.get(id);
-  const peerPub = _peerPublicKeys.get(id);
-  if (!peerPub || !_e2eePrivateKey) return null;
-  const aesKey = await crypto.subtle.deriveKey(
-    { name: 'ECDH', public: peerPub },
-    _e2eePrivateKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-  _sharedAesKeys.set(id, aesKey);
-  return aesKey;
-}
-
-// Fetch peer's public key from server (promise-based, 3-second timeout)
-async function e2ee_fetchPeerKey(peerUuid) {
-  const id = normUid(peerUuid);
-  if (_peerPublicKeys.has(id)) return true;
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), 3000);
-    const handler = (msg) => {
-      if (msg.type === 'public-key' && normUid(msg.uuid) === id) {
-        clearTimeout(timer);
-        const set = pendingHandlers.get('public-key');
-        if (set) { set.delete(handler); if (!set.size) pendingHandlers.delete('public-key'); }
-        if (msg.publicKey) {
-          e2ee_importPeerKey(msg.publicKey).then(key => {
-            _peerPublicKeys.set(id, key);
-            _sharedAesKeys.delete(id); // invalidate cached derived key
-            resolve(true);
-          }).catch(() => resolve(false));
-        } else {
-          resolve(false); // peer has no E2EE key (legacy client)
-        }
-      }
-    };
-    if (!pendingHandlers.has('public-key')) pendingHandlers.set('public-key', new Set());
-    pendingHandlers.get('public-key').add(handler);
-    sendToServer('get-public-key', { uuid: peerUuid });
-  });
-}
-
-async function e2ee_encrypt(peerUuid, plaintext) {
-  const key = await e2ee_getDerivedKey(peerUuid);
-  if (!key) return null; // fallback: send unencrypted
-
-  // Правило 1: TextEncoder для корректного кодирования Unicode / кириллицы
-  const ptUint8 = new TextEncoder().encode(plaintext);
-
-  // Правило 2: AES-GCM, IV строго 12 байт (96 бит)
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, key, ptUint8);
-
-  // Правило 3: bufferToBase64 (без spread — нет stack overflow на больших буферах)
-  return { ct: bufferToBase64(ct), iv: bufferToBase64(iv.buffer) };
-}
-
-async function e2ee_decrypt(peerUuid, ctBase64, ivBase64) {
-  // Защита от объектов вместо строк — atob() выбрасывает cryptic InvalidCharacterError
-  if (typeof ctBase64 !== 'string' || typeof ivBase64 !== 'string') {
-    throw new Error(`Неверный тип аргументов: ct=${typeof ctBase64}, iv=${typeof ivBase64}. Ожидались строки Base64.`);
-  }
-
-  const key = await e2ee_getDerivedKey(peerUuid);
-  if (!key) {
-    // Детализируем причину отсутствия ключа вместо безликого "No shared key"
-    if (!_e2eePrivateKey) throw new Error('Нет собственного приватного ключа (_e2eePrivateKey = null)');
-    if (!_peerPublicKeys.has(normUid(peerUuid))) throw new Error(`Нет публичного ключа пира (${normUid(peerUuid).slice(0,8)})`);
-    throw new Error('deriveKey вернул null — неизвестная ошибка деривации AES-ключа');
-  }
-
-  // Правило 3: base64ToBuffer — безопасная конвертация бинарных данных
-  let ct, iv;
-  try {
-    ct = new Uint8Array(base64ToBuffer(ctBase64));
-    iv = new Uint8Array(base64ToBuffer(ivBase64));
-  } catch (e) {
-    throw new Error(`Ошибка Base64-декодирования: ${e.message}. Данные не являются валидным Base64.`);
-  }
-
-  // Правило 4: явный try/catch вокруг decrypt — никогда не возвращаем мусор
-  let buf;
-  try {
-    // Правило 2: AES-GCM (проверка целостности через GCM Tag встроена)
-    buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, key, ct);
-  } catch (e) {
-    // DOMException: ключи рассинхронизированы или данные повреждены — не парсим мусор
-    throw new Error(`AES-GCM decrypt failed (${e.name}): ключи рассинхронизированы или данные повреждены.`);
-  }
-
-  // Правило 1: TextDecoder — единственный способ декодировать UTF-8 байты (кириллица, emoji)
-  return new TextDecoder().decode(buf);
-}
-
 // ==================== STATE ====================
 let myProfile = {uuid:'', nickname:'', avatar:''};
 let contacts = [];
@@ -2394,6 +2324,9 @@ async function init(){
         return;
       }
 
+      // Ensure passwordHash is saved separately for E2EE
+      localStorage.setItem('cipher_passwordHash', passwordHash);
+
       if (server) serverAddress = server;
       setHint('Восстановление сессии...');
 
@@ -2497,6 +2430,7 @@ async function loginWithCredentials(uuidRaw, passwordRaw) {
 
   const auth = { uuid, passwordHash, server: serverAddress };
   localStorage.setItem('cipherAuth', JSON.stringify(auth));
+  localStorage.setItem('cipher_passwordHash', passwordHash); // For E2EE key loading
 
   await startApp(uuid);
   } catch (err) {
@@ -2549,6 +2483,22 @@ function setupReg(){
     try {
       const passwordHash = await hashClient(password);
 
+      // Generate E2EE keypairs
+      regBtn.textContent='Генерация ключей...';
+      const ecdsaKeyPair = await crypto_engine.generateECDSAKeyPair();
+      const ecdhKeyPair = await crypto_engine.generateECDHKeyPair();
+      
+      // Export public keys
+      const pub_ecdsa = await crypto_engine.exportPublicKey(ecdsaKeyPair.publicKey);
+      const pub_ecdh = await crypto_engine.exportPublicKey(ecdhKeyPair.publicKey);
+      
+      // Encrypt and save private keys
+      const encryptedKeys = await crypto_engine.encryptPrivateKeys(
+        ecdsaKeyPair.privateKey,
+        ecdhKeyPair.privateKey,
+        passwordHash
+      );
+
       await disconnectWebSocket();
       await connectWebSocket();
       serverReadyReceived = false;
@@ -2570,6 +2520,8 @@ function setupReg(){
         password: passwordHash,
         nickname: nickname,
         avatar: regAvatar,
+        pub_ecdsa,
+        pub_ecdh,
         timestamp: Date.now()
       }));
 
@@ -2583,6 +2535,20 @@ function setupReg(){
 
       const auth = { uuid: receivedUuid, passwordHash, server: serverAddress };
       localStorage.setItem('cipherAuth', JSON.stringify(auth));
+      localStorage.setItem('cipher_passwordHash', passwordHash); // For E2EE key loading
+      
+      // Save public keys to localStorage for later use
+      localStorage.setItem('cipher_pub_ecdsa', pub_ecdsa);
+      localStorage.setItem('cipher_pub_ecdh', pub_ecdh);
+      
+      // Save encrypted private keys to IndexedDB
+      await dbSaveKeys(receivedUuid, encryptedKeys);
+      
+      // Load keys into crypto_engine
+      crypto_engine.myKeys = {
+        ecdsa: ecdsaKeyPair.privateKey,
+        ecdh: ecdhKeyPair.privateKey
+      };
 
       myProfile = {
         uuid: receivedUuid,
@@ -2654,59 +2620,53 @@ function getIncomingChatId(msg) {
 }
 
 async function handleIncomingMessage(msg) {
-  const {from, to, type, ts, roomId} = msg;
-  let {content} = msg;
+  let {from, to, type, content, ts, roomId, payload, iv, signature} = msg;
   if (normUid(from) === normUid(myProfile.uuid)) return;
 
-  // [E2EE] Decrypt if message is encrypted (DMs only)
-  if (msg.encrypted && msg.iv && msg.content) {
-    const senderUuid = normUid(from);
+  // E2EE decryption for direct messages
+  if (payload && iv && signature && crypto_engine.myKeys) {
     try {
-      // Диагностика 1: наш приватный ключ должен быть уже загружен через e2ee_ensureKeys()
-      if (!_e2eePrivateKey) {
-        throw new Error('Собственный приватный ключ не загружен. e2ee_ensureKeys() не был вызван до получения сообщения.');
+      // Check if sender's public keys are cached
+      if (!crypto_engine.pubKeysCache.has(from)) {
+        sendToServer('get-pub-keys', { targetUuid: from });
+        await new Promise(r => setTimeout(r, 500)); // Wait for keys
       }
-
-      // Диагностика 2: формат данных — ожидаем строки Base64, не объекты
-      if (typeof msg.content !== 'string' || typeof msg.iv !== 'string') {
-        throw new Error(
-          `Неверный формат зашифрованных данных: content=${typeof msg.content}, iv=${typeof msg.iv}. ` +
-          `Ожидалась строка Base64. Возможно, сервер переслал объект вместо строки.`
-        );
-      }
-
-      // Диагностика 3: публичный ключ пира — нужен для деривации AES-ключа
-      if (!_peerPublicKeys.has(senderUuid)) {
-        console.log(`🔑 E2EE: публичный ключ ${senderUuid.slice(0,8)} не в кеше, запрашиваем у сервера...`);
-        const fetched = await e2ee_fetchPeerKey(senderUuid);
-        if (!fetched) {
-          throw new Error(`Публичный ключ пира ${senderUuid.slice(0,8)} отсутствует на сервере. Собеседник мог использовать старый клиент без E2EE.`);
+      
+      const pubKeys = crypto_engine.pubKeysCache.get(from);
+      if (pubKeys) {
+        // Import sender's ECDSA public key for verification
+        const senderPubECDSA = await crypto_engine.importPublicKey(pubKeys.pub_ecdsa, 'ECDSA');
+        
+        // Verify signature
+        const isValid = await crypto_engine.verifySignature(senderPubECDSA, payload, signature);
+        if (!isValid) {
+          console.error('Signature verification failed from', from);
+          content = '[Подпись недействительна]';
+          type = 'text';
+        } else {
+          // Derive shared secret with sender
+          const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+          const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
+          
+          // Decrypt payload
+          const plaintext = await crypto_engine.decryptPayload(sharedSecret, { payload, iv });
+          const decrypted = JSON.parse(plaintext);
+          
+          content = decrypted.content;
+          type = decrypted.type;
+          if (decrypted.replyTo) {
+            msg.replyTo = decrypted.replyTo;
+          }
         }
+      } else {
+        console.warn('No public keys for sender', from);
+        content = '[Зашифрованное сообщение - ключи недоступны]';
+        type = 'text';
       }
-
-      const plainJson = await e2ee_decrypt(senderUuid, msg.content, msg.iv);
-      const plain = JSON.parse(plainJson);
-      content = plain.content;
-      // type comes from origType or plaintext
-      msg = { ...msg, type: plain.type || msg.origType || type, content, encrypted: false };
-
-    } catch (e) {
-      // Подробный лог — чётко видно причину сбоя прямо в DevTools
-      console.error('❌ E2EE decrypt failed', {
-        reason:           e.message,
-        sender:           senderUuid.slice(0, 8),
-        hasOwnPrivateKey: !!_e2eePrivateKey,
-        hasPeerPublicKey: _peerPublicKeys.has(senderUuid),
-        hasDerivedAesKey: _sharedAesKeys.has(senderUuid),
-        contentIsString:  typeof msg.content === 'string',
-        ivIsString:       typeof msg.iv === 'string',
-        // Превью помогает отличить валидный Base64 от случайно переданного JSON-объекта
-        contentPreview:   typeof msg.content === 'string'
-                            ? msg.content.slice(0, 24) + '…'
-                            : JSON.stringify(msg.content).slice(0, 48),
-      });
-      content = '[🔒 Зашифровано — не удалось расшифровать]';
-      msg = { ...msg, content };
+    } catch (err) {
+      console.error('E2EE decryption failed:', err);
+      content = '[Ошибка расшифровки]';
+      type = 'text';
     }
   }
 
@@ -2714,7 +2674,7 @@ async function handleIncomingMessage(msg) {
   const here = activeChat ? normUid(activeChat) : '';
   const ch = normUid(chatId);
   const sameChat = !!(here && here === ch);
-  const localMsg = {chatId, from, to, type: msg.type || type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}};
+  const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo};
   await dbPut('messages', localMsg);
 
   if (sameChat) {
@@ -2731,7 +2691,7 @@ async function handleIncomingMessage(msg) {
     }
   }
 
-  updateLastMessage(chatId, content, ts, msg.type || type);
+  updateLastMessage(chatId, content, ts, type);
 
   let contact = contacts.find((c) => normUid(c.uuid) === chatId);
   // Auto-create contact from incoming DM if sender not in contacts list
@@ -2762,12 +2722,11 @@ async function handleIncomingMessage(msg) {
       const sender = contacts.find((c) => normUid(c.uuid) === chatId);
       const name = sender?.nickname || chatId.substring(0, 8);
       let body = '';
-      const msgType = msg.type || type;
-      if (msgType === 'text') body = content.length > 60 ? content.slice(0, 60) + '...' : content;
-      else if (msgType === 'image') body = '📷 Фото';
-      else if (msgType === 'voice') body = '🎵 Голосовое сообщение';
-      else if (msgType === 'file') body = '📎 Файл';
-      else if (msgType === 'video') body = '🎬 Видео';
+      if (type === 'text') body = content.length > 60 ? content.slice(0, 60) + '...' : content;
+      else if (type === 'image') body = '📷 Фото';
+      else if (type === 'voice') body = '🎵 Голосовое сообщение';
+      else if (type === 'file') body = '📎 Файл';
+      else if (type === 'video') body = '🎬 Видео';
       else body = 'Новое сообщение';
 
       try {
@@ -2778,8 +2737,7 @@ async function handleIncomingMessage(msg) {
 
   renderSidebar();
   // FIX #3: auto-refresh info panel on incoming media/file
-  const msgType = msg.type || type;
-  if (sameChat && (msgType === 'image' || msgType === 'video' || msgType === 'file')) {
+  if (sameChat && (type === 'image' || type === 'video' || type === 'file')) {
     renderTabContent().catch(() => {});
   }
 }
@@ -2991,7 +2949,6 @@ async function startApp(uuid) {
       console.warn('⚠️ Account changed! Clearing old contacts & messages...');
       await dbClearStore('contacts');
       await dbClearStore('messages');
-      await dbClearStore('keys');
     }
     myProfile = saved;
     // Если аватарка из базы слишком тяжелая — чистим её, иначе она убьет сокет опять
@@ -3005,7 +2962,6 @@ async function startApp(uuid) {
     myProfile = { uuid, nickname: 'User_' + uuid.slice(0, 4), avatar: '' };
     await dbPut('profile', {key: 'profile', ...myProfile});
   }
-  // [E2EE] Set UUID BEFORE processing any pending messages so getIncomingChatId works
   myProfile.uuid = normUid(uuid);
 
   // 2. Загрузка контактов (contacts — массив, не Map)
@@ -3024,33 +2980,11 @@ async function startApp(uuid) {
 
   renderSidebar();
 
-  // 3. [E2EE] Загружаем/генерируем ключевую пару ДО обработки офлайн-сообщений.
-  //    _e2eePrivateKey должен быть готов к моменту первого вызова e2ee_decrypt.
-  //    ИСПРАВЛЕНИЕ: шаги 3 и 4 были переставлены — ранее ключи грузились ПОСЛЕ очереди,
-  //    что вызывало Race Condition: все офлайн-сообщения падали с "No shared key".
-  const keysOk = await e2ee_ensureKeys();
-  if (keysOk && ws && ws.readyState === WebSocket.OPEN) {
-    e2ee_sendPublicKey();
-    console.log('🔐 E2EE public key sent to server');
-  } else if (!keysOk) {
-    console.error('❌ E2EE key load/generate failed — decrypt will not work');
-  }
-
-  // 4. [FIX: Offline Delivery] Теперь ключи загружены — можно расшифровывать.
-  //    myProfile.uuid и contacts тоже уже готовы.
-  if (window._pendingOfflineMessages && window._pendingOfflineMessages.length > 0) {
-    console.log(`📨 Processing ${window._pendingOfflineMessages.length} offline messages...`);
-    for (const qMsg of window._pendingOfflineMessages) {
-      try { await handleIncomingMessage(qMsg); } catch (e) { console.warn('Offline msg error:', e); }
-    }
-    window._pendingOfflineMessages = null;
-  }
-
-  // 5. Настройка событий
+  // 3. Настройка событий
   console.log('🔧 Setting up events...');
   setupEvents();
 
-  // 6. Отправка данных на сервер (БЕЗОПАСНАЯ)
+  // 4. Отправка данных на сервер (БЕЗОПАСНАЯ)
   if (ws && ws.readyState === WebSocket.OPEN) {
     console.log('📤 Sending profile update...');
     const safeAvatar = isAvatarSafe(myProfile.avatar) ? myProfile.avatar : '';
@@ -3079,6 +3013,7 @@ async function sendMessage(type, content){
     return;
   }
   const isRoom = c && (c.kind === 'group' || c.kind === 'channel');
+  
   // FIX #2: include reply quote if replying
   const replySnap = replyingToMsg ? {
     ts: replyingToMsg.ts,
@@ -3099,42 +3034,49 @@ async function sendMessage(type, content){
     ...(replySnap ? { replyTo: replySnap } : {})
   };
 
+  // E2EE encryption for direct messages (not rooms/saved)
+  if (!isRoom && (!c || c.kind !== 'saved') && crypto_engine.myKeys) {
+    try {
+      // Request recipient's public keys if not cached
+      if (!crypto_engine.pubKeysCache.has(activeChat)) {
+        sendToServer('get-pub-keys', { targetUuid: activeChat });
+        // Wait briefly for response
+        await new Promise(r => setTimeout(r, 300));
+      }
+      
+      const pubKeys = crypto_engine.pubKeysCache.get(activeChat);
+      if (pubKeys) {
+        // Derive shared secret
+        const theirPublicKey = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, theirPublicKey);
+        
+        // Encrypt payload
+        const plaintext = JSON.stringify({ type, content, replyTo: replySnap });
+        const encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
+        
+        // Sign encrypted payload
+        const signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
+        
+        // Replace message with E2EE format
+        message.payload = encPayload.payload;
+        message.iv = encPayload.iv;
+        message.signature = signature;
+        delete message.type;
+        delete message.content;
+        delete message.replyTo;
+      }
+    } catch (err) {
+      console.error('E2EE encryption failed, sending plaintext:', err);
+      // Continue with plaintext if E2EE fails
+    }
+  }
+
   const localMsg = {...message, chatId: activeChat, read: true, reactions: {}};
   const localId = await dbPut('messages', localMsg);
   localMsg.id = localId;
 
   const isSaved = c && c.kind === 'saved';
   if(!isSaved && ws && ws.readyState === WebSocket.OPEN) {
-    // [E2EE] Encrypt DM text/voice/file content before sending to server.
-    // Groups and channels are NOT encrypted (server needs to fan-out to members).
-    if (!isRoom && _e2eePrivateKey && type !== 'call-log') {
-      try {
-        const hasPeerKey = await e2ee_fetchPeerKey(activeChat);
-        if (hasPeerKey) {
-          const encrypted = await e2ee_encrypt(activeChat, JSON.stringify({ type, content }));
-          if (encrypted) {
-            const encMsg = { ...message, content: encrypted.ct, iv: encrypted.iv, encrypted: true, origType: type };
-            sendToServer('message', encMsg);
-            // FIX PC #5: don't send Favorites to server
-            replyingToMsg = null;
-            const rp = document.getElementById('replyPreview');
-            if (rp) rp.style.display = 'none';
-            if(!renderedMsgIds.has(message.ts.toString())) {
-              renderedMsgIds.add(message.ts.toString());
-              appendMessage(localMsg);
-              scrollBottom();
-            }
-            updateLastMessage(activeChat, content, message.ts, type);
-            if(activeChat && (type === 'image' || type === 'video' || type === 'file')) {
-              await renderInfoPanel(activeChat);
-            }
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn('E2EE encrypt failed, sending unencrypted:', e.message);
-      }
-    }
     sendToServer('message', message); // FIX #5: don't send Favorites to server
   }
 
@@ -3416,33 +3358,7 @@ async function forwardToContact(msg, contact) {
   const tContact = contacts.find(c => normUid(c.uuid) === targetId);
   if (!tContact || tContact.kind !== 'saved') {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      // [E2EE] Шифруем пересылаемые сообщения в личных чатах
-      const isRoom = tContact && (tContact.kind === 'group' || tContact.kind === 'channel');
-      let msgToSend = serverMsg;
-      if (!isRoom && _e2eePrivateKey && msg.type !== 'call-log') {
-        try {
-          const hasPeerKey = await e2ee_fetchPeerKey(targetId);
-          if (hasPeerKey) {
-            const encrypted = await e2ee_encrypt(
-              targetId,
-              JSON.stringify({ type: msg.type, content: msg.content })
-            );
-            if (encrypted) {
-              msgToSend = {
-                ...serverMsg,
-                content:   encrypted.ct,
-                iv:        encrypted.iv,
-                encrypted: true,
-                origType:  msg.type
-              };
-              console.log(`🔒 E2EE: пересылка зашифрована → ${targetId.slice(0, 8)}…`);
-            }
-          }
-        } catch (e) {
-          console.warn('⚠️ E2EE: шифрование пересылки не удалось, отправляем plaintext:', e.message);
-        }
-      }
-      sendToServer('message', msgToSend);
+      sendToServer('message', serverMsg);
     }
   }
   
@@ -3526,14 +3442,6 @@ async function openChat(uuid){
   if (_cInfo && _cInfo.kind !== 'group' && _cInfo.kind !== 'channel' && _cInfo.kind !== 'saved') {
     if (ws && ws.readyState === WebSocket.OPEN) {
       sendToServer('request-profile', { uuid: activeChat });
-
-      // [E2EE] Предзагружаем публичный ключ пира в фоне, чтобы первое
-      // сообщение всегда уходило зашифрованным — без задержки в sendMessage.
-      if (!_peerPublicKeys.has(normUid(activeChat))) {
-        e2ee_fetchPeerKey(activeChat).then(ok => {
-          if (!ok) console.log(`ℹ️ E2EE: пир ${activeChat.slice(0, 8)} не имеет ключа (legacy или офлайн)`);
-        }).catch(() => {});
-      }
     }
   }
 }
@@ -4505,64 +4413,6 @@ function confirmPickMembers() {
   document.getElementById('pickMembersModal').style.display = 'none';
 }
 
-// ==================== FULL RESET (Logout) ====================
-// [FIX: Auth Flow] Cleanly resets ALL state without requiring browser cache clear.
-async function fullReset() {
-  console.log('🔄 fullReset: starting logout...');
-
-  // 1. Close WebSocket and stop reconnect loop
-  await disconnectWebSocket();
-
-  // 2. Reset all in-memory state
-  myProfile = { uuid: '', nickname: '', avatar: '' };
-  contacts = [];
-  activeChat = null;
-  replyingToMsg = null;
-  attachmentQueue = [];
-  renderedMsgIds.clear();
-  pendingOutbound = [];
-  window._pendingOfflineMessages = null;
-  window._cipherEventsBound = false; // allow re-binding events on next startApp
-
-  // 3. Clear E2EE key cache
-  _e2eePrivateKey   = null;
-  _e2eePublicKeyJwk = null;
-  _peerPublicKeys.clear();
-  _sharedAesKeys.clear();
-
-  // 4. Clear localStorage session token
-  try {
-    localStorage.removeItem('cipherAuth');
-    localStorage.removeItem('cipherPinned');
-    localStorage.removeItem('infoPanelHidden');
-  } catch (_) {}
-
-  // 5. Wipe IndexedDB stores (keeps DB structure, just clears data)
-  try {
-    await dbClearStore('profile');
-    await dbClearStore('contacts');
-    await dbClearStore('messages');
-    await dbClearStore('keys');
-  } catch (e) {
-    console.warn('fullReset: dbClearStore error:', e.message);
-  }
-
-  // 6. Close all modals
-  document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
-
-  // 7. Return to registration / login screen
-  const appEl      = document.getElementById('app');
-  const regOverlay = document.getElementById('regOverlay');
-  if (appEl)      appEl.style.display      = 'none';
-  if (regOverlay) regOverlay.style.display = 'flex';
-
-  // 8. Re-initialize auth UI
-  regAvatar = '';
-  setupReg();
-
-  console.log('✅ fullReset: logged out successfully');
-}
-
 // ==================== EVENTS ====================
 function setupEvents(){
   if (window._cipherEventsBound) return;
@@ -4695,9 +4545,15 @@ function setupEvents(){
   document.getElementById('clearDataBtn').onclick=clearAllData;
 
   const sab = document.getElementById('switchAccountBtn');
-  if (sab) sab.onclick = async () => {
-    if (!confirm('Выйти из аккаунта? Все локальные данные будут очищены.')) return;
-    await fullReset();
+  if (sab) sab.onclick = () => {
+    if (!confirm('Выйти и войти под другим аккаунтом?')) return;
+    try { 
+      localStorage.removeItem('cipherAuth');
+      localStorage.removeItem('cipherContacts');
+      localStorage.clear();
+    } catch (_) {}
+    indexedDB.deleteDatabase('Cipher');
+    setTimeout(() => location.reload(), 100);
   };
 
   const emojiBtn = document.getElementById('emojiBtn');
@@ -5062,8 +4918,8 @@ async function importData(){
   try{
     const enc=new TextEncoder();
     const keyMat=await crypto.subtle.importKey('raw',enc.encode(pass.padEnd(32,'x').slice(0,32)),{name:'AES-GCM'},false,['decrypt']);
-    const ivArr=new Uint8Array(base64ToBuffer(iv));
-    const ctArr=new Uint8Array(base64ToBuffer(data));
+    const ivArr=Uint8Array.from(atob(iv),c=>c.charCodeAt(0));
+    const ctArr=Uint8Array.from(atob(data),c=>c.charCodeAt(0));
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:ivArr},keyMat,ctArr);
     const json=JSON.parse(new TextDecoder().decode(pt));
     // FIX: Ensure all imported contacts have type='friend' and are sanitized
