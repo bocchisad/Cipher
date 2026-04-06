@@ -1264,6 +1264,16 @@ function attemptReconnect() {
           if (uuid && passwordHash) {
             ws.send(JSON.stringify({ type: 'login', uuid, password: passwordHash, timestamp: Date.now() }));
             console.log('🔐 Re-authenticating after reconnect');
+
+            // [E2EE] Переотправляем наш публичный ключ на сервер.
+            // После перезапуска сервера или смены хранилища ключ может быть утерян.
+            // Небольшая задержка — ждём обработки login на сервере.
+            setTimeout(() => {
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                e2ee_sendPublicKey();
+                console.log('🔑 E2EE: публичный ключ переотправлен после reconnect');
+              }
+            }, 1500);
           }
         }
       }
@@ -1489,10 +1499,38 @@ function handleServerMessage(msg) {
       break;
     case 'rtc-ice':
       handleRtcSignalIncoming('rtc-ice', data);
-      break;
-    case 'rtc-hangup':
+      break;case 'rtc-hangup':
       handleRtcHangupFromPeer(data);
       break;
+
+    // ── E2EE ──────────────────────────────────────────────────────────
+    case 'public-key':
+      // Кешируем публичный ключ пира — как ответ на get-public-key,
+      // так и server-push при обновлении ключа другим устройством.
+      if (msg.uuid && msg.publicKey) {
+        const uid = normUid(msg.uuid);
+        e2ee_importPeerKey(msg.publicKey)
+          .then(key => {
+            _peerPublicKeys.set(uid, key);
+            _sharedAesKeys.delete(uid); // инвалидируем производный AES-ключ
+            console.log(`🔑 E2EE: ключ пира закеширован (${uid.slice(0, 8)}…)`);
+          })
+          .catch(e => console.warn(`⚠️ E2EE: не удалось импортировать ключ пира ${uid.slice(0, 8)}:`, e.message));
+      }
+      break;
+
+    case 'peer-key-rotated':
+      // Пир сменил ключевую пару — инвалидируем наш кеш, при следующей отправке
+      // e2ee_fetchPeerKey() запросит свежий ключ.
+      if (msg.uuid) {
+        const uid = normUid(msg.uuid);
+        _peerPublicKeys.delete(uid);
+        _sharedAesKeys.delete(uid);
+        console.log(`🔑 E2EE: ключ пира обновился (${uid.slice(0, 8)}…), кеш сброшен`);
+      }
+      break;
+    // ── /E2EE ─────────────────────────────────────────────────────────
+
     default:
       console.log('📨 Unknown message type:', type);
   }
@@ -1889,6 +1927,8 @@ async function e2ee_generateAndStore() {
     await dbPut('keys', { key: 'ecdh-private', jwk: privJwk });
     await dbPut('keys', { key: 'ecdh-public',  jwk: pubJwk  });
     _e2eePrivateKey = kp.privateKey;
+    _sharedAesKeys.clear();
+    console.log('🔑 E2EE: AES-кеш сброшен после генерации новой пары ключей');
 
     // FIX MULTI-DEVICE: Шифруем приватный ключ паролем и кладём его в бандл
     // вместе с публичным. Другие устройства этого же пользователя смогут
@@ -3347,7 +3387,33 @@ async function forwardToContact(msg, contact) {
   const tContact = contacts.find(c => normUid(c.uuid) === targetId);
   if (!tContact || tContact.kind !== 'saved') {
     if (ws && ws.readyState === WebSocket.OPEN) {
-      sendToServer('message', serverMsg);
+      // [E2EE] Шифруем пересылаемые сообщения в личных чатах
+      const isRoom = tContact && (tContact.kind === 'group' || tContact.kind === 'channel');
+      let msgToSend = serverMsg;
+      if (!isRoom && _e2eePrivateKey && msg.type !== 'call-log') {
+        try {
+          const hasPeerKey = await e2ee_fetchPeerKey(targetId);
+          if (hasPeerKey) {
+            const encrypted = await e2ee_encrypt(
+              targetId,
+              JSON.stringify({ type: msg.type, content: msg.content })
+            );
+            if (encrypted) {
+              msgToSend = {
+                ...serverMsg,
+                content:   encrypted.ct,
+                iv:        encrypted.iv,
+                encrypted: true,
+                origType:  msg.type
+              };
+              console.log(`🔒 E2EE: пересылка зашифрована → ${targetId.slice(0, 8)}…`);
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ E2EE: шифрование пересылки не удалось, отправляем plaintext:', e.message);
+        }
+      }
+      sendToServer('message', msgToSend);
     }
   }
   
@@ -3431,6 +3497,14 @@ async function openChat(uuid){
   if (_cInfo && _cInfo.kind !== 'group' && _cInfo.kind !== 'channel' && _cInfo.kind !== 'saved') {
     if (ws && ws.readyState === WebSocket.OPEN) {
       sendToServer('request-profile', { uuid: activeChat });
+
+      // [E2EE] Предзагружаем публичный ключ пира в фоне, чтобы первое
+      // сообщение всегда уходило зашифрованным — без задержки в sendMessage.
+      if (!_peerPublicKeys.has(normUid(activeChat))) {
+        e2ee_fetchPeerKey(activeChat).then(ok => {
+          if (!ok) console.log(`ℹ️ E2EE: пир ${activeChat.slice(0, 8)} не имеет ключа (legacy или офлайн)`);
+        }).catch(() => {});
+      }
     }
   }
 }
