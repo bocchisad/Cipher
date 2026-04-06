@@ -1,10 +1,6 @@
 /**
- * database.js — Cipher Messenger encrypted database
+ * database.js — Cipher Messenger encrypted database with E2EE support
  * Uses SQLite + SQLCipher (AES-256-CBC) for all server-side data.
- *
- * To use: replace the in-memory + JSON store in server.js with these functions.
- * Requires: npm install better-sqlite3-sqlcipher bcrypt dotenv
- * See SETUP_GUIDE.md for Fly.io deployment instructions.
  */
 
 const path = require('path');
@@ -34,7 +30,7 @@ function openDatabase() {
   // Apply AES-256 encryption key
   db.pragma(`key = '${DB_KEY}'`);
 
-  // Verify DB opened correctly (wrong key = integrity check fails)
+  // Verify DB opened correctly
   try {
     db.pragma('integrity_check');
   } catch (e) {
@@ -45,7 +41,7 @@ function openDatabase() {
   // Performance + reliability settings
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
-  db.pragma('cache_size = -32000'); // 32MB cache
+  db.pragma('cache_size = -32000');
   db.pragma('foreign_keys = ON');
   db.pragma('temp_store = MEMORY');
 
@@ -62,82 +58,115 @@ function createTables() {
       nickname    TEXT NOT NULL,
       avatar      TEXT NOT NULL DEFAULT '',
       password    TEXT NOT NULL,
-      public_key  TEXT NOT NULL DEFAULT '',
+      pub_ecdh    TEXT DEFAULT '',
+      pub_ecdsa   TEXT DEFAULT '',
       last_seen   INTEGER NOT NULL DEFAULT 0,
       created_at  INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS keys (
+      key         TEXT PRIMARY KEY,
+      encrypted   TEXT NOT NULL,
+      ts          INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE TABLE IF NOT EXISTS roomKeys (
+      roomId      TEXT PRIMARY KEY,
+      encKey      TEXT NOT NULL,
+      ts          INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
     CREATE TABLE IF NOT EXISTS message_queue (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       from_uuid   TEXT NOT NULL,
       to_uuid     TEXT NOT NULL,
-      content     TEXT NOT NULL,
+      payload     TEXT NOT NULL,
+      iv          TEXT NOT NULL,
+      signature   TEXT NOT NULL,
+      msg_type    TEXT DEFAULT 'msg',
       ts          INTEGER NOT NULL,
       created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
       FOREIGN KEY (to_uuid) REFERENCES users(uuid) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_queue_to ON message_queue(to_uuid);
-    CREATE INDEX IF NOT EXISTS idx_queue_ts  ON message_queue(ts);
+    CREATE INDEX IF NOT EXISTS idx_queue_ts ON message_queue(ts);
     CREATE INDEX IF NOT EXISTS idx_users_seen ON users(last_seen);
   `);
-
-  // Migration: add public_key column if it doesn't exist (upgrades older DBs)
-  try {
-    db.exec(`ALTER TABLE users ADD COLUMN public_key TEXT NOT NULL DEFAULT ''`);
-  } catch (_) { /* column already exists */ }
 }
 
 // ==================== USER OPERATIONS ====================
 function saveUser(userData) {
   db.prepare(`
-    INSERT INTO users (uuid, nickname, avatar, password, last_seen)
-    VALUES (@uuid, @nickname, @avatar, @password, @last_seen)
+    INSERT INTO users (uuid, nickname, avatar, password, pub_ecdh, pub_ecdsa, last_seen)
+    VALUES (@uuid, @nickname, @avatar, @password, @pub_ecdh, @pub_ecdsa, @last_seen)
     ON CONFLICT(uuid) DO UPDATE SET
       nickname  = excluded.nickname,
       avatar    = excluded.avatar,
+      pub_ecdh  = excluded.pub_ecdh,
+      pub_ecdsa = excluded.pub_ecdsa,
       last_seen = excluded.last_seen
   `).run({
     uuid:      userData.uuid,
     nickname:  userData.nickname,
     avatar:    userData.avatar || '',
     password:  userData.password,
+    pub_ecdh:  userData.pub_ecdh || '',
+    pub_ecdsa: userData.pub_ecdsa || '',
     last_seen: userData.lastSeen || Date.now()
   });
-}
-
-function saveUserPassword(uuid, password) {
-  db.prepare('UPDATE users SET password = ? WHERE uuid = ?').run(password, uuid);
 }
 
 function getUser(uuid) {
   return db.prepare('SELECT * FROM users WHERE uuid = ?').get(uuid);
 }
 
-function updateUserProfile(uuid, nickname, avatar) {
-  db.prepare(`
-    UPDATE users SET nickname = ?, avatar = ?, last_seen = ? WHERE uuid = ?
-  `).run(nickname, avatar ?? '', Date.now(), uuid);
+function updatePublicKeys(uuid, ecdh, ecdsa) {
+  db.prepare('UPDATE users SET pub_ecdh = ?, pub_ecdsa = ? WHERE uuid = ?')
+    .run(ecdh, ecdsa, uuid);
 }
 
 function updateLastSeen(uuid) {
   db.prepare('UPDATE users SET last_seen = ? WHERE uuid = ?').run(Date.now(), uuid);
 }
 
-// ==================== MESSAGE QUEUE ====================
-function enqueueMessage(message) {
+// ==================== KEYS OPERATIONS (E2EE) ====================
+function saveKeys(uuid, encryptedKeys) {
   db.prepare(`
-    INSERT INTO message_queue (from_uuid, to_uuid, content, ts)
-    VALUES (?, ?, ?, ?)
-  `).run(message.from, message.to, JSON.stringify(message), message.ts || Date.now());
+    INSERT INTO keys (key, encrypted) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET encrypted = excluded.encrypted
+  `).run(uuid, encryptedKeys);
 }
 
-/** Очередь для получателя: to_uuid = recipient, в JSON сохраняется полный message (to может быть roomId) */
-function enqueueMessageForUser(recipientUuid, message) {
+function loadKeys(uuid) {
+  return db.prepare('SELECT encrypted FROM keys WHERE key = ?').get(uuid);
+}
+
+function saveRoomKey(roomId, encryptedKey) {
   db.prepare(`
-    INSERT INTO message_queue (from_uuid, to_uuid, content, ts)
-    VALUES (?, ?, ?, ?)
-  `).run(message.from, recipientUuid, JSON.stringify(message), message.ts || Date.now());
+    INSERT INTO roomKeys (roomId, encKey) VALUES (?, ?)
+    ON CONFLICT(roomId) DO UPDATE SET encKey = excluded.encKey
+  `).run(roomId, encryptedKey);
+}
+
+function loadRoomKey(roomId) {
+  return db.prepare('SELECT encKey FROM roomKeys WHERE roomId = ?').get(roomId);
+}
+
+// ==================== MESSAGE QUEUE (E2EE FORMAT) ====================
+function enqueueMessage(message) {
+  db.prepare(`
+    INSERT INTO message_queue (from_uuid, to_uuid, payload, iv, signature, msg_type, ts)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    message.from,
+    message.to,
+    message.payload,
+    message.iv,
+    message.signature,
+    message.type || 'msg',
+    message.ts || Date.now()
+  );
 }
 
 function dequeueMessages(toUuid) {
@@ -149,25 +178,15 @@ function dequeueMessages(toUuid) {
     db.prepare('DELETE FROM message_queue WHERE to_uuid = ?').run(toUuid);
   }
 
-  return msgs.map(row => {
-    try { return JSON.parse(row.content); }
-    catch { return null; }
-  }).filter(Boolean);
-}
-
-function getPendingCount(toUuid) {
-  return db.prepare('SELECT COUNT(*) as c FROM message_queue WHERE to_uuid = ?')
-    .get(toUuid)?.c || 0;
-}
-
-// ==================== PUBLIC KEY (E2EE) ====================
-function savePublicKey(uuid, publicKey) {
-  db.prepare('UPDATE users SET public_key = ? WHERE uuid = ?').run(publicKey || '', uuid);
-}
-
-function getPublicKey(uuid) {
-  const row = db.prepare('SELECT public_key FROM users WHERE uuid = ?').get(uuid);
-  return row?.public_key || '';
+  return msgs.map(row => ({
+    from: row.from_uuid,
+    to: row.to_uuid,
+    payload: row.payload,
+    iv: row.iv,
+    signature: row.signature,
+    type: row.msg_type,
+    ts: row.ts
+  }));
 }
 
 // ==================== CLOSE ====================
@@ -182,14 +201,13 @@ module.exports = {
   openDatabase,
   closeDatabase,
   saveUser,
-  saveUserPassword,
   getUser,
-  updateUserProfile,
+  updatePublicKeys,
   updateLastSeen,
+  saveKeys,
+  loadKeys,
+  saveRoomKey,
+  loadRoomKey,
   enqueueMessage,
-  enqueueMessageForUser,
-  dequeueMessages,
-  getPendingCount,
-  savePublicKey,
-  getPublicKey
+  dequeueMessages
 };
