@@ -1994,10 +1994,27 @@ async function e2ee_encrypt(peerUuid, plaintext) {
 }
 
 async function e2ee_decrypt(peerUuid, ctBase64, ivBase64) {
+  // Защита от объектов вместо строк — atob() выбрасывает cryptic InvalidCharacterError
+  if (typeof ctBase64 !== 'string' || typeof ivBase64 !== 'string') {
+    throw new Error(`Неверный тип аргументов: ct=${typeof ctBase64}, iv=${typeof ivBase64}. Ожидались строки Base64.`);
+  }
+
   const key = await e2ee_getDerivedKey(peerUuid);
-  if (!key) throw new Error('No shared key for decryption');
-  const ct  = Uint8Array.from(atob(ctBase64), c => c.charCodeAt(0));
-  const iv  = Uint8Array.from(atob(ivBase64),  c => c.charCodeAt(0));
+  if (!key) {
+    // Детализируем причину отсутствия ключа вместо безликого "No shared key"
+    if (!_e2eePrivateKey) throw new Error('Нет собственного приватного ключа (_e2eePrivateKey = null)');
+    if (!_peerPublicKeys.has(normUid(peerUuid))) throw new Error(`Нет публичного ключа пира (${normUid(peerUuid).slice(0,8)})`);
+    throw new Error('deriveKey вернул null — неизвестная ошибка деривации AES-ключа');
+  }
+
+  let ct, iv;
+  try {
+    ct = Uint8Array.from(atob(ctBase64), c => c.charCodeAt(0));
+    iv = Uint8Array.from(atob(ivBase64),  c => c.charCodeAt(0));
+  } catch (e) {
+    throw new Error(`Ошибка Base64-декодирования: ${e.message}. Данные не являются валидным Base64.`);
+  }
+
   const buf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
   return new TextDecoder().decode(buf);
 }
@@ -2441,19 +2458,51 @@ async function handleIncomingMessage(msg) {
 
   // [E2EE] Decrypt if message is encrypted (DMs only)
   if (msg.encrypted && msg.iv && msg.content) {
+    const senderUuid = normUid(from);
     try {
-      const senderUuid = normUid(from);
-      // Ensure we have the sender's public key for shared secret derivation
-      if (!_peerPublicKeys.has(senderUuid)) {
-        await e2ee_fetchPeerKey(senderUuid);
+      // Диагностика 1: наш приватный ключ должен быть уже загружен через e2ee_ensureKeys()
+      if (!_e2eePrivateKey) {
+        throw new Error('Собственный приватный ключ не загружен. e2ee_ensureKeys() не был вызван до получения сообщения.');
       }
+
+      // Диагностика 2: формат данных — ожидаем строки Base64, не объекты
+      if (typeof msg.content !== 'string' || typeof msg.iv !== 'string') {
+        throw new Error(
+          `Неверный формат зашифрованных данных: content=${typeof msg.content}, iv=${typeof msg.iv}. ` +
+          `Ожидалась строка Base64. Возможно, сервер переслал объект вместо строки.`
+        );
+      }
+
+      // Диагностика 3: публичный ключ пира — нужен для деривации AES-ключа
+      if (!_peerPublicKeys.has(senderUuid)) {
+        console.log(`🔑 E2EE: публичный ключ ${senderUuid.slice(0,8)} не в кеше, запрашиваем у сервера...`);
+        const fetched = await e2ee_fetchPeerKey(senderUuid);
+        if (!fetched) {
+          throw new Error(`Публичный ключ пира ${senderUuid.slice(0,8)} отсутствует на сервере. Собеседник мог использовать старый клиент без E2EE.`);
+        }
+      }
+
       const plainJson = await e2ee_decrypt(senderUuid, msg.content, msg.iv);
       const plain = JSON.parse(plainJson);
       content = plain.content;
       // type comes from origType or plaintext
       msg = { ...msg, type: plain.type || msg.origType || type, content, encrypted: false };
+
     } catch (e) {
-      console.warn('E2EE decrypt failed:', e.message);
+      // Подробный лог — чётко видно причину сбоя прямо в DevTools
+      console.error('❌ E2EE decrypt failed', {
+        reason:           e.message,
+        sender:           senderUuid.slice(0, 8),
+        hasOwnPrivateKey: !!_e2eePrivateKey,
+        hasPeerPublicKey: _peerPublicKeys.has(senderUuid),
+        hasDerivedAesKey: _sharedAesKeys.has(senderUuid),
+        contentIsString:  typeof msg.content === 'string',
+        ivIsString:       typeof msg.iv === 'string',
+        // Превью помогает отличить валидный Base64 от случайно переданного JSON-объекта
+        contentPreview:   typeof msg.content === 'string'
+                            ? msg.content.slice(0, 24) + '…'
+                            : JSON.stringify(msg.content).slice(0, 48),
+      });
       content = '[🔒 Зашифровано — не удалось расшифровать]';
       msg = { ...msg, content };
     }
@@ -2773,21 +2822,26 @@ async function startApp(uuid) {
 
   renderSidebar();
 
-  // 3. [FIX: Offline Delivery] Deliver queued offline messages now that
-  //    myProfile.uuid and contacts are fully loaded.
+  // 3. [E2EE] Загружаем/генерируем ключевую пару ДО обработки офлайн-сообщений.
+  //    _e2eePrivateKey должен быть готов к моменту первого вызова e2ee_decrypt.
+  //    ИСПРАВЛЕНИЕ: шаги 3 и 4 были переставлены — ранее ключи грузились ПОСЛЕ очереди,
+  //    что вызывало Race Condition: все офлайн-сообщения падали с "No shared key".
+  const keysOk = await e2ee_ensureKeys();
+  if (keysOk && ws && ws.readyState === WebSocket.OPEN) {
+    e2ee_sendPublicKey();
+    console.log('🔐 E2EE public key sent to server');
+  } else if (!keysOk) {
+    console.error('❌ E2EE key load/generate failed — decrypt will not work');
+  }
+
+  // 4. [FIX: Offline Delivery] Теперь ключи загружены — можно расшифровывать.
+  //    myProfile.uuid и contacts тоже уже готовы.
   if (window._pendingOfflineMessages && window._pendingOfflineMessages.length > 0) {
     console.log(`📨 Processing ${window._pendingOfflineMessages.length} offline messages...`);
     for (const qMsg of window._pendingOfflineMessages) {
       try { await handleIncomingMessage(qMsg); } catch (e) { console.warn('Offline msg error:', e); }
     }
     window._pendingOfflineMessages = null;
-  }
-
-  // 4. [E2EE] Load or generate key pair, then announce public key to server
-  const keysOk = await e2ee_ensureKeys();
-  if (keysOk && ws && ws.readyState === WebSocket.OPEN) {
-    e2ee_sendPublicKey();
-    console.log('🔐 E2EE public key sent to server');
   }
 
   // 5. Настройка событий
