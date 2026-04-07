@@ -1539,23 +1539,52 @@ const dbSaveKeys = async (uuid, encryptedKeys) => {
 };
 
 const dbLoadKeys = async (uuid, passwordHash) => {
-  try {
-    if (!uuid || !passwordHash) {
-      console.error('dbLoadKeys: missing uuid or passwordHash');
-      return null;
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (!uuid || !passwordHash) {
+        console.error('dbLoadKeys: missing uuid or passwordHash');
+        resolve(null);
+        return;
+      }
+      
+      const db = await dbOpenE2EE();
+      const tx = db.transaction('keys', 'readonly');
+      const store = tx.objectStore('keys');
+      const request = store.get(uuid);
+      
+      request.onsuccess = async () => {
+        const row = request.result;
+        if (!row || !row.encrypted) {
+          console.log('dbLoadKeys: no keys found for', uuid);
+          resolve(null);
+          return;
+        }
+        
+        try {
+          const decrypted = await crypto_engine.decryptPrivateKeys(row.encrypted, passwordHash);
+          console.log('✅ Keys loaded from IndexedDB for', uuid);
+          resolve(decrypted);
+        } catch (err) {
+          console.error('❌ Failed to decrypt keys:', err);
+          resolve(null);
+        }
+      };
+      
+      request.onerror = () => {
+        console.error('❌ dbLoadKeys request error:', request.error);
+        resolve(null);
+      };
+      
+      tx.onerror = () => {
+        console.error('❌ dbLoadKeys transaction error:', tx.error);
+        resolve(null);
+      };
+      
+    } catch (err) {
+      console.error('❌ dbLoadKeys error:', err);
+      resolve(null);
     }
-    const db = await dbOpenE2EE();
-    const tx = db.transaction('keys', 'readonly');
-    const row = await tx.objectStore('keys').get(uuid);
-    if (!row || !row.encrypted) {
-      console.log('dbLoadKeys: no keys found for', uuid);
-      return null;
-    }
-    return await crypto_engine.decryptPrivateKeys(row.encrypted, passwordHash);
-  } catch (err) {
-    console.error('dbLoadKeys failed:', err);
-    return null;
-  }
+  });
 };
 
 // ==================== E2EE KEY LOADING ON AUTH ====================
@@ -2598,6 +2627,7 @@ let voiceSession = null;
 let attachmentQueue = [];
 let attachmentIdSeq = 0;
 let replyingToMsg = null;
+let forwardingFromMsg = null;
 let rtcScreenStream = null;
 let rtcCamTrack = null;
 let renderedMsgIds = new Set();
@@ -3150,6 +3180,10 @@ async function handleIncomingMessage(msg) {
                   msg.replyTo = metadata.replyTo;
                 }
                 
+                if (metadata.forwardFrom) {
+                  msg.forwardFrom = metadata.forwardFrom;
+                }
+                
                 // Mark as E2EE decrypted for UI indicator
                 msg.e2eeDecrypted = true;
               }
@@ -3196,7 +3230,7 @@ async function handleIncomingMessage(msg) {
   const here = activeChat ? normUid(activeChat) : '';
   const ch = normUid(chatId);
   const sameChat = !!(here && here === ch);
-  const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo};
+  const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom};
   await dbPut('messages', localMsg);
 
   if (sameChat) {
@@ -3623,7 +3657,11 @@ async function sendMessage(type, content){
             type, 
             content, 
             replyTo: replySnap,
-            forwardFrom: forwardFrom || undefined,
+            forwardFrom: forwardingFromMsg ? {
+              uuid: forwardingFromMsg.from,
+              name: contacts.find((c) => normUid(c.uuid) === normUid(forwardingFromMsg.from))?.nickname || 
+                    (normUid(forwardingFromMsg.from) === normUid(myProfile.uuid) ? 'Вы' : String(forwardingFromMsg.from).slice(0, 8))
+            } : undefined,
             reactions: {} // Placeholder for reactions to be added by recipients
           };
           plaintext = JSON.stringify(metadataPayload);
@@ -3646,7 +3684,11 @@ async function sendMessage(type, content){
     }
   }
 
-  const localMsg = {...message, chatId: activeChat, read: true, reactions: {}};
+  const localMsg = {...message, chatId: activeChat, read: true, reactions: {}, forwardFrom: forwardingFromMsg ? {
+    uuid: forwardingFromMsg.from,
+    name: contacts.find((c) => normUid(c.uuid) === normUid(forwardingFromMsg.from))?.nickname || 
+          (normUid(forwardingFromMsg.from) === normUid(myProfile.uuid) ? 'Вы' : String(forwardingFromMsg.from).slice(0, 8))
+  } : undefined};
   const localId = await dbPut('messages', localMsg);
   localMsg.id = localId;
 
@@ -3655,8 +3697,9 @@ async function sendMessage(type, content){
     sendToServer('message', message); // FIX #5: don't send Favorites to server
   }
 
-  // FIX: clear reply state after send
+  // FIX: clear reply and forward state after send
   replyingToMsg = null;
+  forwardingFromMsg = null;
   const rp = document.getElementById('replyPreview');
   if (rp) rp.style.display = 'none';
 
@@ -3918,37 +3961,109 @@ async function forwardToContact(msg, contact) {
   const targetId = normUid(contact.uuid);
   const ts = Date.now();
   
-  // Содержимое пересылаем как есть — тип и контент оригинала
-  const serverMsg = {
+  // Build forward metadata
+  const forwardFrom = { name: senderName, uuid: originalFrom };
+  
+  // Check if E2EE should be used for this contact
+  const isRoom = contact.kind === 'group' || contact.kind === 'channel';
+  const isSaved = contact.kind === 'saved';
+  
+  let serverMsg = {
     from: normUid(myProfile.uuid),
     to: targetId,
     type: msg.type,
     content: msg.content,
     ts,
-    forwardedFrom: { name: senderName, uuid: originalFrom }
+    forwardFrom: forwardFrom
   };
-  const localMsg = { ...serverMsg, chatId: targetId, read: true, reactions: {} };
+  
+  // E2EE encryption for direct messages
+  if (!isRoom && !isSaved && crypto_engine.myKeys) {
+    try {
+      if (!crypto_engine.pubKeysCache.has(targetId)) {
+        sendToServer('get-pub-keys', { targetUuid: targetId });
+        await new Promise(r => setTimeout(r, 300));
+      }
+      
+      const pubKeys = crypto_engine.pubKeysCache.get(targetId);
+      if (pubKeys) {
+        const theirPublicKey = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
+        const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, theirPublicKey);
+        
+        const isMedia = ['image', 'video', 'file'].includes(msg.type);
+        let plaintext, encPayload, signature;
+        
+        if (isMedia) {
+          // For media, use layered encryption
+          const metadata = { type: msg.type, forwardFrom: forwardFrom };
+          if (msg.type === 'file') {
+            try {
+              const fd = JSON.parse(msg.content);
+              metadata.fileName = fd.name;
+              metadata.fileSize = fd.size;
+            } catch (_) {}
+          }
+          
+          const layered = await crypto_engine.encryptMediaLayered(
+            msg.type === 'file' ? JSON.parse(msg.content).data : msg.content,
+            sharedSecret,
+            metadata
+          );
+          
+          const payloadObj = {
+            layered: true,
+            fileData: layered.fileData,
+            fileIv: layered.fileIv,
+            keyPayload: layered.keyPayload,
+            keyIv: layered.keyIv,
+            metadata: layered.metadata
+          };
+          
+          signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, layered.fileData);
+          plaintext = JSON.stringify(payloadObj);
+          encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
+        } else {
+          // Standard encryption with forward metadata inside
+          const metadataPayload = { 
+            type: msg.type, 
+            content: msg.content, 
+            forwardFrom: forwardFrom,
+            reactions: {}
+          };
+          plaintext = JSON.stringify(metadataPayload);
+          encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
+          signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
+        }
+        
+        // Replace with E2EE format
+        serverMsg = {
+          from: normUid(myProfile.uuid),
+          to: targetId,
+          ts,
+          payload: encPayload.payload,
+          iv: encPayload.iv,
+          signature: signature
+        };
+        console.log('🔒 Forward message encrypted with E2EE');
+      }
+    } catch (err) {
+      console.error('E2EE forward encryption failed, sending plaintext:', err);
+      // Continue with plaintext if E2EE fails
+    }
+  }
+  
+  const localMsg = { ...serverMsg, chatId: targetId, read: true, reactions: {}, forwardFrom: serverMsg.forwardFrom };
   await dbPut('messages', localMsg);
   updateLastMessage(targetId, msg.content, ts, msg.type);
   
-  // Отправляем на сервер только если чат не "Избранное"
-  const tContact = contacts.find(c => normUid(c.uuid) === targetId);
-  if (!tContact || tContact.kind !== 'saved') {
+  // Send to server if not saved chat
+  if (!isSaved) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       sendToServer('message', serverMsg);
     }
   }
   
-  // Если текущий открытый чат — тот, куда переслали, показываем сообщение
-  if (activeChat && normUid(activeChat) === targetId) {
-    if (!renderedMsgIds.has(ts.toString())) {
-      renderedMsgIds.add(ts.toString());
-      appendMessage(localMsg);
-      scrollBottom();
-    }
-  }
-  
-  showToast('✓ Переслано: ' + (contact.nickname || contact.uuid.slice(0,8)));
+  showToast('Переслано: ' + (contact.nickname || contact.uuid));
 }
 
 async function deleteMessageForMe(ts){
