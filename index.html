@@ -2259,10 +2259,15 @@ async function handleIncomingReaction(data) {
   if (!data || data.ts == null || !data.emoji) return;
   
   const fromUuid = data.from;
-  const chatTarget = data.to;
+  const targetUuid = data.to; // recipient of reaction
   const ts = data.ts;
   const emoji = data.emoji;
   const remove = data.remove;
+  
+  // Determine correct chatId: for rooms use targetUuid, for direct messages use fromUuid
+  const c = contacts.find(x => normUid(x.uuid) === normUid(targetUuid));
+  const isRoom = c && (c.kind === 'group' || c.kind === 'channel');
+  const chatTarget = isRoom ? targetUuid : normUid(fromUuid);
   
   // PLAINTEXT reaction handling - no E2EE, just metadata
   const msgs = await dbGetByIndex('messages', 'chatId', chatTarget);
@@ -3617,7 +3622,15 @@ async function sendMessage(type, content){
         
         if (isMedia) {
           // LAYERED ENCRYPTION for media: file encrypted with random key, key encrypted with shared secret
-          const metadata = { type, replyTo: replySnap };
+          const metadata = { 
+            type, 
+            replyTo: replySnap,
+            forwardFrom: forwardingFromMsg ? {
+              uuid: forwardingFromMsg.from,
+              name: contacts.find((c) => normUid(c.uuid) === normUid(forwardingFromMsg.from))?.nickname || 
+                    (normUid(forwardingFromMsg.from) === normUid(myProfile.uuid) ? 'Вы' : String(forwardingFromMsg.from).slice(0, 8))
+            } : undefined
+          };
           if (type === 'file') {
             // Parse file metadata
             try {
@@ -6622,6 +6635,13 @@ async function handleRtcSignalIncoming(kind, data) {
     document.getElementById('callStatus').textContent = 'Входящий ' + (video ? 'видео' : 'аудио');
     document.getElementById('callIncomingRow').style.display = 'flex';
     document.getElementById('callActiveRow').style.display = 'none';
+    
+    // Store reject handler for global access
+    window._currentCallReject = () => {
+      endCall(null, true);
+      sendToServer('rtc-hangup', { to: data.from });
+    };
+    
     const accept = async () => {
       try {
         rtcRemoteUuid = normUid(data.from);
@@ -6664,6 +6684,10 @@ async function handleRtcSignalIncoming(kind, data) {
         endCall(null, false);
       }
     };
+    
+    // Attach handlers to buttons
+    document.getElementById('callAcceptBtn').onclick = accept;
+    document.getElementById('callRejectBtn').onclick = window._currentCallReject;
   } else if (kind === 'rtc-answer' && rtcPc && decryptedData.sdp) {
     try {
       await rtcPc.setRemoteDescription(new RTCSessionDescription(decryptedData.sdp));
