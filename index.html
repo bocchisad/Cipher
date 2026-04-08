@@ -3110,6 +3110,7 @@ function getIncomingChatId(msg) {
 
 async function handleIncomingMessage(msg) {
   let {from, to, type, content, ts, roomId, payload, iv, signature} = msg;
+  console.log('📨 Raw msg.forwardFrom:', msg.forwardFrom);
   if (normUid(from) === normUid(myProfile.uuid)) return;
 
   // E2EE decryption for direct messages
@@ -3206,11 +3207,16 @@ async function handleIncomingMessage(msg) {
                 content = outerData.content;
                 type = outerData.type;
                 // Extract ALL metadata from encrypted payload
+                console.log('📦 outerData keys:', Object.keys(outerData));
+                console.log('📦 outerData.forwardFrom:', outerData.forwardFrom);
                 if (outerData.replyTo) {
                   msg.replyTo = outerData.replyTo;
                 }
                 if (outerData.forwardFrom) {
                   msg.forwardFrom = outerData.forwardFrom;
+                  console.log('✅ forwardFrom extracted:', outerData.forwardFrom);
+                } else {
+                  console.log('❌ outerData.forwardFrom missing');
                 }
                 if (outerData.reactions) {
                   msg.reactions = outerData.reactions;
@@ -4050,14 +4056,15 @@ async function forwardToContact(msg, contact) {
           signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
         }
         
-        // Replace with E2EE format
+        // Replace with E2EE format - preserve forwardFrom for local save
         serverMsg = {
           from: normUid(myProfile.uuid),
           to: targetId,
           ts,
           payload: encPayload.payload,
           iv: encPayload.iv,
-          signature: signature
+          signature: signature,
+          forwardFrom: forwardFrom
         };
         console.log('🔒 Forward message encrypted with E2EE');
       }
@@ -4067,7 +4074,7 @@ async function forwardToContact(msg, contact) {
     }
   }
   
-  const localMsg = { ...serverMsg, chatId: targetId, read: true, reactions: {}, forwardFrom: serverMsg.forwardFrom };
+  const localMsg = { ...serverMsg, chatId: targetId, read: true, reactions: {} };
   await dbPut('messages', localMsg);
   updateLastMessage(targetId, msg.content, ts, msg.type);
   
