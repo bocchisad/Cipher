@@ -744,7 +744,7 @@ function handleSendMessage(fromUuid, data) {
   const sender = normUid(fromUuid);
   const toRaw = data.to;
   const to = normUid(toRaw);
-  const { content, ts, type: msgType, roomId, payload, iv, signature, forwardFrom } = data;
+  const { content, ts, type: msgType, roomId, payload, iv, signature, forwardFrom, replyTo } = data;
   const message = {
     from: sender,
     to,
@@ -752,11 +752,12 @@ function handleSendMessage(fromUuid, data) {
     ts,
     type: msgType,
     roomId: roomId || (rooms.has(to) ? to : undefined),
-    // E2EE fields (preserved for forwarding)
+    // E2EE fields (preserved for forwarding and replies)
     payload: payload || undefined,
     iv: iv || undefined,
     signature: signature || undefined,
-    forwardFrom: forwardFrom || undefined
+    forwardFrom: forwardFrom || undefined,
+    replyTo: replyTo || undefined
   };
 
   if (rooms.has(to)) {
