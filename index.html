@@ -3235,8 +3235,10 @@ async function handleIncomingMessage(msg) {
   const here = activeChat ? normUid(activeChat) : '';
   const ch = normUid(chatId);
   const sameChat = !!(here && here === ch);
+  console.log('📩 handleIncomingMessage:', { from, to, type, chatId, activeChat: here, sameChat });
   const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom};
   await dbPut('messages', localMsg);
+  console.log('💾 Message saved to DB, chatId:', chatId);
 
   if (sameChat) {
     if (!renderedMsgIds.has(ts.toString())) {
@@ -4357,10 +4359,12 @@ async function loadMessages(){
     console.warn('loadMessages: activeChat is null/undefined');
     return;
   }
+  console.log('📂 loadMessages for chatId:', activeChat);
   const area=document.getElementById('messagesArea');
   area.innerHTML='';
   renderedMsgIds = new Set();
   const msgs=await dbGetByIndex('messages','chatId',activeChat);
+  console.log('📂 Loaded msgs from DB:', msgs?.length || 0, 'messages');
   if (!msgs || !Array.isArray(msgs)) {
     console.warn('loadMessages: no messages array returned', msgs);
     return;
@@ -4592,7 +4596,12 @@ function renderMediaAlbum() {
 }
 
 function appendMessage(msg){
+  console.log('📝 appendMessage:', msg.type, 'from:', msg.from, 'chatId:', msg.chatId, 'ts:', msg.ts);
   const area=document.getElementById('messagesArea');
+  if (!area) {
+    console.error('❌ messagesArea not found!');
+    return;
+  }
   if (msg.type === 'call-log') {
     const wrapper = document.createElement('div');
     wrapper.className = 'msg msg-call-log';
