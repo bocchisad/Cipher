@@ -3110,6 +3110,7 @@ function getIncomingChatId(msg) {
 
 async function handleIncomingMessage(msg) {
   let {from, to, type, content, ts, roomId, payload, iv, signature} = msg;
+  console.log('📨 Raw incoming message:', { from, to, type, hasPayload: !!payload, hasForwardFrom: !!msg.forwardFrom });
   if (normUid(from) === normUid(myProfile.uuid)) return;
 
   // E2EE decryption for direct messages
@@ -4070,7 +4071,7 @@ async function forwardToContact(msg, contact) {
           iv: encPayload.iv,
           signature: signature
         };
-        console.log('🔒 Forward message encrypted with E2EE');
+        console.log('🔒 Forward message encrypted with E2EE, metadataPayload:', isMedia ? 'media with forwardFrom' : { forwardFrom });
       }
     } catch (err) {
       console.error('E2EE forward encryption failed, sending plaintext:', err);
