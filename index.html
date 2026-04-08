@@ -39,6 +39,11 @@
   --gap-sm:8px;
   --gap-md:16px;
   --gap-lg:24px;
+  --chat-thread-bg:var(--bg0);
+  --grad-welcome:radial-gradient(ellipse 90% 70% at 50% 20%, rgba(79,142,247,0.12), transparent 55%), linear-gradient(165deg, #0c0f14 0%, #080a0e 100%);
+  --grad-sidebar:radial-gradient(120% 80% at 100% 0%, rgba(79,142,247,0.08), transparent 50%), linear-gradient(180deg, #111318 0%, #0d1016 100%);
+  --grad-chat-thread:radial-gradient(ellipse 100% 60% at 50% 0%, rgba(79,142,247,0.06), transparent 45%), linear-gradient(180deg, #0a0c10 0%, #080a0d 55%, #0a0b0d 100%);
+  --welcome-bg:var(--bg0);
 }
 html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg0);color:var(--text);font-family:var(--font)}
 button{font-family:var(--font);cursor:pointer;border:none;background:none}
@@ -113,7 +118,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .chat-empty p{font-size:14px}
 
 /* CHAT HEADER */
-#chatHeader{padding:0 20px;height:64px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg1);flex-shrink:0;}
+#chatHeader{padding:0 20px;height:64px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg1);flex-shrink:0;position:relative;z-index:2}
 #chatHeader .av{width:38px;height:38px;border-radius:50%;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent);}
 #chatHeader .av img{width:100%;height:100%;object-fit:cover}
 #chatHeader .hinfo{flex:1;min-width:0}
@@ -124,7 +129,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 
 /* MESSAGES */
 #chatView{flex:1;min-height:0;min-width:0;width:100%;display:flex;flex-direction:column;overflow:hidden}
-#messagesArea{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px min(16px,4vw);display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0;width:100%;align-items:stretch}
+#messagesArea{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px min(16px,4vw);display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0;width:100%;align-items:stretch;background:var(--chat-thread-bg);position:relative;z-index:0}
 .msg{display:flex;gap:10px;align-items:flex-end;max-width:min(92%,560px);width:100%;box-sizing:border-box}
 .msg.out{align-self:flex-end;flex-direction:row;margin-left:auto;justify-content:flex-end}
 .msg:not(.out){align-self:flex-start}
@@ -163,7 +168,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .date-divider::before,.date-divider::after{content:'';flex:1;height:1px;background:var(--border);}
 
 /* INPUT */
-#inputArea{padding:12px 16px;background:var(--bg1);border-top:1px solid var(--border);display:flex;align-items:flex-end;gap:8px;}
+#inputArea{padding:12px 16px;background:var(--bg1);border-top:1px solid var(--border);display:flex;align-items:flex-end;gap:8px;position:relative;z-index:2;flex-shrink:0}
 #inputArea .icon-btn{color:var(--text2);flex-shrink:0;width:36px;height:36px}
 #msgInput{flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:22px;padding:10px 16px;font-size:13px;resize:none;line-height:1.4;max-height:120px;transition:border-color .2s;overflow-wrap:anywhere;word-break:break-word;min-width:0;}
 #msgInput:focus{border-color:var(--border2)}
@@ -259,6 +264,10 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 /* Settings */
 .settings-section{margin-bottom:20px}
 .settings-section h3{font-size:12px;color:var(--text3);font-weight:600;letter-spacing:.8px;text-transform:uppercase;margin-bottom:12px}
+.settings-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.settings-toggle-row span{font-size:14px;color:var(--text);font-weight:600}
+.settings-gradient-label{display:inline-flex;align-items:center;cursor:pointer}
+.settings-gradient-label input{width:44px;height:24px;accent-color:var(--accent);cursor:pointer}
 .settings-id{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--text2);word-break:break-all;line-height:1.5;cursor:pointer;transition:border-color .2s;}
 .settings-id:hover{border-color:var(--accent)}
 .copy-hint{font-size:11px;color:var(--text3);margin-top:4px}
@@ -435,7 +444,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
     text-orientation:mixed;
     min-height:44px;
   }
-  #messagesArea{padding:10px min(10px,3vw);background:transparent}
+  #messagesArea{padding:10px min(10px,3vw);background:var(--chat-thread-bg)}
   #chatView{min-width:0}
   /* conn-status mobile: in extra css */
   #voiceRecordBar{flex-wrap:wrap;row-gap:8px}
@@ -466,6 +475,11 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
   --text:#1a1d26;
   --text2:#4a5568;
   --text3:#8a97ab;
+  --chat-thread-bg:#e8ecf3;
+  --welcome-bg:#f0f2f5;
+  --grad-welcome:radial-gradient(ellipse 95% 75% at 50% 15%, rgba(58,123,232,0.14), transparent 58%), linear-gradient(168deg, #f5f7fb 0%, #eef2f8 45%, #e9edf5 100%);
+  --grad-sidebar:radial-gradient(110% 90% at 0% 0%, rgba(58,123,232,0.10), transparent 52%), linear-gradient(185deg, #ffffff 0%, #f4f7fc 50%, #f0f4fa 100%);
+  --grad-chat-thread:radial-gradient(ellipse 100% 55% at 50% 0%, rgba(58,123,232,0.08), transparent 48%), linear-gradient(180deg, #eef2f8 0%, #e8ecf3 40%, #e5eaf2 100%);
 }
 :root[data-theme="light"] .msg .bubble{background:#ffffff;border-color:#dde2ec;color:#1a1d26}
 :root[data-theme="light"] .msg.out .bubble{background:linear-gradient(135deg,#ddeeff,#cce5ff);border-color:#99ccff;color:#0a1a2f}
@@ -487,17 +501,25 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 :root[data-theme="light"] .info-top{background:linear-gradient(135deg,#f0f4ff,#f8f9fb)}
 :root[data-theme="light"] .tab-content{background:#ffffff}
 :root[data-theme="light"] .date-divider{color:#8a97ab}
-:root[data-theme="light"] #messagesArea{background:#f0f2f5}
-:root[data-theme="light"] #noChatView{background:#f0f2f5}
+:root[data-theme="light"] #messagesArea{background:var(--chat-thread-bg)}
+:root[data-theme="light"] #noChatView{background:var(--welcome-bg)}
+:root[data-theme="light"] #chatHeader,
+:root[data-theme="light"] #inputArea,
+:root[data-theme="light"] #voiceRecordBar,
+:root[data-theme="light"] #attachQueue{background:var(--bg1);backdrop-filter:none;-webkit-backdrop-filter:none}
+:root[data-theme="light"] #replyPreview{background:var(--bg3)}
 /* Mobile light theme: override inline dark backgrounds */
 @media (max-width:900px) {
   :root[data-theme="light"] #app{background:var(--bg0)}
   :root[data-theme="light"] html,:root[data-theme="light"] body{background:var(--bg0)}
   :root[data-theme="light"] #app:not(.app-chat-open) #sidebar{background:var(--bg1)}
   :root[data-theme="light"] #app.app-chat-open #sidebar{background:var(--bg1)}
-  :root[data-theme="light"] #app.app-chat-open #mainChat{background:var(--bg0)}
-  :root[data-theme="light"] #inputArea{background:rgba(255,255,255,0.95)}
+  :root[data-theme="light"] #app.app-chat-open #mainChat{background:transparent}
+  :root[data-theme="light"] #inputArea{background:var(--bg1);backdrop-filter:none;-webkit-backdrop-filter:none}
   :root[data-theme="light"] .sidebar-bottom{background:var(--bg1)}
+}
+body.use-gradients #app:not(.app-chat-open) #sidebar{
+  background:var(--grad-sidebar)!important;
 }
 
 /* ===== CONNECTION STATUS — PC: top bar; mobile: top-right hidden in chat ===== */
@@ -592,7 +614,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 /* ===== PC pixel fixes ===== */
 #noChatView{
   flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  color:var(--text3);gap:12px;background:var(--bg0);
+  color:var(--text3);gap:12px;background:var(--welcome-bg);min-height:0;overflow:hidden;
 }
 .nc-logo{font-size:48px;font-weight:700;letter-spacing:-1px;color:var(--text3);margin-bottom:8px}
 .nc-logo span{color:var(--accent)}
@@ -915,6 +937,13 @@ body.ctx-open::before{
 :root[data-theme="light"] body.ctx-open::before{
   background:rgba(14,24,35,.12);
 }
+:root[data-theme="light"] #chatHeader,
+:root[data-theme="light"] #inputArea{
+  background:var(--bg1)!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+:root[data-theme="light"] #mainChat{background:transparent!important}
 @media (prefers-reduced-motion:reduce){
   .chat-item,.icon-btn,.send-btn,.theme-btn,.bubble,#infoPanel,#sidebar,.swipe-reply-indicator{
     transition:none!important;
@@ -936,6 +965,17 @@ body.ctx-open::before{
     border-radius:16px;
     overflow:hidden;
     margin:0 8px 8px;
+  }
+  .sidebar-top .logo#sidebarLogoBtn{cursor:pointer}
+  .sidebar-top .logo#sidebarLogoBtn:hover{opacity:0.88}
+}
+body.use-gradients{
+  --welcome-bg:var(--grad-welcome);
+  --chat-thread-bg:var(--grad-chat-thread);
+}
+@media (min-width:901px){
+  body.use-gradients #sidebar{
+    background:var(--grad-sidebar)!important;
   }
 }
 
@@ -987,7 +1027,7 @@ body.ctx-open::before{
   <div id="sidebar">
     <div class="sidebar-top">
       <div class="sidebar-conn-wrap">
-        <span class="logo"><span>C</span>ipher</span>
+        <span class="logo" id="sidebarLogoBtn" title="На главный экран" role="button" tabindex="0"><span>C</span>ipher</span>
         <div class="conn-status" id="connStatus">● Отключено</div>
       </div>
       <button type="button" class="theme-btn" id="themeToggleBtn" title="Тема">🌙</button>
@@ -1219,6 +1259,10 @@ body.ctx-open::before{
       <h3>Ваш Username (UUID)</h3>
       <div class="settings-id" id="settingsIdBox">...</div>
       <div class="copy-hint">Нажмите, чтобы скопировать</div>
+    </div>
+    <div class="settings-section settings-toggle-row">
+      <span>Градиентный фон</span>
+      <label class="settings-gradient-label"><input type="checkbox" id="gradientToggle" aria-label="Градиентный фон"></label>
     </div>
     <div class="settings-section">
       <h3>Данные</h3>
@@ -5951,6 +5995,34 @@ function setupEvents(){
     };
   }
 
+  initGradientPreference();
+
+  function goToHomeScreen() {
+    if (voiceSession) {
+      voiceSession.cancelled = true;
+      try {
+        voiceSession.recorder.stop();
+      } catch (_) {}
+    }
+    activeChat = null;
+    showNoChatView();
+    renderSidebar();
+  }
+  const sidebarLogoBtn = document.getElementById('sidebarLogoBtn');
+  if (sidebarLogoBtn) {
+    sidebarLogoBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      goToHomeScreen();
+    });
+    sidebarLogoBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        goToHomeScreen();
+      }
+    });
+  }
+
   document.getElementById('sendBtn').onclick=doSend;
   
   const clearReplyBtn = document.getElementById('clearReplyBtn');
@@ -6161,6 +6233,25 @@ async function deleteChatLocal(chatId){
   showToast('Чат удалён');
 }
 
+function applyGradientPreference(enabled) {
+  document.body.classList.toggle('use-gradients', !!enabled);
+  try {
+    localStorage.setItem('cipherUseGradients', enabled ? '1' : '0');
+  } catch (_) {}
+}
+
+function initGradientPreference() {
+  const el = document.getElementById('gradientToggle');
+  if (!el) return;
+  let saved = false;
+  try {
+    saved = localStorage.getItem('cipherUseGradients') === '1';
+  } catch (_) {}
+  el.checked = saved;
+  applyGradientPreference(saved);
+  el.onchange = () => applyGradientPreference(el.checked);
+}
+
 // ==================== SETTINGS ====================
 function openSettings(){
   const m=document.getElementById('settingsModal');
@@ -6169,6 +6260,14 @@ function openSettings(){
   document.getElementById('settingsIdBox').textContent=myProfile.uuid;
   const av=document.getElementById('settingsAv');
   renderAvatar(av, myProfile.avatar, myProfile.nickname||myProfile.uuid);
+  const gt = document.getElementById('gradientToggle');
+  if (gt) {
+    try {
+      gt.checked = localStorage.getItem('cipherUseGradients') === '1';
+    } catch (_) {
+      gt.checked = false;
+    }
+  }
 }
 
 async function saveSettings(){
