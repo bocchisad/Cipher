@@ -3110,7 +3110,6 @@ function getIncomingChatId(msg) {
 
 async function handleIncomingMessage(msg) {
   let {from, to, type, content, ts, roomId, payload, iv, signature} = msg;
-  console.log('📨 Raw incoming message:', { from, to, type, hasPayload: !!payload, hasForwardFrom: !!msg.forwardFrom });
   if (normUid(from) === normUid(myProfile.uuid)) return;
 
   // E2EE decryption for direct messages
@@ -3190,7 +3189,6 @@ async function handleIncomingMessage(msg) {
                 
                 if (metadata.forwardFrom) {
                   msg.forwardFrom = metadata.forwardFrom;
-                  console.log('📤 Media forwardFrom extracted:', metadata.forwardFrom);
                 }
                 
                 // Mark as E2EE decrypted for UI indicator
@@ -3211,13 +3209,8 @@ async function handleIncomingMessage(msg) {
                 if (outerData.replyTo) {
                   msg.replyTo = outerData.replyTo;
                 }
-                console.log('📦 outerData keys:', Object.keys(outerData));
-                console.log('📦 outerData.forwardFrom:', outerData.forwardFrom);
                 if (outerData.forwardFrom) {
                   msg.forwardFrom = outerData.forwardFrom;
-                  console.log('📤 Text forwardFrom extracted:', outerData.forwardFrom);
-                } else {
-                  console.log('❌ outerData.forwardFrom is missing or falsy');
                 }
                 if (outerData.reactions) {
                   msg.reactions = outerData.reactions;
@@ -3244,11 +3237,8 @@ async function handleIncomingMessage(msg) {
   const here = activeChat ? normUid(activeChat) : '';
   const ch = normUid(chatId);
   const sameChat = !!(here && here === ch);
-  console.log('📩 handleIncomingMessage:', { from, to, type, chatId, activeChat: here, sameChat, forwardFrom: msg.forwardFrom });
   const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom};
-  console.log('💾 Saving localMsg with forwardFrom:', localMsg.forwardFrom);
   await dbPut('messages', localMsg);
-  console.log('💾 Message saved to DB, chatId:', chatId);
 
   if (sameChat) {
     if (!renderedMsgIds.has(ts.toString())) {
@@ -3678,7 +3668,6 @@ async function sendMessage(type, content){
         } else {
           // Standard encryption for text/voice
           // Pack ALL metadata inside encrypted payload: replyTo, forwardFrom, reactions
-          console.log('🔍 forwardingFromMsg before payload:', forwardingFromMsg);
           const metadataPayload = { 
             type, 
             content, 
@@ -3690,7 +3679,6 @@ async function sendMessage(type, content){
             } : undefined,
             reactions: {} // Placeholder for reactions to be added by recipients
           };
-          console.log('📤 Sending metadataPayload:', JSON.stringify(metadataPayload));
           plaintext = JSON.stringify(metadataPayload);
           encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
           // Sign encrypted payload
@@ -4071,7 +4059,7 @@ async function forwardToContact(msg, contact) {
           iv: encPayload.iv,
           signature: signature
         };
-        console.log('🔒 Forward message encrypted with E2EE, metadataPayload:', isMedia ? 'media with forwardFrom' : { forwardFrom });
+        console.log('🔒 Forward message encrypted with E2EE');
       }
     } catch (err) {
       console.error('E2EE forward encryption failed, sending plaintext:', err);
@@ -4367,20 +4355,12 @@ function renderChatHeader(){
 }
 
 async function loadMessages(){
-  if (!activeChat) {
-    console.warn('loadMessages: activeChat is null/undefined');
-    return;
-  }
-  console.log('📂 loadMessages for chatId:', activeChat);
+  if (!activeChat) return;
   const area=document.getElementById('messagesArea');
   area.innerHTML='';
   renderedMsgIds = new Set();
   const msgs=await dbGetByIndex('messages','chatId',activeChat);
-  console.log('📂 Loaded msgs from DB:', msgs?.length || 0, 'messages');
-  if (!msgs || !Array.isArray(msgs)) {
-    console.warn('loadMessages: no messages array returned', msgs);
-    return;
-  }
+  if (!msgs || !Array.isArray(msgs)) return;
   msgs.sort((a,b)=>a.ts-b.ts);
   let lastDate='';
   // FIX: Group consecutive images into albums
@@ -4608,7 +4588,6 @@ function renderMediaAlbum() {
 }
 
 function appendMessage(msg){
-  console.log('📝 appendMessage:', msg.type, 'from:', msg.from, 'chatId:', msg.chatId, 'ts:', msg.ts);
   const area=document.getElementById('messagesArea');
   if (!area) {
     console.error('❌ messagesArea not found!');
@@ -4738,16 +4717,12 @@ function appendMessage(msg){
 
   // FIX-FORWARD: render "Переслано от" header if message was forwarded
   const forwardInfo = msg.forwardedFrom || msg.forwardFrom;
-  console.log('🔍 Checking forwardInfo:', { forwardInfo, forwardFrom: msg.forwardFrom, forwardedFrom: msg.forwardedFrom });
   if (forwardInfo) {
     const fwd = document.createElement('div');
     fwd.className = 'fwd-header';
     const forwardName = forwardInfo.name || (forwardInfo.uuid ? String(forwardInfo.uuid).slice(0, 8) : '?');
     fwd.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg> Переслано от: ${escapeHtml(forwardName)}`;
     bubble.appendChild(fwd);
-    console.log('✅ Forward header rendered for:', forwardName);
-  } else {
-    console.log('❌ No forwardInfo, forwardFrom is:', msg.forwardFrom);
   }
 
   if(msg.type==='text'){
