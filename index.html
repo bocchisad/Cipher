@@ -4399,13 +4399,15 @@ function groupMessagesIntoAlbums(msgs) {
   let i = 0;
   while (i < msgs.length) {
     const m = msgs[i];
-    if (m.type === 'image') {
+    const isMedia = m.type === 'image' || m.type === 'video';
+    if (isMedia) {
       const from = m.from;
       const batch = [m];
-      // Look ahead: same sender, image, within 60s
+      // Look ahead: same sender, media (image or video), within 60s
       while (i + 1 < msgs.length) {
         const next = msgs[i + 1];
-        if (next.type === 'image' && next.from === from && Math.abs(next.ts - m.ts) < 60000) {
+        const nextIsMedia = next.type === 'image' || next.type === 'video';
+        if (nextIsMedia && next.from === from && Math.abs(next.ts - m.ts) < 60000) {
           batch.push(next);
           i++;
         } else break;
@@ -4452,11 +4454,19 @@ function appendAlbum(msgs, area) {
       item.classList.add('album-more');
       item.textContent = '+' + (count - show + 1);
     } else {
-      const img = document.createElement('img');
-      img.src = m.content;
-      img.loading = 'lazy';
-      img.onclick = () => openLightbox(m.content);
-      item.appendChild(img);
+      if (m.type === 'image') {
+        const img = document.createElement('img');
+        img.src = m.content;
+        img.loading = 'lazy';
+        img.onclick = () => openLightbox(m.content);
+        item.appendChild(img);
+      } else if (m.type === 'video') {
+        const video = document.createElement('video');
+        video.src = m.content;
+        video.className = 'msg-video';
+        video.controls = true;
+        item.appendChild(video);
+      }
     }
     grid.appendChild(item);
   });
