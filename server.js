@@ -744,14 +744,19 @@ function handleSendMessage(fromUuid, data) {
   const sender = normUid(fromUuid);
   const toRaw = data.to;
   const to = normUid(toRaw);
-  const { content, ts, type: msgType, roomId } = data;
+  const { content, ts, type: msgType, roomId, payload, iv, signature, forwardFrom } = data;
   const message = {
     from: sender,
     to,
     content,
     ts,
     type: msgType,
-    roomId: roomId || (rooms.has(to) ? to : undefined)
+    roomId: roomId || (rooms.has(to) ? to : undefined),
+    // E2EE fields (preserved for forwarding)
+    payload: payload || undefined,
+    iv: iv || undefined,
+    signature: signature || undefined,
+    forwardFrom: forwardFrom || undefined
   };
 
   if (rooms.has(to)) {
