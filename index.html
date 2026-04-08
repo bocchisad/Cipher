@@ -920,6 +920,24 @@ body.ctx-open::before{
     transition:none!important;
   }
 }
+@media (min-width:901px){
+  #sidebar,#mainChat,#infoPanel{
+    border-radius:20px;
+    overflow:hidden;
+    margin:8px 6px;
+    height:calc(100dvh - 16px);
+  }
+  #chatHeader{
+    border-radius:16px 16px 0 0;
+    overflow:hidden;
+    margin:8px 8px 0;
+  }
+  #inputArea,#attachQueue,#voiceRecordBar,#replyPreview{
+    border-radius:16px;
+    overflow:hidden;
+    margin:0 8px 8px;
+  }
+}
 
 </style>
 </head>
@@ -2496,7 +2514,7 @@ async function handleIncomingEditMessage(data) {
   } else {
     // Handle plaintext edit (fallback)
     const msgs = await dbGetByIndex('messages', 'chatId', chatId);
-    const msg = msgs.find((m) => m.ts === originalTs);
+    const msg = msgs.find((m) => m.ts === data.originalTs);
     if (msg && data.newContent) {
       msg.content = data.newContent;
       msg.edited = true;
@@ -2506,7 +2524,7 @@ async function handleIncomingEditMessage(data) {
       if (activeChat && normUid(activeChat) === chatId) {
         await loadMessages();
       }
-      console.log('✏️ Message edited (plaintext):', originalTs);
+      console.log('✏️ Message edited (plaintext):', data.originalTs);
     }
   }
 }
@@ -4000,9 +4018,26 @@ function showChatCtxMenu(e,chatId){
   `;
   menu.style.display='block';
   document.body.classList.add('ctx-open');
-  menu.style.left=e.clientX+'px';
-  menu.style.top=e.clientY+'px';
+  positionContextMenu(menu, e.clientX, e.clientY);
   menu.dataset.chatId=chatId;
+}
+
+function positionContextMenu(menu, clientX, clientY) {
+  if (!menu) return;
+  menu.style.visibility = 'hidden';
+  menu.style.display = 'block';
+  const rect = menu.getBoundingClientRect();
+  let left = clientX;
+  let top = clientY;
+  if (left + rect.width > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - rect.width - 8);
+  }
+  if (top + rect.height > window.innerHeight - 8) {
+    top = Math.max(8, clientY - rect.height);
+  }
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+  menu.style.visibility = '';
 }
 
 document.addEventListener('click',e=>{
@@ -4019,7 +4054,11 @@ document.addEventListener('click',e=>{
       if(action.dataset.action==='msg-del-me') deleteMessageForMe(ts);
       if(action.dataset.action==='msg-del-both') deleteMessageForEveryone(ts);
       if(action.dataset.action==='msg-edit') editMessage(ts);
-      if(action.dataset.action==='msg-copy') copyMessageText(ts);
+      if(action.dataset.action==='msg-copy') {
+        copyTextSafe(menu.dataset.msgContent || '').then((ok) => {
+          showToast(ok ? '📋 Текст скопирован' : '❌ Не удалось скопировать');
+        });
+      }
     } else {
       const chatId=menu.dataset.chatId;
       if(action.dataset.action==='delete-local') deleteChatLocal(chatId);
@@ -4402,9 +4441,12 @@ async function copyTextSafe(text) {
   const textarea = document.createElement('textarea');
   textarea.value = value;
   textarea.setAttribute('aria-hidden', 'true');
+  textarea.setAttribute('readonly', 'true');
   textarea.style.position = 'fixed';
-  textarea.style.left = '-9999px';
+  textarea.style.left = '0';
   textarea.style.top = '0';
+  textarea.style.width = '1px';
+  textarea.style.height = '1px';
   textarea.style.fontSize = '16px';
   textarea.style.opacity = '0';
   textarea.style.pointerEvents = 'none';
@@ -4456,10 +4498,10 @@ function showMessageCtxMenu(e, msg){
   menu.innerHTML = html;
   menu.dataset.mode = 'msg';
   menu.dataset.msgTs = String(msg.ts);
+  menu.dataset.msgContent = msg.type === 'text' ? String(msg.content || '') : '';
   menu.style.display = 'block';
   document.body.classList.add('ctx-open');
-  menu.style.left = Math.min(e.clientX, window.innerWidth - 280) + 'px';
-  menu.style.top = Math.min(e.clientY, window.innerHeight - 200) + 'px';
+  positionContextMenu(menu, e.clientX, e.clientY);
 }
 
 async function openChat(uuid){

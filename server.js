@@ -631,7 +631,7 @@ function handleLogin(ws, msg, setUserId, ip) {
   if (pending.length > 0) {
     console.log(`📨 Delivering ${pending.length} queued messages to ${user.nickname}`);
     pending.forEach(qMsg => {
-      if (qMsg.type && ['msg', 'rtc-offer', 'rtc-answer', 'rtc-ice'].includes(qMsg.type)) {
+      if (qMsg.type && ['msg', 'rtc-offer', 'rtc-answer', 'rtc-ice', 'edit-msg'].includes(qMsg.type)) {
         safeWsSend(ws, { type: qMsg.type, data: qMsg });
       } else {
         safeWsSend(ws, { type: 'message', data: qMsg });
