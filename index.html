@@ -3211,9 +3211,12 @@ async function handleIncomingMessage(msg) {
                   msg.replyTo = outerData.replyTo;
                 }
                 console.log('📦 outerData keys:', Object.keys(outerData));
+                console.log('📦 outerData.forwardFrom:', outerData.forwardFrom);
                 if (outerData.forwardFrom) {
                   msg.forwardFrom = outerData.forwardFrom;
                   console.log('📤 Text forwardFrom extracted:', outerData.forwardFrom);
+                } else {
+                  console.log('❌ outerData.forwardFrom is missing or falsy');
                 }
                 if (outerData.reactions) {
                   msg.reactions = outerData.reactions;
@@ -3674,6 +3677,7 @@ async function sendMessage(type, content){
         } else {
           // Standard encryption for text/voice
           // Pack ALL metadata inside encrypted payload: replyTo, forwardFrom, reactions
+          console.log('🔍 forwardingFromMsg before payload:', forwardingFromMsg);
           const metadataPayload = { 
             type, 
             content, 
@@ -3685,7 +3689,7 @@ async function sendMessage(type, content){
             } : undefined,
             reactions: {} // Placeholder for reactions to be added by recipients
           };
-          console.log('📤 Sending metadataPayload with forwardFrom:', metadataPayload.forwardFrom);
+          console.log('📤 Sending metadataPayload:', JSON.stringify(metadataPayload));
           plaintext = JSON.stringify(metadataPayload);
           encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
           // Sign encrypted payload
