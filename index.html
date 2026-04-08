@@ -4353,10 +4353,18 @@ function renderChatHeader(){
 }
 
 async function loadMessages(){
+  if (!activeChat) {
+    console.warn('loadMessages: activeChat is null/undefined');
+    return;
+  }
   const area=document.getElementById('messagesArea');
   area.innerHTML='';
   renderedMsgIds = new Set();
   const msgs=await dbGetByIndex('messages','chatId',activeChat);
+  if (!msgs || !Array.isArray(msgs)) {
+    console.warn('loadMessages: no messages array returned', msgs);
+    return;
+  }
   msgs.sort((a,b)=>a.ts-b.ts);
   let lastDate='';
   // FIX: Group consecutive images into albums
