@@ -4643,8 +4643,8 @@ function appendMessage(msg){
   // Check for real-time media grouping
   const isMedia = msg.type === 'image' || msg.type === 'video';
   if (isMedia) {
-    // Use queueMediaForAlbum for batching multiple media uploads
-    queueMediaForAlbum(msg);
+    // Use appendAlbum for synchronous rendering (preserves order during load)
+    appendAlbum([msg], area);
     return;
   }
 
