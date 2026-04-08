@@ -1550,12 +1550,14 @@ const dbLoadKeys = async (uuid, passwordHash) => {
       const db = await dbOpenE2EE();
       const tx = db.transaction('keys', 'readonly');
       const store = tx.objectStore('keys');
-      const request = store.get(uuid);
+      const keyId = uuid || 'pending';
+      console.log('🔑 dbLoadKeys: looking for keyId:', keyId);
+      const request = store.get(keyId);
       
       request.onsuccess = async () => {
         const row = request.result;
         if (!row || !row.encrypted) {
-          console.log('dbLoadKeys: no keys found for', uuid);
+          console.log('dbLoadKeys: no keys found for keyId:', keyId);
           resolve(null);
           return;
         }
@@ -3187,6 +3189,7 @@ async function handleIncomingMessage(msg) {
                 
                 if (metadata.forwardFrom) {
                   msg.forwardFrom = metadata.forwardFrom;
+                  console.log('📤 Media forwardFrom extracted:', metadata.forwardFrom);
                 }
                 
                 // Mark as E2EE decrypted for UI indicator
@@ -3207,8 +3210,10 @@ async function handleIncomingMessage(msg) {
                 if (outerData.replyTo) {
                   msg.replyTo = outerData.replyTo;
                 }
+                console.log('📦 outerData keys:', Object.keys(outerData));
                 if (outerData.forwardFrom) {
                   msg.forwardFrom = outerData.forwardFrom;
+                  console.log('📤 Text forwardFrom extracted:', outerData.forwardFrom);
                 }
                 if (outerData.reactions) {
                   msg.reactions = outerData.reactions;
@@ -3679,6 +3684,7 @@ async function sendMessage(type, content){
             } : undefined,
             reactions: {} // Placeholder for reactions to be added by recipients
           };
+          console.log('📤 Sending metadataPayload with forwardFrom:', metadataPayload.forwardFrom);
           plaintext = JSON.stringify(metadataPayload);
           encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
           // Sign encrypted payload
@@ -6616,6 +6622,8 @@ async function startOutgoingCall(video) {
     document.getElementById('callStatus').textContent = '⏳ Ожидание ответа...';
     document.getElementById('callOverlay').style.display = 'flex';
     document.getElementById('callOverlay').style.opacity = '1';
+    document.getElementById('callIncomingRow').style.display = 'none';
+    document.getElementById('callActiveRow').style.display = 'flex';
     syncCallControlButtons();
     startCallTimer();
   } catch (e) {
