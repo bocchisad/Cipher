@@ -237,8 +237,8 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .call-pill.wide{width:auto;height:auto;border-radius:999px;padding:14px 28px;gap:10px;color:#fff;font-size:15px;font-weight:600;font-family:var(--font)}
 
 /* LIGHTBOX */
-#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:700;display:none;align-items:center;justify-content:center;cursor:zoom-out;}
-#lightbox img{max-width:90vw;max-height:90vh;border-radius:8px}
+#lightbox{position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:700;display:none;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
+#lightbox img{max-width:94vw;max-height:94vh;border-radius:8px;transform-origin:center center;transition:transform .14s ease}
 
 /* FIX #2: Модалка просмотра аватара */
 #avatarModal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px)}
@@ -402,6 +402,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
   }
   #sidebar .sidebar-top{padding-top:max(10px, env(safe-area-inset-top))}
   #chatList{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 4px}
+  #chatList{padding:0!important}
   #sidebar .sidebar-bottom{padding:10px 8px;flex-shrink:0}
   .panel-resizer{display:none!important}
   #resizeSidebar,#resizeInfo{display:none!important}
@@ -414,7 +415,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
     transform:translateX(100%);transition:transform .2s ease-out;border-left:1px solid var(--border)
   }
   #infoPanel.info-open{transform:translateX(0);box-shadow:-8px 0 32px rgba(0,0,0,.45)}
-  #app.info-overlay::before{content:'';position:fixed;inset:0;background:rgba(0,0,0,.38);z-index:399}
+  #app.info-overlay::before{display:none}
   .reg-box{padding:24px 20px;width:100%}
   #chatHeader{padding-left:6px;padding-right:6px;padding-top:max(4px, env(safe-area-inset-top));flex-wrap:nowrap;gap:8px}
   #chatHeader .hbtns{flex-shrink:0}
@@ -585,18 +586,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 
 
 /* ===== MOBILE CONN STATUS (separate fixed element) ===== */
-.conn-status-mobile{
-  position:fixed;top:max(6px,env(safe-area-inset-top));right:8px;
-  font-size:10px;color:var(--text3);z-index:120;padding:4px 8px;
-  background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);
-  pointer-events:none;max-width:min(130px,35vw);
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  opacity:.92;transition:opacity .3s;
-}
-.conn-status-mobile.connected{color:var(--green)}
-.conn-status-mobile.disconnected{color:var(--red)}
-.app-chat-open .conn-status-mobile{opacity:0;pointer-events:none}
-@media(min-width:901px){.conn-status-mobile{display:none!important}}
+.conn-status-mobile{display:none!important}
 
 
 /* ===== PC pixel fixes ===== */
@@ -876,9 +866,9 @@ body.ctx-open::before{
     top:0;
     left:0;
     bottom:0;
-    width:min(340px,86vw)!important;
-    min-width:min(340px,86vw)!important;
-    max-width:min(340px,86vw)!important;
+    width:100vw!important;
+    min-width:100vw!important;
+    max-width:100vw!important;
     z-index:410;
     transform:translateX(-100%)!important;
     transition:transform var(--motion-med) var(--spring);
@@ -886,23 +876,15 @@ body.ctx-open::before{
   }
   #app:not(.app-chat-open) #sidebar,
   #app.app-chat-open #sidebar{
-    width:min(340px,86vw)!important;
-    min-width:min(340px,86vw)!important;
-    max-width:min(340px,86vw)!important;
+    width:100vw!important;
+    min-width:100vw!important;
+    max-width:100vw!important;
   }
   #app:not(.app-chat-open) #sidebar{
     transform:translateX(0)!important;
   }
   #app.app-chat-open #sidebar{
     transform:translateX(-100%)!important;
-  }
-  #app.app-chat-open::before{
-    content:'';
-    position:fixed;
-    inset:0;
-    z-index:405;
-    background:rgba(7,10,14,.35);
-    pointer-events:none;
   }
   #app:not(.app-chat-open) #mainChat{display:none!important}
   #app.app-chat-open #mainChat{display:flex!important}
@@ -2553,16 +2535,8 @@ async function handleUserNotFound() {
 function updateConnStatus(connected) {
   const text = connected ? '● Подключено' : '● Отключено';
   const cls = connected ? 'connected' : 'disconnected';
-  // PC sidebar element
   const el = document.getElementById('connStatus');
   if (el) { el.className = 'conn-status ' + cls; el.textContent = text; }
-  // Mobile fixed element
-  const em = document.getElementById('connStatusMobile');
-  if (em) {
-    em.style.display = window.matchMedia('(max-width:900px)').matches ? 'block' : 'none';
-    em.className = 'conn-status conn-status-mobile ' + cls;
-    em.textContent = text;
-  }
 }
 
 // ==================== DB (IndexedDB) ====================
@@ -2805,6 +2779,11 @@ let forwardingFromMsg = null;
 let rtcScreenStream = null;
 let rtcCamTrack = null;
 let renderedMsgIds = new Set();
+let localMessageRefs = new Set();
+
+function makeMessageRefKey(from, ts) {
+  return `${normUid(from)}:${Number(ts)}`;
+}
 
 const EMOJI_CATEGORIES = {
   '😊 Смайлики': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','😮','😯','😲','😳','🥺','😞','😟','😤','😢','😭','😩','😫','🥱','😤','😡','🤬','😠','💀','☠️','😎','🤓','🧐','😕','😔','😪','😴'],
@@ -4415,20 +4394,24 @@ async function copyTextSafe(text) {
   const value = String(text ?? '');
   if (!value) return false;
   try {
-    if (navigator.clipboard && window.isSecureContext) {
+    if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(value);
       return true;
     }
   } catch (_) {}
   const textarea = document.createElement('textarea');
   textarea.value = value;
-  textarea.setAttribute('readonly', 'true');
+  textarea.setAttribute('aria-hidden', 'true');
   textarea.style.position = 'fixed';
-  textarea.style.top = '-9999px';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  textarea.style.fontSize = '16px';
   textarea.style.opacity = '0';
+  textarea.style.pointerEvents = 'none';
   document.body.appendChild(textarea);
   textarea.focus();
   textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
   let ok = false;
   try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
   document.body.removeChild(textarea);
@@ -4544,6 +4527,7 @@ async function loadMessages(){
   renderedMsgIds = new Set();
   const msgs=await dbGetByIndex('messages','chatId',activeChat);
   if (!msgs || !Array.isArray(msgs)) return;
+  localMessageRefs = new Set(msgs.map((m) => makeMessageRefKey(m.from, m.ts)));
   msgs.sort((a,b)=>a.ts-b.ts);
   let lastDate='';
   // FIX: Group consecutive images into albums
@@ -4619,6 +4603,7 @@ function appendAlbum(msgs, area) {
   bubble.className = 'bubble';
 
   const count = msgs.length;
+  const albumImages = msgs.filter((x) => x.type === 'image').map((x) => x.content);
   const mediaGroup = document.createElement('div');
   mediaGroup.className = 'media-group';
   if (count === 1) mediaGroup.classList.add('count-1');
@@ -4634,6 +4619,9 @@ function appendAlbum(msgs, area) {
         const more = document.createElement('div');
         more.className = 'media-more';
         more.textContent = '+' + (count - 4);
+        more.onclick = () => {
+          if (albumImages.length) openLightbox(albumImages[0], albumImages, 0);
+        };
         mediaGroup.appendChild(more);
       }
       return;
@@ -4643,7 +4631,10 @@ function appendAlbum(msgs, area) {
       const img = document.createElement('img');
       img.className = 'msg-img';
       img.src = m.content;
-      img.onclick = () => openLightbox(m.content);
+      img.onclick = () => {
+        const startIdx = albumImages.indexOf(m.content);
+        openLightbox(m.content, albumImages, Math.max(0, startIdx));
+      };
       img.alt = 'Изображение';
       mediaGroup.appendChild(img);
     } else if (m.type === 'video') {
@@ -4713,6 +4704,7 @@ function renderMediaAlbum() {
   // Create media group container
   const mediaGroup = document.createElement('div');
   mediaGroup.className = 'media-group';
+  const albumImages = pendingMediaGroup.filter((x) => x.type === 'image').map((x) => x.content);
   
   // Determine grid layout based on count
   const count = pendingMediaGroup.length;
@@ -4736,6 +4728,9 @@ function renderMediaAlbum() {
         const more = document.createElement('div');
         more.className = 'media-more';
         more.textContent = `+${count - 4}`;
+        more.onclick = () => {
+          if (albumImages.length) openLightbox(albumImages[0], albumImages, 0);
+        };
         mediaGroup.appendChild(more);
       }
       return;
@@ -4745,7 +4740,10 @@ function renderMediaAlbum() {
       const img = document.createElement('img');
       img.className = 'msg-img';
       img.src = m.content;
-      img.onclick = () => openLightbox(m.content);
+      img.onclick = () => {
+        const startIdx = albumImages.indexOf(m.content);
+        openLightbox(m.content, albumImages, Math.max(0, startIdx));
+      };
       img.alt = 'Изображение';
       mediaGroup.appendChild(img);
     } else if (m.type === 'video') {
@@ -4832,6 +4830,7 @@ function appendMessage(msg){
   if(msg.id) wrapper.dataset.msgId=msg.id;
   // FIX (Недочёт #6): data-ts for delivery receipt lookup
   wrapper.dataset.ts = msg.ts;
+  localMessageRefs.add(makeMessageRefKey(msg.from, msg.ts));
 
   if(!isOut){
     const mav=document.createElement('div');
@@ -4856,7 +4855,8 @@ function appendMessage(msg){
     authorEl.textContent = rauthor?.nickname || String(msg.replyTo.from||'').slice(0,8);
     const textEl = document.createElement('div');
     textEl.className = 'reply-quote-text';
-    textEl.textContent = msg.replyTo.preview || '';
+    const refExists = localMessageRefs.has(makeMessageRefKey(msg.replyTo.from, msg.replyTo.ts));
+    textEl.textContent = refExists ? (msg.replyTo.preview || '') : 'Сообщение удалено';
     rq.appendChild(authorEl);
     rq.appendChild(textEl);
     bubble.appendChild(rq);
@@ -5971,7 +5971,7 @@ function setupEvents(){
     document.getElementById('deleteChatModal').style.display='none';
   };
 
-  document.getElementById('lightbox').onclick=()=>document.getElementById('lightbox').style.display='none';
+  initLightboxBindings();
 
   document.querySelectorAll('.modal-overlay').forEach(m=>{
     m.onclick=e=>{if(e.target===m) m.style.display='none';};
@@ -6474,10 +6474,179 @@ async function toggleRecord() {
 }
 
 // ==================== LIGHTBOX ====================
-function openLightbox(src){
+let lightboxItems = [];
+let lightboxIndex = 0;
+let lightboxScale = 1;
+let lightboxTranslateX = 0;
+let lightboxTranslateY = 0;
+let lightboxMouseDown = null;
+let lightboxTouchStart = null;
+let lightboxPinchDist = 0;
+
+function applyLightboxTransform() {
+  const img = document.getElementById('lightboxImg');
+  if (!img) return;
+  img.style.transform = `translate(${lightboxTranslateX}px, ${lightboxTranslateY}px) scale(${lightboxScale})`;
+}
+
+function resetLightboxZoom() {
+  lightboxScale = 1;
+  lightboxTranslateX = 0;
+  lightboxTranslateY = 0;
+  applyLightboxTransform();
+}
+
+function renderLightboxItem() {
+  const img = document.getElementById('lightboxImg');
+  if (!img || !lightboxItems.length) return;
+  img.src = lightboxItems[lightboxIndex];
+  resetLightboxZoom();
+}
+
+function closeLightbox() {
+  const lb = document.getElementById('lightbox');
+  if (!lb) return;
+  lb.style.display = 'none';
+  lightboxItems = [];
+  lightboxIndex = 0;
+  resetLightboxZoom();
+}
+
+function navigateLightbox(delta) {
+  if (!lightboxItems.length) return;
+  const len = lightboxItems.length;
+  lightboxIndex = (lightboxIndex + delta + len) % len;
+  renderLightboxItem();
+}
+
+function openLightbox(src, items = null, startIndex = 0){
   const lb=document.getElementById('lightbox');
-  document.getElementById('lightboxImg').src=src;
+  if (!lb) return;
+  const list = Array.isArray(items) && items.length ? items.filter(Boolean) : [src];
+  lightboxItems = list;
+  lightboxIndex = Math.max(0, Math.min(startIndex || 0, list.length - 1));
+  if (src && list.length > 1) {
+    const idx = list.indexOf(src);
+    if (idx >= 0) lightboxIndex = idx;
+  }
+  renderLightboxItem();
   lb.style.display='flex';
+}
+
+function initLightboxBindings() {
+  const lb = document.getElementById('lightbox');
+  const img = document.getElementById('lightboxImg');
+  if (!lb || !img || lb.dataset.bound === '1') return;
+  lb.dataset.bound = '1';
+
+  lb.addEventListener('click', (e) => {
+    if (e.target === lb) closeLightbox();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (lb.style.display !== 'flex') return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') navigateLightbox(-1);
+    if (e.key === 'ArrowRight') navigateLightbox(1);
+  });
+
+  img.addEventListener('wheel', (e) => {
+    if (lb.style.display !== 'flex') return;
+    e.preventDefault();
+    const next = lightboxScale + (e.deltaY < 0 ? 0.1 : -0.1);
+    lightboxScale = Math.max(1, Math.min(4, next));
+    if (lightboxScale === 1) {
+      lightboxTranslateX = 0;
+      lightboxTranslateY = 0;
+    }
+    applyLightboxTransform();
+  }, { passive: false });
+
+  img.addEventListener('mousedown', (e) => {
+    if (lb.style.display !== 'flex') return;
+    lightboxMouseDown = { x: e.clientX, y: e.clientY, tx: lightboxTranslateX, ty: lightboxTranslateY };
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!lightboxMouseDown || lb.style.display !== 'flex') return;
+    const dx = e.clientX - lightboxMouseDown.x;
+    const dy = e.clientY - lightboxMouseDown.y;
+    if (lightboxScale > 1) {
+      lightboxTranslateX = lightboxMouseDown.tx + dx;
+      lightboxTranslateY = lightboxMouseDown.ty + dy;
+      applyLightboxTransform();
+      return;
+    }
+    img.style.transform = `translate(${dx}px,0) scale(1)`;
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (!lightboxMouseDown || lb.style.display !== 'flex') return;
+    const dx = e.clientX - lightboxMouseDown.x;
+    if (lightboxScale === 1 && Math.abs(dx) > 60 && lightboxItems.length > 1) {
+      navigateLightbox(dx < 0 ? 1 : -1);
+    } else {
+      applyLightboxTransform();
+    }
+    lightboxMouseDown = null;
+  });
+
+  img.addEventListener('touchstart', (e) => {
+    if (lb.style.display !== 'flex') return;
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lightboxPinchDist = Math.hypot(dx, dy);
+      return;
+    }
+    if (e.touches.length === 1) {
+      lightboxTouchStart = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        tx: lightboxTranslateX,
+        ty: lightboxTranslateY
+      };
+    }
+  }, { passive: true });
+
+  img.addEventListener('touchmove', (e) => {
+    if (lb.style.display !== 'flex') return;
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      if (lightboxPinchDist > 0) {
+        const ratio = dist / lightboxPinchDist;
+        lightboxScale = Math.max(1, Math.min(4, lightboxScale * ratio));
+        applyLightboxTransform();
+      }
+      lightboxPinchDist = dist;
+      return;
+    }
+    if (!lightboxTouchStart || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - lightboxTouchStart.x;
+    const dy = e.touches[0].clientY - lightboxTouchStart.y;
+    if (lightboxScale > 1) {
+      lightboxTranslateX = lightboxTouchStart.tx + dx;
+      lightboxTranslateY = lightboxTouchStart.ty + dy;
+      applyLightboxTransform();
+      return;
+    }
+    img.style.transform = `translate(${dx}px,0) scale(1)`;
+  }, { passive: false });
+
+  img.addEventListener('touchend', (e) => {
+    if (lb.style.display !== 'flex') return;
+    if (e.touches.length === 0 && lightboxTouchStart) {
+      const dx = (e.changedTouches[0]?.clientX || lightboxTouchStart.x) - lightboxTouchStart.x;
+      if (lightboxScale === 1 && Math.abs(dx) > 48 && lightboxItems.length > 1) {
+        navigateLightbox(dx < 0 ? 1 : -1);
+      } else {
+        applyLightboxTransform();
+      }
+    }
+    lightboxTouchStart = null;
+    lightboxPinchDist = 0;
+  });
 }
 
 // ==================== WEBRTC CALLS ====================
