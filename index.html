@@ -4428,7 +4428,7 @@ function appendAlbum(msgs, area) {
   const contact = contacts.find(c => normUid(c.uuid) === activeChat) || {};
 
   const wrapper = document.createElement('div');
-  wrapper.className = 'msg' + (isOut ? ' out' : '');
+  wrapper.className = 'msg ' + (isOut ? 'out' : 'in');
   wrapper.dataset.ts = first.ts;
 
   if (!isOut) {
@@ -4438,47 +4438,62 @@ function appendAlbum(msgs, area) {
     wrapper.appendChild(mav);
   }
 
-  const stack = document.createElement('div');
-  stack.className = 'msg-stack';
+  // Create bubble (same as renderMediaAlbum)
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
 
   const count = msgs.length;
-  const gridClass = count === 2 ? 'album-2' : count === 3 ? 'album-3' : count === 4 ? 'album-4' : 'album-many';
-  const grid = document.createElement('div');
-  grid.className = 'album-grid ' + gridClass;
+  const mediaGroup = document.createElement('div');
+  mediaGroup.className = 'media-group';
+  if (count === 1) mediaGroup.classList.add('count-1');
+  else if (count === 2) mediaGroup.classList.add('count-2');
+  else if (count === 3) mediaGroup.classList.add('count-3');
+  else if (count === 4) mediaGroup.classList.add('count-4');
+  else mediaGroup.classList.add('count-5plus');
 
   const show = Math.min(count, 9);
   msgs.slice(0, show).forEach((m, idx) => {
-    const item = document.createElement('div');
-    item.className = 'album-item';
-    if (idx === show - 1 && count > show) {
-      item.classList.add('album-more');
-      item.textContent = '+' + (count - show + 1);
-    } else {
-      if (m.type === 'image') {
-        const img = document.createElement('img');
-        img.src = m.content;
-        img.loading = 'lazy';
-        img.onclick = () => openLightbox(m.content);
-        item.appendChild(img);
-      } else if (m.type === 'video') {
-        const video = document.createElement('video');
-        video.src = m.content;
-        video.className = 'msg-video';
-        video.controls = true;
-        item.appendChild(video);
+    if (idx >= 4 && count > 4) {
+      if (idx === 4) {
+        const more = document.createElement('div');
+        more.className = 'media-more';
+        more.textContent = '+' + (count - 4);
+        mediaGroup.appendChild(more);
       }
+      return;
     }
-    grid.appendChild(item);
+
+    if (m.type === 'image') {
+      const img = document.createElement('img');
+      img.className = 'msg-img';
+      img.src = m.content;
+      img.onclick = () => openLightbox(m.content);
+      img.alt = 'Изображение';
+      mediaGroup.appendChild(img);
+    } else if (m.type === 'video') {
+      const video = document.createElement('video');
+      video.className = 'msg-video';
+      video.src = m.content;
+      video.controls = true;
+      mediaGroup.appendChild(video);
+    }
   });
 
+  bubble.appendChild(mediaGroup);
+
+  // Add timestamp
   const mt = document.createElement('div');
   mt.className = 'mtime';
-  mt.textContent = fmtTime(first.ts);
+  let timeText = fmtTime(first.ts);
+  if (first.edited) timeText += ' (изменено)';
+  mt.textContent = timeText;
+  if (first.e2eeDecrypted || (first.payload && first.iv && first.signature)) {
+    mt.innerHTML = '🔒 ' + mt.textContent;
+  }
   if (isOut) mt.innerHTML += ' <span class="check">✓</span>';
 
-  stack.appendChild(grid);
-  stack.appendChild(mt);
-  wrapper.appendChild(stack);
+  bubble.appendChild(mt);
+  wrapper.appendChild(bubble);
   wrapper.oncontextmenu = (ev) => { showMessageCtxMenu(ev, first); };
   area.appendChild(wrapper);
 }
