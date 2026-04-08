@@ -3240,8 +3240,9 @@ async function handleIncomingMessage(msg) {
   const here = activeChat ? normUid(activeChat) : '';
   const ch = normUid(chatId);
   const sameChat = !!(here && here === ch);
-  console.log('📩 handleIncomingMessage:', { from, to, type, chatId, activeChat: here, sameChat });
+  console.log('📩 handleIncomingMessage:', { from, to, type, chatId, activeChat: here, sameChat, forwardFrom: msg.forwardFrom });
   const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom};
+  console.log('💾 Saving localMsg with forwardFrom:', localMsg.forwardFrom);
   await dbPut('messages', localMsg);
   console.log('💾 Message saved to DB, chatId:', chatId);
 
@@ -4732,12 +4733,16 @@ function appendMessage(msg){
 
   // FIX-FORWARD: render "Переслано от" header if message was forwarded
   const forwardInfo = msg.forwardedFrom || msg.forwardFrom;
+  console.log('🔍 Checking forwardInfo:', { forwardInfo, forwardFrom: msg.forwardFrom, forwardedFrom: msg.forwardedFrom });
   if (forwardInfo) {
     const fwd = document.createElement('div');
     fwd.className = 'fwd-header';
     const forwardName = forwardInfo.name || (forwardInfo.uuid ? String(forwardInfo.uuid).slice(0, 8) : '?');
     fwd.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 004 4h12"/></svg> Переслано от: ${escapeHtml(forwardName)}`;
     bubble.appendChild(fwd);
+    console.log('✅ Forward header rendered for:', forwardName);
+  } else {
+    console.log('❌ No forwardInfo, forwardFrom is:', msg.forwardFrom);
   }
 
   if(msg.type==='text'){
