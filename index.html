@@ -40,6 +40,7 @@
   --gap-md:16px;
   --gap-lg:24px;
   --chat-thread-bg:var(--bg0);
+  --out-time-color:rgba(255,255,255,.45);
   --grad-welcome:radial-gradient(ellipse 90% 70% at 50% 20%, rgba(79,142,247,0.12), transparent 55%), linear-gradient(165deg, #0c0f14 0%, #080a0e 100%);
   --grad-sidebar:radial-gradient(120% 80% at 100% 0%, rgba(79,142,247,0.08), transparent 50%), linear-gradient(180deg, #111318 0%, #0d1016 100%);
   --grad-chat-thread:radial-gradient(ellipse 100% 60% at 50% 0%, rgba(79,142,247,0.06), transparent 45%), linear-gradient(180deg, #0a0c10 0%, #080a0d 55%, #0a0b0d 100%);
@@ -139,7 +140,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .msg .bubble{background:var(--bg3);border-radius:var(--r2) var(--r2) var(--r2) 4px;padding:10px 14px;font-size:13px;line-height:1.55;position:relative;border:1px solid var(--border);overflow-wrap:anywhere;word-break:break-word;min-width:min(100%,140px);flex-shrink:0;max-width:100%}
 .msg.out .bubble{background:linear-gradient(135deg,#1d3a6e,#1a3060);border-color:#2a4a8a;border-radius:var(--r2) var(--r2) 4px var(--r2);}
 .msg .bubble .mtime{font-size:10px;color:var(--text3);margin-top:4px;display:flex;align-items:center;gap:4px;}
-.msg.out .bubble .mtime{justify-content:flex-end;color:rgba(255,255,255,.4)}
+.msg.out .bubble .mtime{justify-content:flex-end;color:var(--out-time-color)}
 .check{color:var(--accent);font-size:12px}
 .check.delivered{color:var(--green)}
 .msg .mavatar{width:28px;height:28px;border-radius:50%;background:var(--bg4);flex-shrink:0;overflow:hidden}
@@ -181,8 +182,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 @keyframes none{}
 
 /* RIGHT PANEL */
-#infoPanel{width:var(--info-w);min-width:200px;max-width:min(520px,50vw);flex-shrink:0;background:var(--bg1);border-left:1px solid var(--border);display:flex;flex-direction:column;height:100%;overflow:hidden;min-height:0;margin:0;padding:0}
-#infoPanel.info-hidden{display:none!important}
+#infoPanel{width:var(--info-w);min-width:200px;max-width:min(520px,50vw);flex-shrink:0;background:var(--bg1);border-left:1px solid var(--border);display:flex;flex-direction:column;height:100%;overflow:hidden;min-height:0;margin:0;padding:0;opacity:1;transform:translateX(0);transition:transform .24s ease,width .24s ease,min-width .24s ease,max-width .24s ease,opacity .2s ease,border-color .2s ease}
 #infoPanel.info-avatar-only{width:56px!important;min-width:56px!important;max-width:56px!important}
 #infoPanel.info-avatar-only .info-top{padding:8px!important}
 #infoPanel.info-avatar-only .big-av{width:40px!important;height:40px!important;margin:0!important}
@@ -483,6 +483,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 }
 :root[data-theme="light"] .msg .bubble{background:#ffffff;border-color:#dde2ec;color:#1a1d26}
 :root[data-theme="light"] .msg.out .bubble{background:linear-gradient(135deg,#ddeeff,#cce5ff);border-color:#99ccff;color:#0a1a2f}
+:root[data-theme="light"]{--out-time-color:rgba(10,26,47,.72)}
 :root[data-theme="light"] #chatHeader{background:#ffffff}
 :root[data-theme="light"] #sidebar{background:#f8f9fb}
 :root[data-theme="light"] .sidebar-top{background:#f8f9fb}
@@ -989,15 +990,17 @@ body.ctx-open::before{
     margin:8px 6px;
     height:calc(100dvh - 16px);
   }
-  #chatHeader{
-    border-radius:16px 16px 0 0;
-    overflow:hidden;
-    margin:8px 8px 0;
-  }
-  #inputArea,#attachQueue,#voiceRecordBar,#replyPreview{
-    border-radius:16px;
-    overflow:hidden;
-    margin:0 8px 8px;
+  #chatHeader{border-radius:0;overflow:hidden;margin:0}
+  #inputArea,#attachQueue,#voiceRecordBar,#replyPreview{border-radius:0;overflow:hidden;margin:0}
+  #messagesArea{margin:0}
+  #infoPanel.info-hidden{
+    width:0!important;
+    min-width:0!important;
+    max-width:0!important;
+    opacity:0;
+    transform:translateX(24px);
+    pointer-events:none;
+    border-left-color:transparent;
   }
   .sidebar-top .logo#sidebarLogoBtn{cursor:pointer}
   .sidebar-top .logo#sidebarLogoBtn:hover{opacity:0.88}
@@ -4191,6 +4194,7 @@ function showChatCtxMenu(e,chatId){
   const isPinned = getPinnedSet().has(chatId);
   menu.innerHTML=`
     <div class="ctx-item" data-action="toggle-pin">📌 ${isPinned ? 'Открепить' : 'Закрепить'}</div>
+    <div class="ctx-item" data-action="rename-chat">✏️ Изменить имя</div>
     <div class="ctx-item" data-action="delete-local">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
       Удалить чат у меня
@@ -4243,6 +4247,7 @@ document.addEventListener('click',e=>{
       const chatId=menu.dataset.chatId;
       if(action.dataset.action==='delete-local') deleteChatLocal(chatId);
       if(action.dataset.action==='toggle-pin' && chatId) togglePinChat(chatId);
+      if(action.dataset.action==='rename-chat' && chatId) renameContactPrompt(chatId);
     }
     menu.style.display='none';
     document.body.classList.remove('ctx-open');
@@ -4609,6 +4614,9 @@ async function sendEditMessage(newContent) {
     await dbPut('messages', msg);
   }
   
+  editingMessageTs = null;
+  const input = document.getElementById('msgInput');
+  if (input) input.value = '';
   hideEditBar();
   await loadMessages();
 }
@@ -4896,10 +4904,29 @@ function appendAlbum(msgs, area) {
 // Global variable to track pending media group
 let pendingMediaGroup = [];
 let mediaGroupTimer = null;
+let pendingMediaChatId = '';
+let pendingMediaFrom = '';
+let pendingMediaLastTs = 0;
 
 // ==================== MEDIA ALBUM GROUPING ====================
 // Collects consecutive media messages and renders them as an album
 async function queueMediaForAlbum(msg) {
+  const mediaChat = normUid(msg.chatId || activeChat || '');
+  const mediaFrom = normUid(msg.from || '');
+  const mediaTs = Number(msg.ts || Date.now());
+  const canBatch =
+    pendingMediaGroup.length &&
+    pendingMediaChatId === mediaChat &&
+    pendingMediaFrom === mediaFrom &&
+    Math.abs(mediaTs - pendingMediaLastTs) <= 60000;
+  if (pendingMediaGroup.length && !canBatch) {
+    renderMediaAlbum();
+  }
+  if (!pendingMediaGroup.length) {
+    pendingMediaChatId = mediaChat;
+    pendingMediaFrom = mediaFrom;
+  }
+  pendingMediaLastTs = mediaTs;
   // Add to pending group
   pendingMediaGroup.push(msg);
   
@@ -5017,6 +5044,9 @@ function renderMediaAlbum() {
   // Clear group
   pendingMediaGroup = [];
   mediaGroupTimer = null;
+  pendingMediaChatId = '';
+  pendingMediaFrom = '';
+  pendingMediaLastTs = 0;
   
   // Scroll to bottom
   scrollBottom();
@@ -5046,9 +5076,11 @@ function appendMessage(msg){
   // Check for real-time media grouping
   const isMedia = msg.type === 'image' || msg.type === 'video';
   if (isMedia) {
-    // Use appendAlbum for synchronous rendering (preserves order during load)
-    appendAlbum([msg], area);
+    queueMediaForAlbum(msg);
     return;
+  }
+  if (pendingMediaGroup.length) {
+    renderMediaAlbum();
   }
 
   // Regular message rendering (existing code continues...)
@@ -5314,6 +5346,8 @@ async function updateMessageReactionRow(ts) {
 }
 
 function makeVoicePlayer(dataUrl){
+  const voiceMeta = parseVoiceContent(dataUrl);
+  const resolvedDataUrl = voiceMeta.data;
   const row=document.createElement('div');
   row.className='msg-voice';
   const btn=document.createElement('button');
@@ -5326,11 +5360,13 @@ function makeVoicePlayer(dataUrl){
   bar.appendChild(fill);
   const dur=document.createElement('div');
   dur.className='voice-dur';
-  dur.textContent='0:00';
+  dur.textContent = Number.isFinite(voiceMeta.duration) && voiceMeta.duration > 0
+    ? Math.floor(voiceMeta.duration / 60) + ':' + String(Math.floor(voiceMeta.duration) % 60).padStart(2,'0')
+    : '0:00';
 
   let audio=null,playing=false,timer=null,blobUrl=null;
   try {
-    const response = fetch(dataUrl);
+    const response = fetch(resolvedDataUrl);
     response.then(async (res) => {
       const blob = await res.blob();
       blobUrl = URL.createObjectURL(blob);
@@ -5340,13 +5376,19 @@ function makeVoicePlayer(dataUrl){
       }
     }).catch(() => {});
   } catch (_) {}
+  const applyTotalDuration = () => {
+    if (!audio || !audio.duration || Number.isNaN(audio.duration)) return;
+    const total = Math.floor(audio.duration);
+    dur.textContent = Math.floor(total / 60) + ':' + String(total % 60).padStart(2,'0');
+  };
   btn.onclick=async ()=>{
     if(!audio){
       audio=new Audio();
       audio.preload='metadata';
       audio.playsInline=true;
       if(blobUrl) audio.src=blobUrl;
-      else audio.src=dataUrl;
+      else audio.src=resolvedDataUrl;
+      audio.onloadedmetadata = applyTotalDuration;
 
       // FIX #1: Освобождаем blob URL после окончания воспроизведения
       audio.onended=()=>{
@@ -5393,6 +5435,28 @@ function makeVoicePlayer(dataUrl){
   row.appendChild(bar);
   row.appendChild(dur);
   return row;
+}
+
+function parseVoiceContent(raw) {
+  if (raw && typeof raw === 'object') {
+    const data = typeof raw.data === 'string' ? raw.data : '';
+    const duration = Number(raw.duration);
+    return { data, duration: Number.isFinite(duration) ? duration : null };
+  }
+  if (typeof raw === 'string') {
+    if (raw.startsWith('data:audio/')) {
+      return { data: raw, duration: null };
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.data === 'string') {
+        const duration = Number(parsed.duration);
+        return { data: parsed.data, duration: Number.isFinite(duration) ? duration : null };
+      }
+    } catch (_) {}
+    return { data: raw, duration: null };
+  }
+  return { data: '', duration: null };
 }
 
 function scrollBottom(){
@@ -6437,10 +6501,24 @@ async function saveSettings(){
 
 // ==================== EXPORT/IMPORT ====================
 async function exportData(){
+  const yieldToMain = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const toBase64Chunked = (uint8) => {
+    const CHUNK = 0x8000;
+    let out = '';
+    for (let i = 0; i < uint8.length; i += CHUNK) {
+      const part = uint8.subarray(i, i + CHUNK);
+      out += btoa(String.fromCharCode.apply(null, part));
+    }
+    return out;
+  };
+
+  await yieldToMain();
   const contacts_=await dbGetAll('contacts');
   // FIX: Filter out metadata
   const filteredContacts = contacts_.filter(c => c.uuid !== '_metadata');
+  await yieldToMain();
   const messages=await dbGetAll('messages');
+  await yieldToMain();
   const data={profile:myProfile, contacts:filteredContacts, messages, exportedAt:Date.now()};
   const json=JSON.stringify(data);
   const pass=prompt('Пароль для шифрования резервной копии:');
@@ -6449,8 +6527,12 @@ async function exportData(){
   const enc=new TextEncoder();
   const keyMat=await crypto.subtle.importKey('raw',enc.encode(pass.padEnd(32,'x').slice(0,32)),{name:'AES-GCM'},false,['encrypt']);
   const iv=crypto.getRandomValues(new Uint8Array(12));
+  await yieldToMain();
   const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},keyMat,enc.encode(json));
-  const result={iv:btoa(String.fromCharCode(...iv)),data:btoa(String.fromCharCode(...new Uint8Array(ct)))};
+  const result={
+    iv:toBase64Chunked(iv),
+    data:toBase64Chunked(new Uint8Array(ct))
+  };
   const blob=new Blob([JSON.stringify(result)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -6462,6 +6544,15 @@ async function exportData(){
 }
 
 async function importData(){
+  const fromBase64Chunked = (base64) => {
+    const sliceSize = 0x8000;
+    const bytes = [];
+    for (let i = 0; i < base64.length; i += sliceSize) {
+      const chunk = atob(base64.slice(i, i + sliceSize));
+      for (let j = 0; j < chunk.length; j++) bytes.push(chunk.charCodeAt(j));
+    }
+    return Uint8Array.from(bytes);
+  };
   const f=document.getElementById('importFile').files[0];
   if(!f) return;
   const text=await f.text();
@@ -6472,8 +6563,8 @@ async function importData(){
   try{
     const enc=new TextEncoder();
     const keyMat=await crypto.subtle.importKey('raw',enc.encode(pass.padEnd(32,'x').slice(0,32)),{name:'AES-GCM'},false,['decrypt']);
-    const ivArr=Uint8Array.from(atob(iv),c=>c.charCodeAt(0));
-    const ctArr=Uint8Array.from(atob(data),c=>c.charCodeAt(0));
+    const ivArr=fromBase64Chunked(iv);
+    const ctArr=fromBase64Chunked(data);
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:ivArr},keyMat,ctArr);
     const json=JSON.parse(new TextDecoder().decode(pt));
     // FIX: Ensure all imported contacts have type='friend' and are sanitized
@@ -6703,7 +6794,8 @@ async function toggleRecord() {
       if (!vs || vs.cancelled) return;
       const blob = new Blob(vs.chunks, { type: mimeType || 'audio/webm' });
       const b64 = await fileToBase64(blob);
-      await sendMessage('voice', b64);
+      const recDuration = Math.max(1, Math.floor((Date.now() - started - (vs.pausedMs || 0)) / 1000));
+      await sendMessage('voice', { data: b64, duration: recDuration });
     };
     recorder.start(400);
     document.getElementById('voiceRecordBar')?.classList.add('active');
