@@ -895,11 +895,13 @@ body.ctx-open::before{
     position:fixed;left:10px;right:10px;bottom:calc(8px + env(safe-area-inset-bottom));height:66px;z-index:420;
     max-width:min(100vw - 20px,520px);margin-left:auto;margin-right:auto;
     border-radius:24px;
-    background:rgba(30,34,44,0.65);
-    backdrop-filter:blur(20px) saturate(1.5);
-    -webkit-backdrop-filter:blur(20px) saturate(1.5);
-    border:1px solid rgba(255,255,255,0.08);
-    box-shadow:0 10px 36px rgba(0,0,0,0.35);
+    background:linear-gradient(180deg, rgba(40,44,56,0.72) 0%, rgba(28,32,40,0.68) 100%);
+    backdrop-filter:blur(24px) saturate(1.6);
+    -webkit-backdrop-filter:blur(24px) saturate(1.6);
+    border:1px solid rgba(255,255,255,0.12);
+    box-shadow:
+      0 8px 32px rgba(0,0,0,0.4),
+      inset 0 1px 0 rgba(255,255,255,0.08);
     display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px;gap:4px;
     transition:opacity var(--motion-fast) ease, transform var(--motion-med) var(--spring);
   }
@@ -951,15 +953,38 @@ body.ctx-open::before{
 }
 :root[data-theme="light"] #mainChat{background:transparent!important}
 :root[data-theme="light"] .mobile-bottom-nav{
-  background:rgba(255,255,255,0.45);
-  border:1px solid rgba(255,255,255,0.4);
-  backdrop-filter:blur(25px) saturate(1.8);
-  -webkit-backdrop-filter:blur(25px) saturate(1.8);
-  box-shadow:0 12px 40px rgba(15,23,42,0.12);
+  background:linear-gradient(180deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.52) 100%);
+  border:1px solid rgba(255,255,255,0.55);
+  backdrop-filter:blur(28px) saturate(1.7);
+  -webkit-backdrop-filter:blur(28px) saturate(1.7);
+  box-shadow:
+    0 8px 32px rgba(15,23,42,0.12),
+    0 2px 8px rgba(15,23,42,0.06),
+    inset 0 1px 0 rgba(255,255,255,0.6);
+}
+:root[data-theme="dark"] .mobile-bottom-nav{
+  background:linear-gradient(180deg, rgba(48,52,64,0.78) 0%, rgba(32,36,46,0.72) 100%);
+  border:1px solid rgba(255,255,255,0.14);
+  backdrop-filter:blur(28px) saturate(1.7);
+  -webkit-backdrop-filter:blur(28px) saturate(1.7);
+  box-shadow:
+    0 8px 32px rgba(0,0,0,0.45),
+    0 2px 8px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.12);
 }
 :root[data-theme="light"] .mobile-nav-item{color:#0f172a}
-:root[data-theme="light"] .mobile-nav-item.active{color:var(--accent);background:transparent}
+:root[data-theme="light"] .mobile-nav-item.active{
+  color:var(--accent);
+  background:linear-gradient(180deg, rgba(79,142,247,0.18) 0%, rgba(79,142,247,0.08) 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.4), 0 2px 8px rgba(79,142,247,0.15);
+  border:1px solid rgba(79,142,247,0.25);
+}
 :root[data-theme="light"] .mobile-nav-item .mobile-nav-icon{filter:none}
+:root[data-theme="dark"] .mobile-nav-item.active{
+  background:linear-gradient(180deg, rgba(79,142,247,0.22) 0%, rgba(79,142,247,0.10) 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.12), 0 2px 8px rgba(79,142,247,0.2);
+  border:1px solid rgba(79,142,247,0.3);
+}
 :root[data-theme="light"] #infoPanel{
   background:var(--glass-bg)!important;
   backdrop-filter:blur(16px);
