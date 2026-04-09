@@ -8,7 +8,7 @@
 (() => {
   try {
     const savedTheme = localStorage.getItem('cipherTheme') || 'dark';
-    const color = savedTheme === 'light' ? '#f5f5f5' : '#0a0b0d';
+    const color = savedTheme === 'light' ? '#e6e6e6' : '#0a0b0d';
     document.documentElement.dataset.theme = savedTheme;
     document.documentElement.style.backgroundColor = color;
     const meta = document.querySelector('meta[name="theme-color"]');
@@ -61,7 +61,7 @@
 }
 html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg0);background-color:var(--bg0);color:var(--text);font-family:var(--font)}
 html[data-theme="dark"],html[data-theme="dark"] body{background-color:#0a0b0d}
-html[data-theme="light"],html[data-theme="light"] body{background-color:#f5f5f5}
+html[data-theme="light"],html[data-theme="light"] body{background-color:#e6e6e6}
 :root.theme-sync *{transition:none!important;animation:none!important}
 button{font-family:var(--font);cursor:pointer;border:none;background:none}
 input,textarea{font-family:var(--font);background:none;border:none;outline:none;color:var(--text)}
@@ -379,7 +379,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 
 /* ===== LIGHT THEME ===== */
 :root[data-theme="light"]{
-  --bg0:#f0f2f5;
+  --bg0:#e6e6e6;
   --bg1:#ffffff;
   --bg2:#f8f9fb;
   --bg3:#eef0f4;
@@ -413,12 +413,10 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 :root[data-theme="light"] .reg-box{background:linear-gradient(135deg,#ffffff,#f5f7fa)}
 :root[data-theme="light"] .modal{background:#ffffff}
 :root[data-theme="light"] .modal input{background:#f5f7fa;color:#1a1d26}
-:root[data-theme="light"] #ctxMenu{background:#ffffff}
 :root[data-theme="light"] .ctx-item:hover{background:#f0f2f5}
 :root[data-theme="light"] #toast{background:#333;color:#fff}
 :root[data-theme="light"] .chat-item:hover{background:#eef0f4}
 :root[data-theme="light"] .chat-item.active{background:#e2e8f8}
-:root[data-theme="light"] #infoPanel{background:#ffffff}
 :root[data-theme="light"] .info-top{background:linear-gradient(135deg,#f0f4ff,#f8f9fb)}
 :root[data-theme="light"] .tab-content{background:#ffffff}
 :root[data-theme="light"] .date-divider{color:#8a97ab}
@@ -772,8 +770,8 @@ html,body{
 #ctxMenu{
   background:rgba(21,25,33,.88);
   border:1px solid var(--border-color);
-  backdrop-filter:blur(14px);
-  -webkit-backdrop-filter:blur(14px);
+  backdrop-filter:blur(15px);
+  -webkit-backdrop-filter:blur(15px);
 }
 body.ctx-open::before{
   content:'';
@@ -803,6 +801,7 @@ body.ctx-open::before{
     grid-template-columns:minmax(0,1fr);
     position:relative;
     overflow:hidden;
+    background:var(--bg0);
   }
   #mainChat{
     grid-column:1/-1;
@@ -820,7 +819,7 @@ body.ctx-open::before{
     z-index:410;
     transform:translateX(-100%)!important;
     transition:transform var(--motion-med) var(--spring);
-    box-shadow:var(--shadow-soft);
+    box-shadow:none;
   }
   #app:not(.app-chat-open) #sidebar,
   #app.app-chat-open #sidebar{
@@ -844,7 +843,7 @@ body.ctx-open::before{
   #app:not(.app-chat-open) #mobileBackBtn{display:none!important}
   #mobileInfoBtn{display:none!important}
   #toggleInfoPanelBtn{display:flex!important}
-  #messagesArea{padding:10px min(10px,3vw) calc(84px + env(safe-area-inset-bottom));background:var(--chat-thread-bg)}
+  #messagesArea{padding:10px min(10px,3vw) calc(92px + env(safe-area-inset-bottom));background:var(--chat-thread-bg)}
 
   #infoPanel{
     position:fixed;
@@ -891,11 +890,11 @@ body.ctx-open::before{
     to{opacity:1;transform:translateY(0)}
   }
   #voiceRecordBar{flex-wrap:wrap;row-gap:8px}
-  #emojiPicker{bottom:64px;right:8px;left:8px;max-width:none}
+  #emojiPicker{bottom:calc(88px + env(safe-area-inset-bottom));right:8px;left:8px;max-width:none}
   .mobile-bottom-nav{
-    position:fixed;left:10px;right:10px;bottom:calc(8px + env(safe-area-inset-bottom));height:66px;z-index:420;
-    border-radius:24px;background:rgba(20,24,34,.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-    border:1px solid rgba(255,255,255,.12);display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px;gap:4px;
+    position:fixed;left:0;right:0;bottom:0;width:100%;max-width:100vw;height:auto;min-height:66px;z-index:420;
+    border-radius:20px 20px 0 0;background:rgba(20,24,34,.72);backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px);
+    border:none;box-shadow:none;display:grid;grid-template-columns:repeat(4,1fr);padding:10px 14px calc(10px + env(safe-area-inset-bottom));gap:6px;
     transition:opacity var(--motion-fast) ease, transform var(--motion-med) var(--spring);
   }
   .mobile-nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--text2);border-radius:16px}
@@ -905,7 +904,7 @@ body.ctx-open::before{
   .mobile-nav-item.plus .mobile-nav-icon{font-size:22px}
   .mobile-sheet-view{
     position:fixed;inset:0;background:var(--bg1);z-index:410;display:none;flex-direction:column;
-    padding-top:max(12px, env(safe-area-inset-top));padding-bottom:calc(84px + env(safe-area-inset-bottom));
+    padding-top:max(12px, env(safe-area-inset-top));padding-bottom:calc(92px + env(safe-area-inset-bottom));
     overflow:hidden;
     animation:mobileFadeIn var(--motion-fast) ease;
   }
@@ -935,14 +934,6 @@ body.ctx-open::before{
     radial-gradient(980px 580px at 110% 110%, rgba(151,71,255,.10), transparent 58%),
     linear-gradient(180deg, #eef2f8 0%, #e9eef6 100%);
 }
-:root[data-theme="light"] #ctxMenu{
-  background:rgba(255,255,255,.88);
-}
-:root[data-theme="light"] #infoPanel{
-  background:rgba(255,255,255,.7)!important;
-  backdrop-filter:blur(14px);
-  -webkit-backdrop-filter:blur(14px);
-}
 :root[data-theme="light"] body.ctx-open::before{
   background:rgba(14,24,35,.12);
 }
@@ -954,31 +945,32 @@ body.ctx-open::before{
 }
 :root[data-theme="light"] #mainChat{background:transparent!important}
 :root[data-theme="light"] .mobile-bottom-nav{
-  background:rgba(245,245,245,.7);
-  border:1px solid rgba(30,41,59,.14);
+  background:rgba(230,230,230,.7);
+  border:none;
   backdrop-filter:blur(15px);
   -webkit-backdrop-filter:blur(15px);
   box-shadow:none!important;
 }
-:root[data-theme="light"] .mobile-nav-item{color:#111827}
-:root[data-theme="light"] .mobile-nav-item.active{color:var(--accent);background:rgba(58,123,232,.14)}
+:root[data-theme="light"] .mobile-nav-item{color:#0f172a}
+:root[data-theme="light"] .mobile-nav-item.active{color:var(--accent);background:rgba(58,123,232,.18)}
 :root[data-theme="light"] .mobile-nav-item .mobile-nav-icon{filter:none}
 :root[data-theme="light"] #infoPanel{
-  background:rgba(235,235,235,.7)!important;
+  background:rgba(230,230,230,.7)!important;
   backdrop-filter:blur(15px);
   -webkit-backdrop-filter:blur(15px);
 }
 :root[data-theme="light"] #ctxMenu{
-  background:rgba(235,235,235,.78)!important;
+  background:rgba(230,230,230,.78)!important;
   backdrop-filter:blur(15px);
   -webkit-backdrop-filter:blur(15px);
 }
 :root[data-theme="light"] .modal,
 :root[data-theme="light"] .mobile-sheet-view{
-  background:rgba(245,245,245,.78)!important;
+  background:rgba(230,230,230,.78)!important;
   backdrop-filter:blur(15px);
   -webkit-backdrop-filter:blur(15px);
 }
+:root[data-theme="light"] .tab-content{background:rgba(230,230,230,.55)}
 @media (max-width:900px){
   #ctxMenu{
     min-width:min(86vw,320px);
@@ -1202,7 +1194,7 @@ body.use-gradients{
       </div>
       <div id="emojiPicker" aria-hidden="true"></div>
       <!-- FIX (3.2): Scroll-down hint — shown when user scrolled up and new message arrives -->
-      <div id="scrollDownHint" style="display:none;position:absolute;bottom:80px;right:20px;z-index:10">
+      <div id="scrollDownHint" style="display:none;position:absolute;bottom:96px;right:20px;z-index:10">
         <button onclick="scrollBottom();this.parentElement.style.display='none'"
           style="background:var(--accent);color:#fff;border:none;border-radius:20px;padding:8px 16px;cursor:pointer;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.3)">
           ↓ Новое сообщение
@@ -4318,7 +4310,7 @@ function bindChatItemLongPress(item, chatId) {
   let moved = false;
   let sx = 0;
   let sy = 0;
-  let longPressTriggered = false;
+  let suppressNextClick = false;
   let touchX = 0;
   let touchY = 0;
   const start = (x, y) => {
@@ -4327,13 +4319,13 @@ function bindChatItemLongPress(item, chatId) {
     touchX = x;
     touchY = y;
     moved = false;
-    longPressTriggered = false;
+    suppressNextClick = false;
     clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
-      longPressTriggered = true;
-      showChatCtxMenuAtPoint(touchX, touchY, chatId);
-    }, 550);
+      suppressNextClick = true;
+      showChatCtxMenuAtPoint(touchX, touchY, chatId, item);
+    }, 480);
   };
   const cancel = () => {
     clearTimeout(timer);
@@ -4347,20 +4339,26 @@ function bindChatItemLongPress(item, chatId) {
   item.addEventListener('touchmove', (e) => {
     const t = e.touches?.[0];
     if (!t) return;
+    touchX = t.clientX;
+    touchY = t.clientY;
     if (Math.abs(t.clientX - sx) > 12 || Math.abs(t.clientY - sy) > 12) {
       moved = true;
       cancel();
     }
   }, { passive: true });
-  item.addEventListener('touchend', () => {
-    if (!moved) cancel();
-  }, { passive: true });
-  item.addEventListener('touchcancel', cancel, { passive: true });
-  item.addEventListener('click', (e) => {
-    if (longPressTriggered) {
+  item.addEventListener('touchend', (e) => {
+    if (suppressNextClick) {
       e.preventDefault();
       e.stopPropagation();
-      longPressTriggered = false;
+    }
+    if (!moved) cancel();
+  }, { passive: false });
+  item.addEventListener('touchcancel', cancel, { passive: true });
+  item.addEventListener('click', (e) => {
+    if (suppressNextClick) {
+      e.preventDefault();
+      e.stopPropagation();
+      suppressNextClick = false;
     }
   }, true);
 }
@@ -4392,9 +4390,9 @@ function showChatCtxMenu(e,chatId){
   menu.innerHTML=`
     <div class="ctx-item" data-action="toggle-pin">📌 ${isPinned ? 'Открепить' : 'Закрепить'}</div>
     <div class="ctx-item" data-action="rename-chat">✏️ Изменить имя</div>
-    <div class="ctx-item" data-action="delete-local">
+    <div class="ctx-item danger" data-action="delete-local">
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-      Удалить чат у меня
+      Удалить
     </div>
   `;
   menu.style.display='block';
@@ -4403,24 +4401,20 @@ function showChatCtxMenu(e,chatId){
   menu.dataset.chatId=chatId;
 }
 
-function showChatCtxMenuAtPoint(clientX, clientY, chatId) {
-  const menu = document.getElementById('ctxMenu');
-  if (!menu) return;
-  const isMobile = window.matchMedia('(max-width:900px)').matches;
-  if (isMobile) {
-    showChatCtxMenu({
-      preventDefault: () => {},
-      stopPropagation: () => {},
-      clientX: Math.round(window.innerWidth / 2),
-      clientY: Math.round(window.innerHeight / 2)
-    }, chatId);
-    return;
+function showChatCtxMenuAtPoint(clientX, clientY, chatId, anchorEl) {
+  let x = clientX;
+  let y = clientY;
+  if (window.matchMedia('(max-width:900px)').matches && anchorEl && anchorEl.getBoundingClientRect) {
+    const r = anchorEl.getBoundingClientRect();
+    const pad = 6;
+    x = Math.min(r.right - pad, Math.max(r.left + pad, clientX));
+    y = Math.min(r.bottom - pad, Math.max(r.top + pad, clientY));
   }
   showChatCtxMenu({
     preventDefault: () => {},
     stopPropagation: () => {},
-    clientX,
-    clientY
+    clientX: x,
+    clientY: y
   }, chatId);
 }
 
@@ -6596,7 +6590,7 @@ function setupEvents(){
   if (themeBtn) {
     const themeColorMeta = document.querySelector('meta[name="theme-color"]');
     const syncSystemBars = (t) => {
-      const color = t === 'light' ? '#f5f5f5' : '#0a0b0d';
+      const color = t === 'light' ? '#e6e6e6' : '#0a0b0d';
       if (themeColorMeta) themeColorMeta.setAttribute('content', color);
       document.documentElement.style.backgroundColor = color;
       if (document.body) document.body.style.backgroundColor = color;
