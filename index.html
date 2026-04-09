@@ -98,7 +98,6 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .chat-item.active{background:var(--bg4);box-shadow:inset 3px 0 0 var(--accent)}
 .chat-item.pinned{background:var(--accent-glow)}
 .chat-item.pinned .time{opacity:.9}
-.chat-item .pin-badge{font-size:11px;color:var(--accent)}
 .chat-item .av.has-unread::after{content:'';position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:2px solid var(--bg1);box-sizing:border-box;display:none}
 .chat-item .av{width:42px;height:42px;min-width:42px;border-radius:50%;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--accent);position:relative;}
 .chat-item .av img{width:100%;height:100%;object-fit:cover}
@@ -249,6 +248,12 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:700;display:none;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
 #lightbox img{max-width:94vw;max-height:94vh;border-radius:8px;transform-origin:center center;transition:transform .14s ease}
 .photo-counter{position:fixed;top:16px;right:16px;z-index:705;background:rgba(0,0,0,.48);color:#fff;padding:6px 10px;border-radius:12px;font-size:12px;font-weight:600;display:none}
+.lightbox-nav{
+  position:fixed;top:50%;transform:translateY(-50%);z-index:706;width:42px;height:42px;border-radius:50%;
+  border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.4);color:#fff;display:none;align-items:center;justify-content:center;font-size:24px
+}
+#lightboxPrev{left:14px}
+#lightboxNext{right:14px}
 
 /* FIX #2: Модалка просмотра аватара */
 #avatarModal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px)}
@@ -345,119 +350,6 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 /* emoji picker – in extra CSS */
 
 .mobile-only{display:none!important}
-@media (max-width:900px){
-  .mobile-only{display:flex!important}
-  #app{
-    flex-direction:row;
-    align-items:stretch;
-    height:100dvh;
-    min-height:0;
-    background:var(--bg0);
-  }
-  html,body{background:var(--bg0)}
-  /* Только список чатов */
-  #app:not(.app-chat-open) #mainChat{display:none!important}
-  #app:not(.app-chat-open) #sidebar{
-    width:100%!important;
-    min-width:0!important;
-    max-width:none!important;
-    border-right:none;
-    background:var(--bg1);
-  }
-  /* Чат открыт: узкая колонка аватаров + переписка (как в Telegram) */
-  #app.app-chat-open #mainChat{
-    display:flex!important;
-    flex:1!important;
-    min-width:0!important;
-    width:auto!important;
-    background:var(--bg0);
-  }
-  #app.app-chat-open #sidebar{
-    display:flex!important;
-    width:56px!important;
-    min-width:56px!important;
-    max-width:56px!important;
-    border-right:1px solid var(--border);
-    background:var(--bg1);
-  }
-  #app.app-chat-open #sidebar .logo{display:none!important}
-  #app.app-chat-open #sidebar .sidebar-top{
-    flex-direction:column;
-    align-items:center;
-    padding:max(8px, env(safe-area-inset-top)) 4px 8px;
-    gap:10px;
-    border-bottom:1px solid var(--border);
-  }
-  #app.app-chat-open #sidebar .chat-item{
-    flex-direction:column;
-    padding:6px 2px;
-    justify-content:center;
-    align-items:center;
-    animation:none;
-  }
-  #app.app-chat-open #sidebar .chat-item .info,
-  #app.app-chat-open #sidebar .chat-item .meta{display:none!important}
-  #app.app-chat-open #sidebar .chat-item .av{width:40px;height:40px;min-width:40px;font-size:14px}
-  #app.app-chat-open #sidebar .chat-item .av.has-unread::after{display:block}
-  #app.app-chat-open #sidebar .sidebar-bottom{
-    flex-direction:column;
-    align-items:center;
-    padding:8px 4px max(10px, env(safe-area-inset-bottom));
-    gap:6px;
-  }
-  #app.app-chat-open #sidebar .sidebar-bottom .my-name,
-  #app.app-chat-open #sidebar .sidebar-bottom .status-dot{display:none!important}
-  #sidebar{
-    flex-shrink:0;
-    display:flex!important;
-    height:100%;
-    position:relative!important;
-    transform:none!important;
-  }
-  #sidebar .sidebar-top{padding-top:max(10px, env(safe-area-inset-top))}
-  #chatList{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 4px}
-  #chatList{padding:0!important}
-  #sidebar .sidebar-bottom{padding:10px 8px;flex-shrink:0}
-  .panel-resizer{display:none!important}
-  #resizeSidebar,#resizeInfo{display:none!important}
-  #mainChat{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
-  #app.app-chat-open #mobileBackBtn{display:flex!important;align-items:center;justify-content:center}
-  #app:not(.app-chat-open) #mobileBackBtn{display:none!important}
-  #toggleInfoPanelBtn{display:flex!important}
-  #infoPanel{
-    position:fixed;right:0;top:0;bottom:0;width:min(100%,380px);max-width:100%;z-index:400;
-    transform:translateX(100%);transition:transform .2s ease-out;border-left:1px solid var(--border)
-  }
-  #infoPanel.info-open{transform:translateX(0);box-shadow:-8px 0 32px rgba(0,0,0,.45)}
-  #app.info-overlay::before{display:none}
-  .reg-box{padding:24px 20px;width:100%}
-  #chatHeader{padding-left:6px;padding-right:6px;padding-top:max(4px, env(safe-area-inset-top));flex-wrap:nowrap;gap:8px}
-  #chatHeader .hbtns{flex-shrink:0}
-  #chatHeader .hbtns .icon-btn{padding:6px;min-width:38px;min-height:38px}
-  #inputArea{
-    padding:10px 8px;
-    padding-bottom:max(10px, env(safe-area-inset-bottom));
-    flex-direction:row;
-    flex-wrap:nowrap;
-    align-items:flex-end;
-    gap:6px;
-    background:rgba(17,19,24,.92);
-  }
-  #msgInput{
-    font-size:16px;
-    writing-mode:horizontal-tb;
-    text-orientation:mixed;
-    min-height:44px;
-  }
-  #messagesArea{padding:10px min(10px,3vw);background:var(--chat-thread-bg)}
-  #chatView{min-width:0}
-  /* conn-status mobile: in extra css */
-  #voiceRecordBar{flex-wrap:wrap;row-gap:8px}
-  #emojiPicker{bottom:64px;right:8px;left:8px;max-width:none}
-  #toggleInfoPanelBtn{display:flex!important}
-  /* mobileInfoBtn теперь скрыт — используем единую toggleInfoPanelBtn */
-  #mobileInfoBtn{display:none!important}
-}
 @media (max-width:900px) and (prefers-reduced-motion:reduce){
   .chat-item,.modal-overlay,.modal,#infoPanel{animation:none!important;transition-duration:.01ms!important}
 }
@@ -641,20 +533,18 @@ body.use-gradients #app:not(.app-chat-open) #sidebar{
 
 /* ==================== COMPACT EDIT BAR ==================== */
 .edit-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 40px;
+  position: relative;
+  min-height: 40px;
   background: linear-gradient(135deg, var(--bg4) 0%, var(--bg3) 100%);
+  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   display: none;
   align-items: center;
   padding: 0 12px;
   gap: 8px;
-  z-index: 100;
+  z-index: 3;
   opacity: 0;
-  transform: translateY(-10px);
+  transform: translateY(8px);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 .edit-bar.show {
@@ -885,6 +775,7 @@ body.ctx-open::before{
 }
 @media (max-width:900px){
   html,body,#app{height:100dvh;max-height:100dvh}
+  .mobile-only{display:flex!important}
   #app{
     grid-template-columns:minmax(0,1fr);
     position:relative;
@@ -923,6 +814,37 @@ body.ctx-open::before{
   #app:not(.app-chat-open) #mainChat{display:none!important}
   #app.app-chat-open #mainChat{display:flex!important}
   #chatHeader .icon-btn,#inputArea .icon-btn,.send-btn{min-width:44px;min-height:44px}
+  #chatList .chat-item{border-bottom:1px solid var(--border)}
+  .panel-resizer{display:none!important}
+  #resizeSidebar,#resizeInfo{display:none!important}
+  #app.app-chat-open #mobileBackBtn{display:flex!important;align-items:center;justify-content:center}
+  #app:not(.app-chat-open) #mobileBackBtn{display:none!important}
+  #mobileInfoBtn{display:none!important}
+  #toggleInfoPanelBtn{display:flex!important}
+  #messagesArea{padding:10px min(10px,3vw) calc(84px + env(safe-area-inset-bottom));background:var(--chat-thread-bg)}
+  #voiceRecordBar{flex-wrap:wrap;row-gap:8px}
+  #emojiPicker{bottom:64px;right:8px;left:8px;max-width:none}
+  .mobile-bottom-nav{
+    position:fixed;left:10px;right:10px;bottom:calc(8px + env(safe-area-inset-bottom));height:66px;z-index:420;
+    border-radius:24px;background:rgba(20,24,34,.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid rgba(255,255,255,.12);display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px;gap:4px;
+  }
+  .mobile-nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--text2);border-radius:16px}
+  .mobile-nav-item.active{color:var(--accent);background:rgba(79,142,247,.14)}
+  .mobile-nav-item .mobile-nav-icon{font-size:20px;line-height:1;filter:grayscale(1)}
+  .mobile-nav-item .mobile-nav-label{font-size:10px}
+  .mobile-nav-item.plus .mobile-nav-icon{font-size:22px}
+  .mobile-sheet-view{
+    position:fixed;inset:0;background:var(--bg1);z-index:410;display:none;flex-direction:column;
+    padding-top:max(12px, env(safe-area-inset-top));padding-bottom:calc(84px + env(safe-area-inset-bottom));
+    overflow:hidden;
+  }
+  .mobile-sheet-head{padding:14px 16px;border-bottom:1px solid var(--border)}
+  .mobile-sheet-title{font-size:18px;font-weight:700}
+  .mobile-sheet-list{flex:1;overflow-y:auto;padding:0 12px}
+  .mobile-settings-body{flex:1;overflow-y:auto;padding:12px 14px}
+  .mobile-settings-label{font-size:12px;color:var(--text2);display:block;margin-bottom:8px}
+  .lightbox-nav{width:38px;height:38px;font-size:20px}
   #infoPanel{
     width:min(94vw,390px);
     border-left:1px solid var(--border-color)!important;
@@ -1009,6 +931,7 @@ body.ctx-open::before{
   }
   .sidebar-top .logo#sidebarLogoBtn{cursor:pointer}
   .sidebar-top .logo#sidebarLogoBtn:hover{opacity:0.88}
+  #mobileBottomNav,#mobileCallsView,#mobileSettingsView{display:none!important}
 }
 body.use-gradients{
   --welcome-bg:var(--grad-welcome);
@@ -1143,7 +1066,11 @@ body.use-gradients{
         </div>
         <div id="replyText" style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
       </div>
-      <!-- INPUT -->
+      <div id="editComposerBar" class="edit-bar" style="display:none">
+        <span class="edit-icon">✏️</span>
+        <span class="edit-text" id="editTextPreview">Редактирование</span>
+        <button class="edit-cancel" id="editCancelBtn" title="Отменить">✕</button>
+      </div>
       <div id="inputArea">
         <button class="icon-btn" id="attachBtn" title="Прикрепить файл">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
@@ -1196,6 +1123,40 @@ body.use-gradients{
       Выберите чат
     </div>
   </div>
+</div>
+<div id="mobileCallsView" class="mobile-sheet-view" style="display:none">
+  <div class="mobile-sheet-head">
+    <div class="mobile-sheet-title">Звонки</div>
+  </div>
+  <div id="mobileCallsList" class="mobile-sheet-list"></div>
+</div>
+<div id="mobileSettingsView" class="mobile-sheet-view" style="display:none">
+  <div class="mobile-sheet-head">
+    <div class="mobile-sheet-title">Настройки</div>
+  </div>
+  <div class="mobile-settings-body">
+    <label class="mobile-settings-label" for="mobileSettingsNick">Имя</label>
+    <input id="mobileSettingsNick" class="reg-input" type="text" maxlength="30" placeholder="Ваше имя">
+    <button id="mobileSettingsSaveBtn" class="btn-primary" type="button">Сохранить профиль</button>
+    <button id="mobileSettingsOpenModalBtn" class="btn-ghost" type="button">Расширенные настройки</button>
+    <button id="mobileSettingsExportBtn" class="export-btn" type="button">Экспорт данных</button>
+    <button id="mobileSettingsImportBtn" class="import-btn" type="button">Импорт данных</button>
+    <button id="mobileSettingsClearBtn" class="btn-danger" type="button">Удалить все чаты</button>
+  </div>
+</div>
+<div id="mobileBottomNav" class="mobile-bottom-nav">
+  <button type="button" class="mobile-nav-item active" data-mobile-tab="chats">
+    <span class="mobile-nav-icon">💬</span><span class="mobile-nav-label">Чаты</span>
+  </button>
+  <button type="button" class="mobile-nav-item" data-mobile-tab="calls">
+    <span class="mobile-nav-icon">📞</span><span class="mobile-nav-label">Звонки</span>
+  </button>
+  <button type="button" class="mobile-nav-item" data-mobile-tab="settings">
+    <span class="mobile-nav-icon">⚙</span><span class="mobile-nav-label">Настройки</span>
+  </button>
+  <button type="button" class="mobile-nav-item plus" id="mobileBottomPlusBtn">
+    <span class="mobile-nav-icon">＋</span><span class="mobile-nav-label">Добавить</span>
+  </button>
 </div>
 
 <!-- ADD CHAT / GROUP / CHANNEL / JOIN -->
@@ -1346,7 +1307,11 @@ body.use-gradients{
 </div>
 
 <!-- LIGHTBOX -->
-<div id="lightbox"><img id="lightboxImg" src="" alt=""></div>
+<div id="lightbox">
+  <button id="lightboxPrev" class="lightbox-nav" type="button">‹</button>
+  <img id="lightboxImg" src="" alt="">
+  <button id="lightboxNext" class="lightbox-nav" type="button">›</button>
+</div>
 <div id="photoCounter" class="photo-counter"></div>
 
 <!-- FORWARD MODAL -->
@@ -4178,12 +4143,6 @@ function renderSidebar() {
     time.className = 'time';
     time.textContent = c.lastTs ? fmtTime(c.lastTs) : '';
     meta.appendChild(time);
-    if (isPinned) {
-      const pin = document.createElement('div');
-      pin.className = 'pin-badge';
-      pin.textContent = '📌';
-      meta.appendChild(pin);
-    }
     if (c.unread > 0) {
       const u = document.createElement('div');
       u.className = 'unread';
@@ -4580,22 +4539,8 @@ async function editMessage(ts) {
 }
 
 function showEditBar(sourceText = '') {
-  let editBar = document.getElementById('editBar');
-  const inputArea = document.getElementById('inputArea');
-  
-  if (!editBar) {
-    editBar = document.createElement('div');
-    editBar.id = 'editBar';
-    editBar.className = 'edit-bar';
-    editBar.innerHTML = `
-      <span class="edit-icon">✏️</span>
-      <span class="edit-text" id="editTextPreview">Редактирование</span>
-      <button class="edit-cancel" onclick="cancelEdit()" title="Отменить">✕</button>
-    `;
-    // Insert before inputArea
-    inputArea.parentNode.insertBefore(editBar, inputArea);
-  }
-  
+  const editBar = document.getElementById('editComposerBar');
+  if (!editBar) return;
   editBar.style.display = 'flex';
   editBar.classList.add('show');
   const previewEl = document.getElementById('editTextPreview');
@@ -4603,25 +4548,15 @@ function showEditBar(sourceText = '') {
     const text = String(sourceText || '').trim();
     previewEl.textContent = text ? `Редактирование: ${text.slice(0, 80)}` : 'Редактирование';
   }
-  
-  // Add padding to input area to compensate for edit bar
-  inputArea.style.paddingTop = '44px';
 }
 
 function hideEditBar() {
-  const editBar = document.getElementById('editBar');
-  const inputArea = document.getElementById('inputArea');
-  
+  const editBar = document.getElementById('editComposerBar');
   if (editBar) {
     editBar.classList.remove('show');
     setTimeout(() => {
       editBar.style.display = 'none';
     }, 200);
-  }
-  
-  // Reset input area padding
-  if (inputArea) {
-    inputArea.style.paddingTop = '';
   }
 }
 
@@ -5717,6 +5652,86 @@ async function renderInfoPanel(uuid){
   await renderTabContent();
 }
 
+function collectCallLogsFromMessages(msgs) {
+  const list = [];
+  for (const m of msgs || []) {
+    if (!m || m.type !== 'call-log') continue;
+    list.push(m);
+  }
+  list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return list;
+}
+
+async function renderMobileCallsView() {
+  const host = document.getElementById('mobileCallsList');
+  if (!host) return;
+  host.innerHTML = '';
+  const all = await dbGetAll('messages').catch(() => []);
+  const logs = collectCallLogsFromMessages(all);
+  if (!logs.length) {
+    host.innerHTML = '<div style="padding:20px;color:var(--text3);font-size:13px">История звонков пуста</div>';
+    return;
+  }
+  logs.forEach((m) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:12px 6px;border-bottom:1px solid var(--border);font-size:13px';
+    const left = document.createElement('div');
+    left.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:0';
+    const contact = contacts.find((c) => normUid(c.uuid) === normUid(m.chatId));
+    const name = document.createElement('div');
+    name.textContent = getDisplayName(contact || m.chatId, String(m.chatId || '').slice(0, 8));
+    name.style.fontWeight = '600';
+    const txt = document.createElement('div');
+    txt.textContent = String(m.content || '').replace(/^📞\s*/, '');
+    txt.style.color = 'var(--text2)';
+    txt.style.fontSize = '12px';
+    left.appendChild(name);
+    left.appendChild(txt);
+    const tm = document.createElement('div');
+    tm.textContent = fmtTime(m.ts);
+    tm.style.cssText = 'color:var(--text3);font-size:11px;flex-shrink:0';
+    row.appendChild(left);
+    row.appendChild(tm);
+    host.appendChild(row);
+  });
+}
+
+function setMobileTab(tab) {
+  const app = document.getElementById('app');
+  const sidebar = document.getElementById('sidebar');
+  const mainChat = document.getElementById('mainChat');
+  const callsView = document.getElementById('mobileCallsView');
+  const settingsView = document.getElementById('mobileSettingsView');
+  const isMobile = window.matchMedia('(max-width:900px)').matches;
+  if (!isMobile) return;
+  document.querySelectorAll('#mobileBottomNav .mobile-nav-item[data-mobile-tab]').forEach((b) => {
+    b.classList.toggle('active', b.getAttribute('data-mobile-tab') === tab);
+  });
+  if (tab === 'chats') {
+    callsView.style.display = 'none';
+    settingsView.style.display = 'none';
+    if (app) app.classList.remove('app-chat-open');
+    if (sidebar) sidebar.style.display = '';
+    if (mainChat) mainChat.style.display = '';
+    return;
+  }
+  if (app) app.classList.remove('app-chat-open');
+  if (sidebar) sidebar.style.display = 'none';
+  if (mainChat) mainChat.style.display = 'none';
+  if (tab === 'calls') {
+    settingsView.style.display = 'none';
+    callsView.style.display = 'flex';
+    renderMobileCallsView().catch(() => {});
+    return;
+  }
+  if (tab === 'settings') {
+    callsView.style.display = 'none';
+    settingsView.style.display = 'flex';
+    const inp = document.getElementById('mobileSettingsNick');
+    if (inp) inp.value = myProfile.nickname || '';
+  }
+}
+
 async function renderTabContent(){
   if(!activeChat) return;
   const msgs=await dbGetByIndex('messages','chatId',activeChat);
@@ -6203,6 +6218,37 @@ function setupEvents(){
   document.getElementById('exportBtn').onclick=exportData;
   document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
   document.getElementById('importFile').onchange=importData;
+  const mobileBottomPlusBtn = document.getElementById('mobileBottomPlusBtn');
+  if (mobileBottomPlusBtn) mobileBottomPlusBtn.onclick = () => document.getElementById('addChatBtn')?.click();
+  const mobileExportBtn = document.getElementById('mobileSettingsExportBtn');
+  if (mobileExportBtn) mobileExportBtn.onclick = exportData;
+  const mobileImportBtn = document.getElementById('mobileSettingsImportBtn');
+  if (mobileImportBtn) mobileImportBtn.onclick = () => document.getElementById('importFile')?.click();
+  const mobileClearBtn = document.getElementById('mobileSettingsClearBtn');
+  if (mobileClearBtn) mobileClearBtn.onclick = clearAllData;
+  const mobileSettingsOpenModalBtn = document.getElementById('mobileSettingsOpenModalBtn');
+  if (mobileSettingsOpenModalBtn) mobileSettingsOpenModalBtn.onclick = openSettings;
+  const mobileSettingsSaveBtn = document.getElementById('mobileSettingsSaveBtn');
+  if (mobileSettingsSaveBtn) {
+    mobileSettingsSaveBtn.onclick = async () => {
+      const inp = document.getElementById('mobileSettingsNick');
+      const val = String(inp?.value || '').trim();
+      if (val) myProfile.nickname = val.slice(0, 30);
+      await dbPut('profile', { key: 'profile', ...myProfile });
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        sendToServer('profile-update', { nickname: myProfile.nickname, avatar: myProfile.avatar });
+      }
+      renderSidebar();
+      if (activeChat) renderChatHeader();
+      showToast('Сохранено');
+    };
+  }
+  document.querySelectorAll('#mobileBottomNav .mobile-nav-item[data-mobile-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.getAttribute('data-mobile-tab');
+      setMobileTab(tab);
+    });
+  });
   // FIX (FIXES_REPORT 2.7): Clear all local data — account stays on server
   document.getElementById('clearDataBtn').onclick=clearAllData;
 
@@ -6344,6 +6390,8 @@ function setupEvents(){
   }
 
   document.getElementById('sendBtn').onclick=doSend;
+  const editCancelBtn = document.getElementById('editCancelBtn');
+  if (editCancelBtn) editCancelBtn.onclick = cancelEdit;
   
   const clearReplyBtn = document.getElementById('clearReplyBtn');
   if (clearReplyBtn) {
@@ -6557,6 +6605,7 @@ async function deleteChatLocal(chatId){
   if(activeChat === id){activeChat=null;showNoChatView();}
   applyChatComposerVisibility();
   renderSidebar();
+  setMobileTab('chats');
   showToast('Чат удалён');
 }
 
@@ -6595,6 +6644,8 @@ function openSettings(){
       gt.checked = false;
     }
   }
+  const minp = document.getElementById('mobileSettingsNick');
+  if (minp) minp.value = myProfile.nickname || '';
 }
 
 async function saveSettings(){
@@ -7046,9 +7097,13 @@ function renderLightboxItem() {
 function closeLightbox() {
   const lb = document.getElementById('lightbox');
   const counter = document.getElementById('photoCounter');
+  const prev = document.getElementById('lightboxPrev');
+  const next = document.getElementById('lightboxNext');
   if (!lb) return;
   lb.style.display = 'none';
   if (counter) counter.style.display = 'none';
+  if (prev) prev.style.display = 'none';
+  if (next) next.style.display = 'none';
   lightboxItems = [];
   lightboxIndex = 0;
   resetLightboxZoom();
@@ -7057,8 +7112,21 @@ function closeLightbox() {
 function navigateLightbox(delta) {
   if (!lightboxItems.length) return;
   const len = lightboxItems.length;
+  const img = document.getElementById('lightboxImg');
+  if (img) {
+    img.style.transition = 'transform .24s ease, opacity .24s ease';
+    img.style.opacity = '0.2';
+    img.style.transform = `translate(${delta > 0 ? '-30px' : '30px'},0) scale(1)`;
+  }
   lightboxIndex = (lightboxIndex + delta + len) % len;
-  renderLightboxItem();
+  setTimeout(() => {
+    renderLightboxItem();
+    const node = document.getElementById('lightboxImg');
+    if (node) {
+      node.style.opacity = '1';
+      node.style.transform = 'translate(0,0) scale(1)';
+    }
+  }, 120);
 }
 
 function openLightbox(src, items = null, startIndex = 0){
@@ -7073,13 +7141,22 @@ function openLightbox(src, items = null, startIndex = 0){
   }
   renderLightboxItem();
   lb.style.display='flex';
+  const prev = document.getElementById('lightboxPrev');
+  const next = document.getElementById('lightboxNext');
+  const many = lightboxItems.length > 1;
+  if (prev) prev.style.display = many ? 'flex' : 'none';
+  if (next) next.style.display = many ? 'flex' : 'none';
 }
 
 function initLightboxBindings() {
   const lb = document.getElementById('lightbox');
   const img = document.getElementById('lightboxImg');
+  const prev = document.getElementById('lightboxPrev');
+  const next = document.getElementById('lightboxNext');
   if (!lb || !img || lb.dataset.bound === '1') return;
   lb.dataset.bound = '1';
+  if (prev) prev.onclick = (e) => { e.stopPropagation(); navigateLightbox(-1); };
+  if (next) next.onclick = (e) => { e.stopPropagation(); navigateLightbox(1); };
 
   lb.addEventListener('click', (e) => {
     if (e.target === lb) closeLightbox();
