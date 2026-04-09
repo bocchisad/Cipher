@@ -82,6 +82,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .panel-resizer{flex:0 0 5px;width:5px;cursor:col-resize;background:transparent;align-self:stretch;position:relative;z-index:5;transition:background .15s;touch-action:none}
 .panel-resizer:hover,.panel-resizer.is-dragging{background:rgba(79,142,247,0.35)}
 .panel-resizer::after{content:'';position:absolute;left:-4px;right:-4px;top:0;bottom:0}
+.panel-resizer.is-hidden{opacity:0;pointer-events:none}
 
 /* SIDEBAR */
 #sidebar{width:var(--sidebar-w);min-width:200px;max-width:min(520px,50vw);flex-shrink:0;background:var(--bg1);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100%;min-height:0;margin:0;padding:0}
@@ -95,6 +96,9 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .chat-item{display:flex;align-items:center;gap:10px;padding:10px 10px;border-radius:var(--r);cursor:pointer;transition:background .15s;position:relative;}
 .chat-item:hover{background:var(--bg3)}
 .chat-item.active{background:var(--bg4);box-shadow:inset 3px 0 0 var(--accent)}
+.chat-item.pinned{background:var(--accent-glow)}
+.chat-item.pinned .time{opacity:.9}
+.chat-item .pin-badge{font-size:11px;color:var(--accent)}
 .chat-item .av.has-unread::after{content:'';position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:2px solid var(--bg1);box-sizing:border-box;display:none}
 .chat-item .av{width:42px;height:42px;min-width:42px;border-radius:50%;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--accent);position:relative;}
 .chat-item .av img{width:100%;height:100%;object-fit:cover}
@@ -244,6 +248,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 /* LIGHTBOX */
 #lightbox{position:fixed;inset:0;background:rgba(0,0,0,.96);z-index:700;display:none;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
 #lightbox img{max-width:94vw;max-height:94vh;border-radius:8px;transform-origin:center center;transition:transform .14s ease}
+.photo-counter{position:fixed;top:16px;right:16px;z-index:705;background:rgba(0,0,0,.48);color:#fff;padding:6px 10px;border-radius:12px;font-size:12px;font-weight:600;display:none}
 
 /* FIX #2: Модалка просмотра аватара */
 #avatarModal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px)}
@@ -1342,6 +1347,7 @@ body.use-gradients{
 
 <!-- LIGHTBOX -->
 <div id="lightbox"><img id="lightboxImg" src="" alt=""></div>
+<div id="photoCounter" class="photo-counter"></div>
 
 <!-- FORWARD MODAL -->
 <div class="modal-overlay" id="forwardModal" style="display:none">
@@ -2267,7 +2273,7 @@ function handleServerMessage(msg) {
           const serverUser = onlineUsers.get(normUid(contact.uuid));
           if (serverUser) {
             contact.online = true;
-            if (serverUser.nickname) contact.nickname = serverUser.nickname;
+            if (serverUser.nickname && !getLocalAlias(contact.uuid)) contact.nickname = serverUser.nickname;
             // FIX: Use isAvatarSafe instead of isValidAvatar to prevent memory freeze
             if (serverUser.avatar && isAvatarSafe(serverUser.avatar)) {
               contact.avatar = serverUser.avatar;
@@ -2561,6 +2567,7 @@ async function handleIncomingEditMessage(data) {
       target.editTs = editTs || Date.now();
       target.msgId = target.msgId || originalMsgId;
       await dbPut('messages', target);
+      await updateLastPreviewAfterEdit(cid, target);
       updated = true;
       if (activeChat && normUid(activeChat) === cid) {
         await loadMessages();
@@ -2755,6 +2762,15 @@ function dbDeleteByIndex(store,index,val){
   });
 }
 
+async function dbDeleteRecordsInChunks(store, records, keyField, chunkSize = 300) {
+  const arr = Array.isArray(records) ? records : [];
+  for (let i = 0; i < arr.length; i += chunkSize) {
+    const chunk = arr.slice(i, i + chunkSize);
+    await Promise.all(chunk.map((rec) => dbDelete(store, rec[keyField])));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 // ==================== UTILS ====================
 function fmtTime(ts){
   const d=new Date(ts);
@@ -2884,6 +2900,49 @@ let localMessageRefs = new Set();
 
 function makeMessageRefKey(from, ts) {
   return `${normUid(from)}:${Number(ts)}`;
+}
+
+function loadContactAliases() {
+  try {
+    const raw = localStorage.getItem('cipherContactAliases');
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveContactAliases(map) {
+  try {
+    localStorage.setItem('cipherContactAliases', JSON.stringify(map || {}));
+  } catch (_) {}
+}
+
+function getLocalAlias(uuid) {
+  const key = normUid(uuid);
+  if (!key) return '';
+  const aliases = loadContactAliases();
+  return String(aliases[key] || '').trim();
+}
+
+function setLocalAlias(uuid, alias) {
+  const key = normUid(uuid);
+  if (!key) return;
+  const aliases = loadContactAliases();
+  const value = String(alias || '').trim().slice(0, 64);
+  if (value) aliases[key] = value;
+  else delete aliases[key];
+  saveContactAliases(aliases);
+}
+
+function getDisplayName(contactOrUuid, fallback = '') {
+  const uid = typeof contactOrUuid === 'object' ? normUid(contactOrUuid?.uuid) : normUid(contactOrUuid);
+  const alias = getLocalAlias(uid);
+  if (alias) return alias;
+  if (typeof contactOrUuid === 'object') {
+    return String(contactOrUuid?.nickname || fallback || uid).trim();
+  }
+  return String(fallback || uid).trim();
 }
 
 function buildClientMsgId(from, ts) {
@@ -3021,6 +3080,15 @@ function bindPanelResizers(){
   }
   dragResize(rs, 'sidebar');
   dragResize(ri, 'info');
+  updateInfoResizerVisibility();
+}
+
+function updateInfoResizerVisibility() {
+  const infoPanel = document.getElementById('infoPanel');
+  const resizeInfo = document.getElementById('resizeInfo');
+  if (!infoPanel || !resizeInfo) return;
+  const hidden = infoPanel.classList.contains('info-hidden');
+  resizeInfo.classList.toggle('is-hidden', hidden);
 }
 
 function buildEmojiGrid(){
@@ -3656,6 +3724,8 @@ function sanitizeContact(contact) {
   if (!Array.isArray(contact.roomAdmins)) contact.roomAdmins = [];
   if (!Array.isArray(contact.roomMembers)) contact.roomMembers = [];
   contact.uuid = normUid(contact.uuid);
+  const alias = getLocalAlias(contact.uuid);
+  if (alias) contact.nickname = alias;
 
   return contact;
 }
@@ -3674,7 +3744,7 @@ function handleUserOnline(userInfo) {
   const contact = contacts.find((c) => normUid(c.uuid) === uid);
   if(contact) {
     contact.online = true;
-    if(nickname) contact.nickname = nickname;
+    if(nickname && !getLocalAlias(contact.uuid)) contact.nickname = nickname;
     if (avatar && isAvatarSafe(avatar)) {
       contact.avatar = avatar;
     } else if (avatar) {
@@ -3724,7 +3794,7 @@ function handleUserProfile(data) {
   const uid = normUid(uuid);
   const contact = contacts.find((c) => normUid(c.uuid) === uid);
   if(contact) {
-    if(nickname) contact.nickname = nickname;
+    if(nickname && !getLocalAlias(contact.uuid)) contact.nickname = nickname;
     // Validate avatar before setting
     if(avatar !== undefined) {
       if(isValidAvatar(avatar)) {
@@ -4077,13 +4147,15 @@ function renderSidebar() {
   for (let i = 0; i < contacts.length; i++) {
     const c = contacts[i];
     if (!c || c.uuid === '_metadata') continue;
+    const isPinned = pinned.has(c.uuid);
+    const displayName = getDisplayName(c);
     const item = document.createElement('div');
-    item.className = 'chat-item' + (normUid(activeChat) === normUid(c.uuid) ? ' active' : '');
+    item.className = 'chat-item' + (normUid(activeChat) === normUid(c.uuid) ? ' active' : '') + (isPinned ? ' pinned' : '');
     item.dataset.id = c.uuid;
     const av = document.createElement('div');
     av.className = 'av';
     if ((c.unread || 0) > 0) av.classList.add('has-unread');
-    renderAvatar(av, c.avatar, c.nickname || c.uuid);
+    renderAvatar(av, c.avatar, displayName || c.uuid);
     if (c.online && c.kind !== 'saved' && c.kind !== 'channel') {
       const dot = document.createElement('div');
       dot.className = 'online-dot';
@@ -4094,7 +4166,7 @@ function renderSidebar() {
     const name = document.createElement('div');
     name.className = 'name';
     const prefix = c.kind === 'saved' ? '⭐ ' : (c.kind === 'channel' ? '📢 ' : (c.kind === 'group' ? '👥 ' : ''));
-    name.textContent = prefix + (c.nickname || c.uuid);
+    name.textContent = prefix + (displayName || c.uuid);
     const last = document.createElement('div');
     last.className = 'last';
     last.textContent = c.lastMsg || 'Нет сообщений';
@@ -4106,6 +4178,12 @@ function renderSidebar() {
     time.className = 'time';
     time.textContent = c.lastTs ? fmtTime(c.lastTs) : '';
     meta.appendChild(time);
+    if (isPinned) {
+      const pin = document.createElement('div');
+      pin.className = 'pin-badge';
+      pin.textContent = '📌';
+      meta.appendChild(pin);
+    }
     if (c.unread > 0) {
       const u = document.createElement('div');
       u.className = 'unread';
@@ -4174,11 +4252,12 @@ async function renameContactPrompt(chatId) {
   const uid = normUid(chatId);
   const contact = contacts.find((c) => normUid(c.uuid) === uid);
   if (!contact) return;
-  const current = contact.nickname || contact.uuid;
+  const current = getDisplayName(contact);
   const next = prompt('Введите новое имя контакта', current);
   if (next == null) return;
   const trimmed = String(next).trim().slice(0, 64);
   if (!trimmed || trimmed === current) return;
+  setLocalAlias(uid, trimmed);
   contact.nickname = trimmed;
   await dbPut('contacts', contact).catch(() => {});
   renderSidebar();
@@ -4494,13 +4573,13 @@ async function editMessage(ts) {
   input.focus();
   
   // Show compact Edit Bar above input area
-  showEditBar();
+  showEditBar(msg.content);
   
   // Scroll to bottom to ensure visibility
   scrollBottom();
 }
 
-function showEditBar() {
+function showEditBar(sourceText = '') {
   let editBar = document.getElementById('editBar');
   const inputArea = document.getElementById('inputArea');
   
@@ -4510,7 +4589,7 @@ function showEditBar() {
     editBar.className = 'edit-bar';
     editBar.innerHTML = `
       <span class="edit-icon">✏️</span>
-      <span class="edit-text">Редактирование</span>
+      <span class="edit-text" id="editTextPreview">Редактирование</span>
       <button class="edit-cancel" onclick="cancelEdit()" title="Отменить">✕</button>
     `;
     // Insert before inputArea
@@ -4519,6 +4598,11 @@ function showEditBar() {
   
   editBar.style.display = 'flex';
   editBar.classList.add('show');
+  const previewEl = document.getElementById('editTextPreview');
+  if (previewEl) {
+    const text = String(sourceText || '').trim();
+    previewEl.textContent = text ? `Редактирование: ${text.slice(0, 80)}` : 'Редактирование';
+  }
   
   // Add padding to input area to compensate for edit bar
   inputArea.style.paddingTop = '44px';
@@ -4612,6 +4696,7 @@ async function sendEditMessage(newContent) {
     msg.editTs = Date.now();
     msg.msgId = msg.msgId || originalMsgId;
     await dbPut('messages', msg);
+    await updateLastPreviewAfterEdit(activeChat, msg);
   }
   
   editingMessageTs = null;
@@ -4731,6 +4816,7 @@ async function openChat(uuid){
 function renderChatHeader(){
   const contact = contacts.find((c) => normUid(c.uuid) === activeChat);
   if(!contact) return;
+  const displayName = getDisplayName(contact);
 
   const statusEl = document.getElementById('headerStatus');
   if (statusEl) {
@@ -4744,9 +4830,9 @@ function renderChatHeader(){
     }
   }
   const av=document.getElementById('headerAv');
-  if(av) renderAvatar(av, contact.avatar, contact.nickname||contact.uuid);
+  if(av) renderAvatar(av, contact.avatar, displayName || contact.uuid);
   const nameEl=document.getElementById('headerName');
-  if(nameEl) nameEl.textContent=contact.nickname||contact.uuid;
+  if(nameEl) nameEl.textContent=displayName || contact.uuid;
 
   const allowCalls = (!contact.kind || contact.kind === 'friend' || contact.kind === 'stranger');
   const ab = document.getElementById('audioCallBtn');
@@ -4834,6 +4920,9 @@ function appendAlbum(msgs, area) {
     wrapper.appendChild(mav);
   }
 
+  const stack = document.createElement('div');
+  stack.className = 'msg-stack';
+
   // Create bubble (same as renderMediaAlbum)
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
@@ -4896,7 +4985,8 @@ function appendAlbum(msgs, area) {
   if (isOut) mt.innerHTML += ' <span class="check">✓</span>';
 
   bubble.appendChild(mt);
-  wrapper.appendChild(bubble);
+  stack.appendChild(bubble);
+  wrapper.appendChild(stack);
   wrapper.oncontextmenu = (ev) => { showMessageCtxMenu(ev, first); };
   area.appendChild(wrapper);
 }
@@ -4952,6 +5042,8 @@ function renderMediaAlbum() {
   wrapper.className = 'msg ' + (isOut ? 'out' : 'in');
   wrapper.dataset.ts = pendingMediaGroup[0].ts;
   wrapper.dataset.msgId = pendingMediaGroup[0].msgId || buildClientMsgId(pendingMediaGroup[0].from, pendingMediaGroup[0].ts);
+  const stack = document.createElement('div');
+  stack.className = 'msg-stack';
   
   // Create bubble
   const bubble = document.createElement('div');
@@ -5027,14 +5119,15 @@ function renderMediaAlbum() {
   if (isOut) mt.innerHTML += ` <span class="check">✓</span>`;
   bubble.appendChild(mt);
   
-  wrapper.appendChild(bubble);
+  stack.appendChild(bubble);
   
   // Add reactions if any
   const reactRow = document.createElement('div');
   reactRow.className = 'msg-reactions';
   reactRow.dataset.ts = pendingMediaGroup[0].ts;
   renderReactionChips(reactRow, pendingMediaGroup[0]);
-  wrapper.appendChild(reactRow);
+  stack.appendChild(reactRow);
+  wrapper.appendChild(stack);
   
   // Event handlers
   wrapper.oncontextmenu = (ev) => { showMessageCtxMenu(ev, pendingMediaGroup[0]); };
@@ -5474,25 +5567,36 @@ function isNearBottom(threshold=120){
   return area.scrollHeight - area.scrollTop - area.clientHeight < threshold;
 }
 
+function buildLastPreview(type, content){
+  if(type==='image') return '📷 Фото';
+  if(type==='voice') return '🎵 Голосовое';
+  if(type==='video') return '🎬 Видео';
+  if(type==='file'){
+    try { return '📎 ' + JSON.parse(content).name; } catch { return '📎 Файл'; }
+  }
+  if (type === 'call-log') return String(content || '').slice(0, 40);
+  return content && content.length > 50 ? content.slice(0,50)+'...' : (content||'');
+}
+
 function updateLastMessage(chatId, content, ts, type){
   const c = contacts.find((x) => normUid(x.uuid) === normUid(chatId));
   if(c){
-    let preview='';
-    if(type==='image') preview='📷 Фото';
-    else if(type==='voice') preview='🎵 Голосовое';
-    else if(type==='video') preview='🎬 Видео';
-    else if(type==='file'){
-      try { preview='📎 ' + JSON.parse(content).name; } catch { preview='📎 Файл'; }
-    } else if (type === 'call-log') {
-      preview = String(content || '').slice(0, 40);
-    } else {
-      preview = content && content.length > 50 ? content.slice(0,50)+'...' : (content||'');
-    }
+    const preview = buildLastPreview(type, content);
     c.lastMsg=preview;
     c.lastTs=ts;
     dbPut('contacts',c);
     renderSidebar();
   }
+}
+
+async function updateLastPreviewAfterEdit(chatId, editedMsg) {
+  if (!chatId || !editedMsg) return;
+  const c = contacts.find((x) => normUid(x.uuid) === normUid(chatId));
+  if (!c) return;
+  if (Number(c.lastTs || 0) !== Number(editedMsg.ts || 0)) return;
+  c.lastMsg = buildLastPreview(editedMsg.type, editedMsg.content);
+  await dbPut('contacts', c).catch(() => {});
+  renderSidebar();
 }
 
 function renderInfoActions(contact) {
@@ -5597,8 +5701,9 @@ async function renderInfoPanel(uuid){
   const contact = contacts.find((c) => normUid(c.uuid) === uid);
   if(!contact) return;
   const bigAv=document.getElementById('infoBigAv');
-  renderAvatar(bigAv, contact.avatar, contact.nickname||contact.uuid);
-  document.getElementById('infoName').textContent=contact.nickname||contact.uuid;
+  const displayName = getDisplayName(contact);
+  renderAvatar(bigAv, contact.avatar, displayName || contact.uuid);
+  document.getElementById('infoName').textContent=displayName || contact.uuid;
   const st = document.getElementById('infoStatus');
   if (contact.kind === 'channel' || contact.kind === 'saved') {
     st.style.display = 'none';
@@ -6156,6 +6261,7 @@ function setupEvents(){
       // FIX #6: on desktop toggle info-hidden so it CAN be re-opened
       ip.classList.add('info-hidden');
       localStorage.setItem('infoPanelHidden', 'true');
+      updateInfoResizerVisibility();
     }
     document.body.style.overflow = '';
   };
@@ -6174,6 +6280,7 @@ function setupEvents(){
     } else {
       ip.classList.toggle('info-hidden');
       localStorage.setItem('infoPanelHidden', ip.classList.contains('info-hidden'));
+      updateInfoResizerVisibility();
     }
   }
   if (toggleInfoBtn) {
@@ -6181,6 +6288,7 @@ function setupEvents(){
     // Restore state on load
     const wasHidden = localStorage.getItem('infoPanelHidden') === 'true';
     if (wasHidden) document.getElementById('infoPanel')?.classList.add('info-hidden');
+    updateInfoResizerVisibility();
   }
   // mobileInfoBtn тоже ведёт к той же функции (на случай если HTML оставлен)
   const mobileInfoBtnEl = document.getElementById('mobileInfoBtn');
@@ -6420,10 +6528,17 @@ function showNoChatView(){
 }
 
 // FIX (FIXES_REPORT 2.7): Clear all local chats/contacts — account remains on server
-function clearAllData() {
+async function clearAllData() {
   if (!confirm('Удалить все чаты и контакты? Аккаунт на сервере останется.')) return;
-  indexedDB.deleteDatabase('Cipher');
+  const allContacts = await dbGetAll('contacts').catch(() => []);
+  const allMessages = await dbGetAll('messages').catch(() => []);
+  await dbDeleteRecordsInChunks('messages', allMessages, 'id', 250).catch(() => {});
+  await dbDeleteRecordsInChunks('contacts', allContacts.filter((c) => c?.uuid && c.uuid !== '_metadata'), 'uuid', 120).catch(() => {});
+  await dbClearStore('roomKeys').catch(() => {});
+  await dbClearStore('keys').catch(() => {});
   localStorage.removeItem('cipherContacts');
+  localStorage.removeItem('cipherPinned');
+  localStorage.removeItem('cipherContactAliases');
   document.getElementById('settingsModal').style.display='none';
   showToast('Данные очищены. Перезагрузка...');
   setTimeout(() => location.reload(), 1200);
@@ -6518,8 +6633,10 @@ async function exportData(){
   const filteredContacts = contacts_.filter(c => c.uuid !== '_metadata');
   await yieldToMain();
   const messages=await dbGetAll('messages');
+  const keys=await dbGetAll('keys');
+  const roomKeys=await dbGetAll('roomKeys');
   await yieldToMain();
-  const data={profile:myProfile, contacts:filteredContacts, messages, exportedAt:Date.now()};
+  const data={profile:myProfile, contacts:filteredContacts, messages, keys, roomKeys, exportedAt:Date.now()};
   const json=JSON.stringify(data);
   const pass=prompt('Пароль для шифрования резервной копии:');
   if(!pass) return;
@@ -6556,7 +6673,12 @@ async function importData(){
   const f=document.getElementById('importFile').files[0];
   if(!f) return;
   const text=await f.text();
-  const {iv,data}=JSON.parse(text);
+  const parsed = JSON.parse(text);
+  const {iv,data}=parsed || {};
+  if (!iv || !data || typeof iv !== 'string' || typeof data !== 'string') {
+    showToast('Неверный формат файла резервной копии');
+    return;
+  }
   const pass=prompt('Пароль для расшифровки:');
   if(!pass) return;
 
@@ -6567,7 +6689,15 @@ async function importData(){
     const ctArr=fromBase64Chunked(data);
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:ivArr},keyMat,ctArr);
     const json=JSON.parse(new TextDecoder().decode(pt));
+    if (!json || typeof json !== 'object' || !Array.isArray(json.contacts) || !Array.isArray(json.messages)) {
+      showToast('Файл поврежден или неполный');
+      return;
+    }
     // FIX: Ensure all imported contacts have type='friend' and are sanitized
+    await dbClearStore('contacts').catch(() => {});
+    await dbClearStore('messages').catch(() => {});
+    await dbClearStore('keys').catch(() => {});
+    await dbClearStore('roomKeys').catch(() => {});
     for(const c of json.contacts) {
       if (c.uuid && c.uuid !== '_metadata') {
         const sanitized = sanitizeContact({...c, type: c.type || 'friend'});
@@ -6575,7 +6705,31 @@ async function importData(){
       }
     }
     for(const m of json.messages){const {id:_,...rest}=m;await dbPut('messages',rest);}
-    showToast('Данные восстановлены. Перезагрузите страницу.');
+    if (Array.isArray(json.keys)) {
+      for (const k of json.keys) {
+        if (k && k.key) await dbPut('keys', k);
+      }
+    }
+    if (Array.isArray(json.roomKeys)) {
+      for (const rk of json.roomKeys) {
+        if (rk && rk.roomId) await dbPut('roomKeys', rk);
+      }
+    }
+    contacts.length = 0;
+    const importedContacts = await dbGetAll('contacts');
+    importedContacts.forEach((c) => {
+      if (!c || c.uuid === '_metadata') return;
+      const cleaned = sanitizeContact(c);
+      if (cleaned) contacts.push(cleaned);
+    });
+    dedupeContacts();
+    renderSidebar();
+    if (activeChat) {
+      await loadMessages();
+      renderChatHeader();
+      await renderInfoPanel(activeChat);
+    }
+    showToast('Данные восстановлены');
   }catch(e){
     showToast('Неверный пароль или повреждённый файл');
   }
@@ -6879,15 +7033,22 @@ function resetLightboxZoom() {
 
 function renderLightboxItem() {
   const img = document.getElementById('lightboxImg');
+  const counter = document.getElementById('photoCounter');
   if (!img || !lightboxItems.length) return;
   img.src = lightboxItems[lightboxIndex];
+  if (counter) {
+    counter.style.display = 'block';
+    counter.textContent = `${lightboxIndex + 1}/${lightboxItems.length}`;
+  }
   resetLightboxZoom();
 }
 
 function closeLightbox() {
   const lb = document.getElementById('lightbox');
+  const counter = document.getElementById('photoCounter');
   if (!lb) return;
   lb.style.display = 'none';
+  if (counter) counter.style.display = 'none';
   lightboxItems = [];
   lightboxIndex = 0;
   resetLightboxZoom();
