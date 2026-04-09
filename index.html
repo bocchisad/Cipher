@@ -919,7 +919,7 @@ body.ctx-open::before{
   .mobile-sheet-head{padding:14px 16px;border-bottom:1px solid var(--border);background:transparent}
   .mobile-sheet-title{font-size:18px;font-weight:700}
   .mobile-sheet-list{flex:1;overflow-y:auto;padding:0 12px}
-  .mobile-settings-body{flex:1;overflow-y:auto;padding:12px 14px;background:transparent}
+  .mobile-settings-body{flex:1;overflow-y:auto;padding:12px 14px;padding-bottom:calc(12px + env(safe-area-inset-bottom) + 80px);background:transparent;-webkit-mask-image:linear-gradient(to bottom, black calc(100% - 100px), transparent 100%);mask-image:linear-gradient(to bottom, black calc(100% - 100px), transparent 100%)}
   .mobile-settings-label{font-size:12px;color:var(--text2);display:block;margin-bottom:8px}
   .lightbox-nav{width:38px;height:38px;font-size:20px}
   #infoPanel{
@@ -5207,9 +5207,10 @@ async function queueMediaForAlbum(msg) {
   }
   
   // Set timer to render group after a short delay (allows batching)
+  // FIX: Increased timeout to 1200ms to allow batch processing of multiple files
   mediaGroupTimer = setTimeout(() => {
     renderMediaAlbum();
-  }, 100);
+  }, 1200);
 }
 
 function renderMediaAlbum() {
@@ -6838,6 +6839,7 @@ function setupDragDrop(){
 async function doSend(){
   const inp=document.getElementById('msgInput');
   const text=inp.value.trim();
+  const hadFocus = document.activeElement === inp;
   if(!activeChat) return;
   if(!text && !attachmentQueue.length) return;
   // FIX PC #3: If attachment queue and text, flush attachments first, then send text
@@ -6847,7 +6849,11 @@ async function doSend(){
     inp.value='';
     inp.style.height='auto';
   }
-  inp.focus();
+  // FIX: Only restore focus on desktop; on mobile, focusing causes keyboard jump
+  const isMobile = window.matchMedia('(max-width:900px)').matches;
+  if(hadFocus && !isMobile) {
+    inp.focus();
+  }
 }
 
 // FIX: addChat — was using 'nick' field, must be 'nickname'
