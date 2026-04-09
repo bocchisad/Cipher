@@ -200,6 +200,10 @@ function dequeueMessages(toUuid) {
   });
 }
 
+function clearUserQueue(uuid) {
+  db.prepare('DELETE FROM message_queue WHERE to_uuid = ? OR from_uuid = ?').run(uuid, uuid);
+}
+
 // ==================== CLOSE ====================
 function closeDatabase() {
   if (db) {
@@ -220,5 +224,6 @@ module.exports = {
   saveRoomKey,
   loadRoomKey,
   enqueueMessage,
-  dequeueMessages
+  dequeueMessages,
+  clearUserQueue
 };

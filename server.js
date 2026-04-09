@@ -472,6 +472,9 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'message-reaction':
       handleMessageReaction(uuid, data);
       break;
+    case 'clear-all-data':
+      handleClearAllData(uuid, ws);
+      break;
     case 'edit-msg':
     case 'edit-message':
       handleEditMessage(uuid, data);
@@ -1132,6 +1135,61 @@ function handleDeleteMessage(fromUuid, data) {
       data: { from: fromUuid, ts: data.ts }
     });
   }
+}
+
+function handleClearAllData(uuid, ws) {
+  if (!uuid) return;
+  const uid = normUid(uuid);
+
+  if (dbModule && typeof dbModule.clearUserQueue === 'function') {
+    dbModule.clearUserQueue(uid);
+  } else {
+    for (const [k, arr] of [...messageQueue.entries()]) {
+      const filtered = (arr || []).filter((m) => normUid(m?.from) !== uid && normUid(m?.to) !== uid);
+      if (filtered.length) {
+        messageQueue.set(k, filtered);
+      } else {
+        messageQueue.delete(k);
+      }
+    }
+    saveQueueJSON();
+  }
+
+  for (const [rid, room] of [...rooms.entries()]) {
+    normalizeRoom(room);
+    const ownerUid = normUid(room.owner);
+    if (ownerUid === uid) {
+      if (room.kind === 'channel' && room.username) {
+        channelUsernames.delete(String(room.username).toLowerCase());
+      }
+      rooms.delete(rid);
+      for (const memberId of room.members || []) {
+        const member = getUserLive(memberId);
+        if (member?.ws && member.ws.readyState === WebSocket.OPEN) {
+          safeWsSend(member.ws, { type: 'room-deleted', data: { roomId: rid } });
+        }
+      }
+      continue;
+    }
+    const before = room.members.length;
+    room.members = room.members.filter((m) => normUid(m) !== uid);
+    room.admins = (room.admins || []).filter((a) => normUid(a) !== uid);
+    if (!room.members.length) {
+      if (room.kind === 'channel' && room.username) {
+        channelUsernames.delete(String(room.username).toLowerCase());
+      }
+      rooms.delete(rid);
+      continue;
+    }
+    if (room.members.length !== before) {
+      saveRoomsJSON();
+      broadcastRoomToMembers(room);
+    }
+  }
+
+  saveRoomsJSON();
+  safeWsSend(ws, { type: 'clear-all-data-ok' });
+  console.log(`🧹 Cleared server chat data for ${uid.substring(0, 8)}…`);
 }
 
 // ==================== EDIT MESSAGE ====================

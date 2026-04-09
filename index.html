@@ -822,12 +822,58 @@ body.ctx-open::before{
   #mobileInfoBtn{display:none!important}
   #toggleInfoPanelBtn{display:flex!important}
   #messagesArea{padding:10px min(10px,3vw) calc(84px + env(safe-area-inset-bottom));background:var(--chat-thread-bg)}
+
+  #infoPanel{
+    position:fixed;
+    top:0;
+    right:0;
+    bottom:0;
+    width:min(94vw,390px)!important;
+    min-width:min(94vw,390px)!important;
+    max-width:min(94vw,390px)!important;
+    z-index:430;
+    transform:translateX(100%);
+    opacity:1;
+    pointer-events:none;
+    border-left:1px solid var(--border-color)!important;
+    transition:transform var(--motion-med) var(--spring);
+  }
+  #infoPanel.info-open{
+    transform:translateX(0);
+    pointer-events:auto;
+    box-shadow:-20px 0 48px rgba(0,0,0,.38);
+  }
+  #app.app-chat-open #mobileBottomNav{
+    opacity:0;
+    pointer-events:none;
+    transform:translateY(120%);
+  }
+  #app.app-chat-open #mobileCallsView,
+  #app.app-chat-open #mobileSettingsView{
+    display:none!important;
+    pointer-events:none!important;
+  }
+  #app.app-chat-open #mainChat{
+    width:100vw;
+    max-width:100vw;
+    overflow-x:hidden;
+  }
+  #mainChat,#chatView,#chatHeader,#inputArea,#messagesArea{
+    min-width:0;
+    max-width:100%;
+    overflow-x:hidden;
+  }
+  @keyframes mobileFadeIn{
+    from{opacity:0;transform:translateY(8px)}
+    to{opacity:1;transform:translateY(0)}
+  }
   #voiceRecordBar{flex-wrap:wrap;row-gap:8px}
   #emojiPicker{bottom:64px;right:8px;left:8px;max-width:none}
   .mobile-bottom-nav{
     position:fixed;left:10px;right:10px;bottom:calc(8px + env(safe-area-inset-bottom));height:66px;z-index:420;
     border-radius:24px;background:rgba(20,24,34,.62);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
     border:1px solid rgba(255,255,255,.12);display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px;gap:4px;
+    transition:opacity var(--motion-fast) ease, transform var(--motion-med) var(--spring);
   }
   .mobile-nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--text2);border-radius:16px}
   .mobile-nav-item.active{color:var(--accent);background:rgba(79,142,247,.14)}
@@ -838,6 +884,7 @@ body.ctx-open::before{
     position:fixed;inset:0;background:var(--bg1);z-index:410;display:none;flex-direction:column;
     padding-top:max(12px, env(safe-area-inset-top));padding-bottom:calc(84px + env(safe-area-inset-bottom));
     overflow:hidden;
+    animation:mobileFadeIn var(--motion-fast) ease;
   }
   .mobile-sheet-head{padding:14px 16px;border-bottom:1px solid var(--border)}
   .mobile-sheet-title{font-size:18px;font-weight:700}
@@ -878,6 +925,15 @@ body.ctx-open::before{
   -webkit-backdrop-filter:none!important;
 }
 :root[data-theme="light"] #mainChat{background:transparent!important}
+:root[data-theme="light"] .mobile-bottom-nav{
+  background:rgba(255,255,255,.74);
+  border:1px solid rgba(30,41,59,.14);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+:root[data-theme="light"] .mobile-nav-item{color:#334155}
+:root[data-theme="light"] .mobile-nav-item.active{color:var(--accent);background:rgba(58,123,232,.14)}
+:root[data-theme="light"] .mobile-nav-item .mobile-nav-icon{filter:none}
 @media (min-width:901px){
   :root[data-theme="light"] #chatView{
     background:var(--chat-thread-bg);
@@ -995,9 +1051,6 @@ body.use-gradients{
         <div class="conn-status" id="connStatus">● Отключено</div>
       </div>
       <button type="button" class="theme-btn" id="themeToggleBtn" title="Тема">🌙</button>
-      <button type="button" class="icon-btn" id="addChatBtn" title="Новый чат, группа или канал">
-        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-      </button>
     </div>
     <div id="chatList"></div>
     <div class="sidebar-bottom" id="profileBtn">
@@ -1135,13 +1188,32 @@ body.use-gradients{
     <div class="mobile-sheet-title">Настройки</div>
   </div>
   <div class="mobile-settings-body">
-    <label class="mobile-settings-label" for="mobileSettingsNick">Имя</label>
-    <input id="mobileSettingsNick" class="reg-input" type="text" maxlength="30" placeholder="Ваше имя">
-    <button id="mobileSettingsSaveBtn" class="btn-primary" type="button">Сохранить профиль</button>
-    <button id="mobileSettingsOpenModalBtn" class="btn-ghost" type="button">Расширенные настройки</button>
-    <button id="mobileSettingsExportBtn" class="export-btn" type="button">Экспорт данных</button>
-    <button id="mobileSettingsImportBtn" class="import-btn" type="button">Импорт данных</button>
-    <button id="mobileSettingsClearBtn" class="btn-danger" type="button">Удалить все чаты</button>
+    <div class="settings-section" style="margin-bottom:16px">
+      <h3 style="font-size:12px;color:var(--text3);margin-bottom:10px">ПРОФИЛЬ</h3>
+      <div class="settings-av" id="mobileSettingsAvatar" style="width:86px;height:86px;margin-bottom:10px"></div>
+      <input type="file" id="mobileSettingsAvatarFile" accept="image/*" style="display:none">
+      <label class="mobile-settings-label" for="mobileSettingsNick">Имя</label>
+      <input id="mobileSettingsNick" class="reg-input" type="text" maxlength="30" placeholder="Ваше имя" style="font-size:16px;padding:12px 14px">
+      <button id="mobileSettingsSaveBtn" class="btn-primary" type="button" style="margin-top:10px;min-height:46px">Сохранить профиль</button>
+      <div class="settings-id" id="mobileSettingsIdBox" style="margin-top:10px;font-size:12px">...</div>
+      <div class="copy-hint">Нажмите, чтобы скопировать UUID</div>
+    </div>
+    <div class="settings-section" style="margin-bottom:16px">
+      <h3 style="font-size:12px;color:var(--text3);margin-bottom:10px">ТЕМА</h3>
+      <button id="mobileThemeToggleBtn" class="btn-ghost" type="button" style="width:100%;justify-content:center;min-height:46px">Переключить тему</button>
+      <div class="settings-toggle-row" style="margin-top:10px">
+        <span>Градиентный фон</span>
+        <label class="settings-gradient-label"><input type="checkbox" id="mobileGradientToggle" aria-label="Градиентный фон"></label>
+      </div>
+    </div>
+    <div class="settings-section">
+      <h3 style="font-size:12px;color:var(--text3);margin-bottom:10px">ДАННЫЕ</h3>
+      <button id="mobileSettingsExportBtn" class="export-btn" type="button" style="min-height:46px">Экспорт данных</button>
+      <button id="mobileSettingsImportBtn" class="import-btn" type="button" style="min-height:46px">Импорт данных</button>
+      <input type="file" id="mobileImportFile" accept=".json,application/json" style="display:none">
+      <button id="mobileSettingsClearBtn" class="btn-danger" type="button" style="width:100%;margin-top:10px;min-height:46px">Удалить все чаты</button>
+      <button id="mobileSettingsSwitchAccountBtn" class="btn-ghost" type="button" style="width:100%;justify-content:center;margin-top:10px;min-height:46px">Сменить аккаунт</button>
+    </div>
   </div>
 </div>
 <div id="mobileBottomNav" class="mobile-bottom-nav">
@@ -1276,7 +1348,7 @@ body.use-gradients{
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Загрузить данные
       </button>
-      <input type="file" id="importFile" accept=".json" style="display:none">
+      <input type="file" id="importFile" accept=".json,application/json" style="display:none">
       <!-- FIX (FIXES_REPORT 2.7): Clear all local data button -->
       <button class="btn-danger" id="clearDataBtn" style="width:100%;margin-top:8px;padding:10px 14px;font-size:13px;text-align:left;display:flex;align-items:center;gap:8px">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
@@ -2970,11 +3042,20 @@ function togglePinChat(uuid){
 
 function applyMobileChatLayout(){
   const app = document.getElementById('app');
+  const ip = document.getElementById('infoPanel');
   if (!app) return;
   const narrow = window.matchMedia('(max-width:900px)').matches;
-  if (narrow && activeChat) app.classList.add('app-chat-open');
-  else if (narrow && !activeChat) app.classList.remove('app-chat-open');
-  else app.classList.remove('app-chat-open');
+  if (narrow && activeChat) {
+    app.classList.add('app-chat-open');
+    if (ip) ip.classList.remove('info-open');
+    app.classList.remove('info-overlay');
+  } else if (narrow && !activeChat) {
+    app.classList.remove('app-chat-open');
+  } else {
+    app.classList.remove('app-chat-open');
+    if (ip) ip.classList.remove('info-open');
+    app.classList.remove('info-overlay');
+  }
 }
 
 /** Инфо-панель: на узком экране — выезжающая шторка; на широком — подсветка панели */
@@ -4722,6 +4803,11 @@ async function openChat(uuid){
   renderedMsgIds = new Set();
 
   const contact = contacts.find((c) => normUid(c.uuid) === activeChat);
+  const app = document.getElementById('app');
+  const ip = document.getElementById('infoPanel');
+  if (ip) ip.classList.remove('info-open');
+  if (app) app.classList.remove('info-overlay');
+  setMobileTab('chats');
   document.getElementById('noChatView').style.display='none';
   const cv=document.getElementById('chatView');
   cv.style.display='flex';
@@ -5710,9 +5796,10 @@ function setMobileTab(tab) {
   if (tab === 'chats') {
     callsView.style.display = 'none';
     settingsView.style.display = 'none';
-    if (app) app.classList.remove('app-chat-open');
+    if (!activeChat && app) app.classList.remove('app-chat-open');
     if (sidebar) sidebar.style.display = '';
     if (mainChat) mainChat.style.display = '';
+    if (activeChat && app) app.classList.add('app-chat-open');
     return;
   }
   if (app) app.classList.remove('app-chat-open');
@@ -5727,8 +5814,7 @@ function setMobileTab(tab) {
   if (tab === 'settings') {
     callsView.style.display = 'none';
     settingsView.style.display = 'flex';
-    const inp = document.getElementById('mobileSettingsNick');
-    if (inp) inp.value = myProfile.nickname || '';
+    refreshMobileSettingsView();
   }
 }
 
@@ -6099,8 +6185,13 @@ function setupEvents(){
     };
   });
 
-  document.getElementById('addChatBtn').onclick=()=>{
-    document.getElementById('addChatModal').style.display='flex';
+  function openAddChatModal(){
+    const modal = document.getElementById('addChatModal');
+    modal.style.display='flex';
+    const modalCard = modal.querySelector('.modal');
+    if (window.matchMedia('(max-width:900px)').matches && modalCard) {
+      modalCard.style.animation = 'mobileFadeIn var(--motion-fast) ease';
+    }
     document.getElementById('addChatId').value='';
     document.getElementById('addChatName').value='';
     document.getElementById('groupTitleInline').value='';
@@ -6108,7 +6199,9 @@ function setupEvents(){
     document.getElementById('channelUsernameInline').value='';
     document.getElementById('joinRoomInline').value='';
     setAddChatTab('dm');
-  };
+  }
+  const addChatBtn = document.getElementById('addChatBtn');
+  if (addChatBtn) addChatBtn.onclick = openAddChatModal;
   document.getElementById('addChatCancel').onclick=()=>document.getElementById('addChatModal').style.display='none';
   document.querySelectorAll('.add-chat-tab').forEach((btn) => {
     btn.onclick = () => setAddChatTab(btn.dataset.addTab);
@@ -6216,18 +6309,28 @@ function setupEvents(){
     settingsIdBox.addEventListener('touchend', onCopyOwnId, { passive: false });
   }
   document.getElementById('exportBtn').onclick=exportData;
-  document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+  document.getElementById('importBtn').onclick=()=>{
+    const f = document.getElementById('importFile');
+    if (!f) return;
+    f.value = '';
+    f.click();
+  };
   document.getElementById('importFile').onchange=importData;
   const mobileBottomPlusBtn = document.getElementById('mobileBottomPlusBtn');
-  if (mobileBottomPlusBtn) mobileBottomPlusBtn.onclick = () => document.getElementById('addChatBtn')?.click();
+  if (mobileBottomPlusBtn) mobileBottomPlusBtn.onclick = openAddChatModal;
   const mobileExportBtn = document.getElementById('mobileSettingsExportBtn');
   if (mobileExportBtn) mobileExportBtn.onclick = exportData;
   const mobileImportBtn = document.getElementById('mobileSettingsImportBtn');
-  if (mobileImportBtn) mobileImportBtn.onclick = () => document.getElementById('importFile')?.click();
+  if (mobileImportBtn) mobileImportBtn.onclick = () => {
+    const f = document.getElementById('mobileImportFile');
+    if (!f) return;
+    f.value = '';
+    f.click();
+  };
+  const mobileImportFile = document.getElementById('mobileImportFile');
+  if (mobileImportFile) mobileImportFile.onchange = importData;
   const mobileClearBtn = document.getElementById('mobileSettingsClearBtn');
   if (mobileClearBtn) mobileClearBtn.onclick = clearAllData;
-  const mobileSettingsOpenModalBtn = document.getElementById('mobileSettingsOpenModalBtn');
-  if (mobileSettingsOpenModalBtn) mobileSettingsOpenModalBtn.onclick = openSettings;
   const mobileSettingsSaveBtn = document.getElementById('mobileSettingsSaveBtn');
   if (mobileSettingsSaveBtn) {
     mobileSettingsSaveBtn.onclick = async () => {
@@ -6240,9 +6343,51 @@ function setupEvents(){
       }
       renderSidebar();
       if (activeChat) renderChatHeader();
+      const settingsNick = document.getElementById('settingsNick');
+      if (settingsNick) settingsNick.value = myProfile.nickname || '';
       showToast('Сохранено');
     };
   }
+  const mobileSettingsAvatar = document.getElementById('mobileSettingsAvatar');
+  const mobileSettingsAvatarFile = document.getElementById('mobileSettingsAvatarFile');
+  if (mobileSettingsAvatar && mobileSettingsAvatarFile) {
+    mobileSettingsAvatar.onclick = () => mobileSettingsAvatarFile.click();
+    mobileSettingsAvatarFile.onchange = async () => {
+      const f = mobileSettingsAvatarFile.files?.[0];
+      if (!f) return;
+      const processed = await processAvatar(f);
+      const b64 = await fileToBase64(processed);
+      myProfile.avatar = b64;
+      renderAvatar(mobileSettingsAvatar, b64, myProfile.nickname || myProfile.uuid);
+      const desktopAv = document.getElementById('settingsAv');
+      if (desktopAv) renderAvatar(desktopAv, b64, myProfile.nickname || myProfile.uuid);
+    };
+  }
+  const mobileSettingsIdBox = document.getElementById('mobileSettingsIdBox');
+  if (mobileSettingsIdBox) {
+    const onCopyOwnIdMobile = async (e) => {
+      if (e && e.type === 'touchend') e.preventDefault();
+      const ok = await copyTextSafe(myProfile.uuid);
+      showToast(ok ? 'UUID скопирован!' : 'Не удалось скопировать UUID');
+    };
+    mobileSettingsIdBox.addEventListener('click', onCopyOwnIdMobile);
+    mobileSettingsIdBox.addEventListener('touchend', onCopyOwnIdMobile, { passive: false });
+  }
+  const mobileThemeToggleBtn = document.getElementById('mobileThemeToggleBtn');
+  if (mobileThemeToggleBtn) {
+    mobileThemeToggleBtn.onclick = () => {
+      const cur = document.documentElement.dataset.theme || 'dark';
+      const next = cur === 'dark' ? 'light' : 'dark';
+      if (window.applyCipherTheme) window.applyCipherTheme(next);
+      refreshMobileSettingsView();
+    };
+  }
+  const mobileGradientToggle = document.getElementById('mobileGradientToggle');
+  if (mobileGradientToggle) {
+    mobileGradientToggle.onchange = () => applyGradientPreference(mobileGradientToggle.checked);
+  }
+  const mobileSettingsSwitchAccountBtn = document.getElementById('mobileSettingsSwitchAccountBtn');
+  if (mobileSettingsSwitchAccountBtn) mobileSettingsSwitchAccountBtn.onclick = () => document.getElementById('switchAccountBtn')?.click();
   document.querySelectorAll('#mobileBottomNav .mobile-nav-item[data-mobile-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const tab = btn.getAttribute('data-mobile-tab');
@@ -6353,15 +6498,18 @@ function setupEvents(){
       themeBtn.textContent = t === 'light' ? '☀️' : '🌙';
       localStorage.setItem('cipherTheme', t);
     };
+    window.applyCipherTheme = applyTheme;
     const saved = localStorage.getItem('cipherTheme') || 'dark';
     applyTheme(saved);
     themeBtn.onclick = () => {
       const cur = document.documentElement.dataset.theme || 'dark';
       applyTheme(cur === 'dark' ? 'light' : 'dark');
+      refreshMobileSettingsView();
     };
   }
 
   initGradientPreference();
+  refreshMobileSettingsView();
 
   function goToHomeScreen() {
     if (voiceSession) {
@@ -6578,6 +6726,9 @@ function showNoChatView(){
 // FIX (FIXES_REPORT 2.7): Clear all local chats/contacts — account remains on server
 async function clearAllData() {
   if (!confirm('Удалить все чаты и контакты? Аккаунт на сервере останется.')) return;
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    sendToServer('clear-all-data', {});
+  }
   const allContacts = await dbGetAll('contacts').catch(() => []);
   const allMessages = await dbGetAll('messages').catch(() => []);
   await dbDeleteRecordsInChunks('messages', allMessages, 'id', 250).catch(() => {});
@@ -6629,6 +6780,24 @@ function initGradientPreference() {
 }
 
 // ==================== SETTINGS ====================
+function refreshMobileSettingsView(){
+  const minp = document.getElementById('mobileSettingsNick');
+  if (minp) minp.value = myProfile.nickname || '';
+  const av = document.getElementById('mobileSettingsAvatar');
+  if (av) renderAvatar(av, myProfile.avatar, myProfile.nickname || myProfile.uuid);
+  const idBox = document.getElementById('mobileSettingsIdBox');
+  if (idBox) idBox.textContent = myProfile.uuid || '';
+  const mt = document.getElementById('mobileThemeToggleBtn');
+  if (mt) {
+    const t = document.documentElement.dataset.theme || 'dark';
+    mt.textContent = t === 'light' ? 'Тема: Светлая' : 'Тема: Тёмная';
+  }
+  const mg = document.getElementById('mobileGradientToggle');
+  if (mg) {
+    try { mg.checked = localStorage.getItem('cipherUseGradients') === '1'; } catch (_) { mg.checked = false; }
+  }
+}
+
 function openSettings(){
   const m=document.getElementById('settingsModal');
   m.style.display='flex';
@@ -6644,8 +6813,7 @@ function openSettings(){
       gt.checked = false;
     }
   }
-  const minp = document.getElementById('mobileSettingsNick');
-  if (minp) minp.value = myProfile.nickname || '';
+  refreshMobileSettingsView();
 }
 
 async function saveSettings(){
@@ -6711,7 +6879,7 @@ async function exportData(){
   showToast('Данные экспортированы');
 }
 
-async function importData(){
+async function importData(ev){
   const fromBase64Chunked = (base64) => {
     const sliceSize = 0x8000;
     const bytes = [];
@@ -6721,7 +6889,8 @@ async function importData(){
     }
     return Uint8Array.from(bytes);
   };
-  const f=document.getElementById('importFile').files[0];
+  const input = ev?.target || document.getElementById('importFile');
+  const f=input?.files?.[0];
   if(!f) return;
   const text=await f.text();
   const parsed = JSON.parse(text);
@@ -6783,6 +6952,8 @@ async function importData(){
     showToast('Данные восстановлены');
   }catch(e){
     showToast('Неверный пароль или повреждённый файл');
+  }finally{
+    if (input) input.value = '';
   }
 }
 
