@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0b0d">
 <title>Cipher — P2P Messenger</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f8ef7'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='white' font-size='16' font-family='system-ui,sans-serif' font-weight='700'%3EC%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -46,7 +47,7 @@
   --grad-chat-thread:radial-gradient(ellipse 100% 60% at 50% 0%, rgba(79,142,247,0.06), transparent 45%), linear-gradient(180deg, #0a0c10 0%, #080a0d 55%, #0a0b0d 100%);
   --welcome-bg:var(--bg0);
 }
-html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg0);color:var(--text);font-family:var(--font)}
+html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg0);background-color:var(--bg0);color:var(--text);font-family:var(--font)}
 button{font-family:var(--font);cursor:pointer;border:none;background:none}
 input,textarea{font-family:var(--font);background:none;border:none;outline:none;color:var(--text)}
 ::-webkit-scrollbar{width:4px}
@@ -90,6 +91,13 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .sidebar-top .logo{min-width:0}
 .sidebar-top .logo{font-size:18px;font-weight:700;letter-spacing:-0.5px;flex:1}
 .sidebar-top .logo span{color:var(--accent)}
+#addChatBtn{display:flex}
+@media (max-width:768px){
+  #addChatBtn{display:none!important}
+}
+@media (min-width:769px){
+  #addChatBtn{display:flex!important}
+}
 .icon-btn{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--text2);transition:background .15s,color .15s;}
 .icon-btn:hover{background:var(--bg3);color:var(--text)}
 #chatList{flex:1;overflow-y:auto;padding:8px}
@@ -915,6 +923,11 @@ body.ctx-open::before{
 :root[data-theme="light"] #ctxMenu{
   background:rgba(255,255,255,.88);
 }
+:root[data-theme="light"] #infoPanel{
+  background:rgba(255,255,255,.7)!important;
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
 :root[data-theme="light"] body.ctx-open::before{
   background:rgba(14,24,35,.12);
 }
@@ -926,12 +939,13 @@ body.ctx-open::before{
 }
 :root[data-theme="light"] #mainChat{background:transparent!important}
 :root[data-theme="light"] .mobile-bottom-nav{
-  background:rgba(255,255,255,.74);
+  background:rgba(255,255,255,.7);
   border:1px solid rgba(30,41,59,.14);
   backdrop-filter:blur(14px);
   -webkit-backdrop-filter:blur(14px);
+  box-shadow:none!important;
 }
-:root[data-theme="light"] .mobile-nav-item{color:#334155}
+:root[data-theme="light"] .mobile-nav-item{color:#1f2937}
 :root[data-theme="light"] .mobile-nav-item.active{color:var(--accent);background:rgba(58,123,232,.14)}
 :root[data-theme="light"] .mobile-nav-item .mobile-nav-icon{filter:none}
 @media (min-width:901px){
@@ -1050,6 +1064,9 @@ body.use-gradients{
         <span class="logo" id="sidebarLogoBtn" title="На главный экран" role="button" tabindex="0"><span>C</span>ipher</span>
         <div class="conn-status" id="connStatus">● Отключено</div>
       </div>
+    <button type="button" class="icon-btn" id="addChatBtn" title="Новый чат, группа или канал">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
       <button type="button" class="theme-btn" id="themeToggleBtn" title="Тема">🌙</button>
     </div>
     <div id="chatList"></div>
@@ -3043,18 +3060,31 @@ function togglePinChat(uuid){
 function applyMobileChatLayout(){
   const app = document.getElementById('app');
   const ip = document.getElementById('infoPanel');
+  const nav = document.getElementById('mobileBottomNav');
   if (!app) return;
   const narrow = window.matchMedia('(max-width:900px)').matches;
   if (narrow && activeChat) {
     app.classList.add('app-chat-open');
     if (ip) ip.classList.remove('info-open');
     app.classList.remove('info-overlay');
+    if (nav) {
+      nav.style.display = 'none';
+      nav.style.pointerEvents = 'none';
+    }
   } else if (narrow && !activeChat) {
     app.classList.remove('app-chat-open');
+    if (nav) {
+      nav.style.display = 'grid';
+      nav.style.pointerEvents = '';
+    }
   } else {
     app.classList.remove('app-chat-open');
     if (ip) ip.classList.remove('info-open');
     app.classList.remove('info-overlay');
+    if (nav) {
+      nav.style.display = '';
+      nav.style.pointerEvents = '';
+    }
   }
 }
 
@@ -5800,6 +5830,7 @@ function setMobileTab(tab) {
     if (sidebar) sidebar.style.display = '';
     if (mainChat) mainChat.style.display = '';
     if (activeChat && app) app.classList.add('app-chat-open');
+    applyMobileChatLayout();
     return;
   }
   if (app) app.classList.remove('app-chat-open');
@@ -5816,6 +5847,7 @@ function setMobileTab(tab) {
     settingsView.style.display = 'flex';
     refreshMobileSettingsView();
   }
+  applyMobileChatLayout();
 }
 
 async function renderTabContent(){
@@ -6493,10 +6525,14 @@ function setupEvents(){
   // FIX: Theme toggle
   const themeBtn = document.getElementById('themeToggleBtn');
   if (themeBtn) {
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
     const applyTheme = (t) => {
       document.documentElement.dataset.theme = t;
       themeBtn.textContent = t === 'light' ? '☀️' : '🌙';
       localStorage.setItem('cipherTheme', t);
+      if (themeColorMeta) {
+        themeColorMeta.setAttribute('content', t === 'light' ? '#eef2f8' : '#0a0b0d');
+      }
     };
     window.applyCipherTheme = applyTheme;
     const saved = localStorage.getItem('cipherTheme') || 'dark';
