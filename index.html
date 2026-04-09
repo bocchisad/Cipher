@@ -950,19 +950,19 @@ body.ctx-open::before{
 }
 :root[data-theme="light"] #mainChat{background:transparent!important}
 :root[data-theme="light"] .mobile-bottom-nav{
-  background:rgba(230,230,230,.82);
+  background:var(--glass-bg);
   border:1px solid rgba(30,41,59,.14);
   backdrop-filter:blur(22px) saturate(1.2);
   -webkit-backdrop-filter:blur(22px) saturate(1.2);
   box-shadow:0 12px 40px rgba(15,23,42,.14);
 }
 :root[data-theme="light"] .mobile-nav-item{color:#0f172a}
-:root[data-theme="light"] .mobile-nav-item.active{color:var(--accent);background:rgba(58,123,232,.18)}
+:root[data-theme="light"] .mobile-nav-item.active{color:var(--accent);background:transparent}
 :root[data-theme="light"] .mobile-nav-item .mobile-nav-icon{filter:none}
 :root[data-theme="light"] #infoPanel{
-  background:rgba(230,230,230,.7)!important;
-  backdrop-filter:blur(15px);
-  -webkit-backdrop-filter:blur(15px);
+  background:var(--glass-bg)!important;
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
 }
 :root[data-theme="light"] .modal{
   background:#f8f9fb!important;
@@ -971,22 +971,22 @@ body.ctx-open::before{
   -webkit-backdrop-filter:none;
 }
 :root[data-theme="light"] .mobile-sheet-view{
-  background:#f8f9fb!important;
+  background:transparent!important;
   backdrop-filter:none;
   -webkit-backdrop-filter:none;
 }
 :root[data-theme="light"] .mobile-sheet-head{
-  background:#f8f9fb;
+  background:transparent;
   border-bottom-color:var(--border);
 }
 :root[data-theme="light"] .mobile-settings-body{
-  background:#f8f9fb;
+  background:transparent;
 }
 :root[data-theme="light"] #ctxMenu{
-  background:#f8f9fb!important;
+  background:var(--glass-bg-strong)!important;
   border:1px solid var(--border)!important;
-  backdrop-filter:blur(12px);
-  -webkit-backdrop-filter:blur(12px);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
   box-shadow:0 12px 40px rgba(15,23,42,.12);
 }
 :root[data-theme="light"] #mobileSettingsView .settings-section>h3,
@@ -1011,7 +1011,7 @@ body.ctx-open::before{
   border:1px solid var(--border)!important;
   color:#1a1d26!important;
 }
-:root[data-theme="light"] .tab-content{background:#f8f9fb}
+:root[data-theme="light"] .tab-content{background:transparent}
 @media (max-width:900px){
   #ctxMenu{
     min-width:min(86vw,320px);
