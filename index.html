@@ -950,10 +950,10 @@ body.ctx-open::before{
 }
 :root[data-theme="light"] #mainChat{background:transparent!important}
 :root[data-theme="light"] .mobile-bottom-nav{
-  background:var(--glass-bg);
+  background:rgba(255,255,255,.55)!important;
   border:1px solid rgba(30,41,59,.14);
-  backdrop-filter:blur(22px) saturate(1.2);
-  -webkit-backdrop-filter:blur(22px) saturate(1.2);
+  backdrop-filter:blur(28px) saturate(1.4)!important;
+  -webkit-backdrop-filter:blur(28px) saturate(1.4)!important;
   box-shadow:0 12px 40px rgba(15,23,42,.14);
 }
 :root[data-theme="light"] .mobile-nav-item{color:#0f172a}
@@ -972,15 +972,15 @@ body.ctx-open::before{
 }
 :root[data-theme="light"] .mobile-sheet-view{
   background:transparent!important;
-  backdrop-filter:none;
-  -webkit-backdrop-filter:none;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
 }
 :root[data-theme="light"] .mobile-sheet-head{
-  background:transparent;
+  background:transparent!important;
   border-bottom-color:var(--border);
 }
 :root[data-theme="light"] .mobile-settings-body{
-  background:transparent;
+  background:transparent!important;
 }
 :root[data-theme="light"] #ctxMenu{
   background:var(--glass-bg-strong)!important;
