@@ -28,7 +28,8 @@ function openDatabase() {
   db = new Database(DB_PATH);
 
   // Apply AES-256 encryption key
-  db.pragma(`key = '${DB_KEY}'`);
+  const escapedKey = String(DB_KEY).replace(/'/g, "''");
+  db.pragma(`key = '${escapedKey}'`);
 
   // Verify DB opened correctly
   try {
@@ -83,6 +84,7 @@ function createTables() {
       payload     TEXT NOT NULL,
       iv          TEXT NOT NULL,
       signature   TEXT NOT NULL,
+      raw_json    TEXT,
       msg_type    TEXT DEFAULT 'msg',
       ts          INTEGER NOT NULL,
       created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -93,6 +95,7 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_queue_ts ON message_queue(ts);
     CREATE INDEX IF NOT EXISTS idx_users_seen ON users(last_seen);
   `);
+  try { db.exec('ALTER TABLE message_queue ADD COLUMN raw_json TEXT'); } catch (_) {}
 }
 
 // ==================== USER OPERATIONS ====================
@@ -156,14 +159,15 @@ function loadRoomKey(roomId) {
 // ==================== MESSAGE QUEUE (E2EE FORMAT) ====================
 function enqueueMessage(message) {
   db.prepare(`
-    INSERT INTO message_queue (from_uuid, to_uuid, payload, iv, signature, msg_type, ts)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO message_queue (from_uuid, to_uuid, payload, iv, signature, raw_json, msg_type, ts)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    message.from,
-    message.to,
-    message.payload,
-    message.iv,
-    message.signature,
+    String(message.from || ''),
+    String(message.to || ''),
+    String(message.payload || ''),
+    String(message.iv || ''),
+    String(message.signature || ''),
+    JSON.stringify(message || {}),
     message.type || 'msg',
     message.ts || Date.now()
   );
@@ -178,15 +182,22 @@ function dequeueMessages(toUuid) {
     db.prepare('DELETE FROM message_queue WHERE to_uuid = ?').run(toUuid);
   }
 
-  return msgs.map(row => ({
-    from: row.from_uuid,
-    to: row.to_uuid,
-    payload: row.payload,
-    iv: row.iv,
-    signature: row.signature,
-    type: row.msg_type,
-    ts: row.ts
-  }));
+  return msgs.map(row => {
+    if (row.raw_json) {
+      try {
+        return JSON.parse(row.raw_json);
+      } catch (_) {}
+    }
+    return {
+      from: row.from_uuid,
+      to: row.to_uuid,
+      payload: row.payload,
+      iv: row.iv,
+      signature: row.signature,
+      type: row.msg_type,
+      ts: row.ts
+    };
+  });
 }
 
 // ==================== CLOSE ====================

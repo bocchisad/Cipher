@@ -118,7 +118,7 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .chat-empty p{font-size:14px}
 
 /* CHAT HEADER */
-#chatHeader{padding:0 20px;height:64px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg1);flex-shrink:0;position:relative;z-index:2}
+#chatHeader{padding:0 20px;height:64px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;background:var(--bg1);flex-shrink:0;position:sticky;top:0;z-index:30}
 #chatHeader .av{width:38px;height:38px;border-radius:50%;background:var(--bg4);overflow:hidden;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--accent);}
 #chatHeader .av img{width:100%;height:100%;object-fit:cover}
 #chatHeader .hinfo{flex:1;min-width:0}
@@ -128,8 +128,8 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .hbtns{display:flex;gap:6px}
 
 /* MESSAGES */
-#chatView{flex:1;min-height:0;min-width:0;width:100%;display:flex;flex-direction:column;overflow:hidden}
-#messagesArea{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px min(16px,4vw);display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0;width:100%;align-items:stretch;background:var(--chat-thread-bg);position:relative;z-index:0}
+#chatView{flex:1;min-height:0;min-width:0;width:100%;display:flex;flex-direction:column;overflow:hidden;position:relative}
+#messagesArea{flex:1;overflow-y:auto;overflow-x:hidden;padding:16px min(16px,4vw) 12px;display:flex;flex-direction:column;gap:8px;min-height:0;min-width:0;width:100%;align-items:stretch;background:var(--chat-thread-bg);position:relative;z-index:1}
 .msg{display:flex;gap:10px;align-items:flex-end;max-width:min(92%,560px);width:100%;box-sizing:border-box}
 .msg.out{align-self:flex-end;flex-direction:row;margin-left:auto;justify-content:flex-end}
 .msg:not(.out){align-self:flex-start}
@@ -596,6 +596,10 @@ body.use-gradients #app:not(.app-chat-open) #sidebar{
 }
 .reply-quote-author{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:2px}
 .reply-quote-text{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.msg.reply-target-flash .bubble{
+  box-shadow:0 0 0 2px rgba(79,142,247,.9), 0 0 28px rgba(79,142,247,.45);
+  transition:box-shadow .35s ease;
+}
 
 /* ===== PHOTO ALBUM GROUP ===== */
 .album-grid{display:grid;gap:3px;border-radius:var(--r);overflow:hidden;max-width:280px;margin-bottom:4px}
@@ -2374,6 +2378,7 @@ function handleServerMessage(msg) {
       handleIncomingReaction(data);
       break;
     case 'edit-msg':
+    case 'edit-message':
       handleIncomingEditMessage(data);
       break;
     case 'rtc-offer':
@@ -2535,8 +2540,32 @@ async function handleIncomingReaction(data) {
 async function handleIncomingEditMessage(data) {
   if (!data || !data.originalTs) return;
   
-  const fromUuid = data.from;
-  const chatId = normUid(fromUuid);
+  const fromUuid = normUid(data.from);
+  const possibleChatIds = [normUid(data.to), fromUuid].filter(Boolean);
+  const originalMsgId = data.originalMsgId || buildClientMsgId(fromUuid, data.originalTs);
+
+  async function applyIncomingEdit(newContent, editTs) {
+    let updated = false;
+    for (const cid of possibleChatIds) {
+      const chatMsgs = await dbGetByIndex('messages', 'chatId', cid);
+      const target = chatMsgs.find((m) =>
+        (originalMsgId && m.msgId && String(m.msgId) === String(originalMsgId)) ||
+        m.ts === data.originalTs
+      );
+      if (!target) continue;
+      target.content = newContent;
+      target.edited = true;
+      target.editTs = editTs || Date.now();
+      target.msgId = target.msgId || originalMsgId;
+      await dbPut('messages', target);
+      updated = true;
+      if (activeChat && normUid(activeChat) === cid) {
+        await loadMessages();
+      }
+      break;
+    }
+    return updated;
+  }
   
   // Handle E2EE encrypted edit
   if (data.payload && data.iv && data.signature && crypto_engine.myKeys) {
@@ -2565,39 +2594,17 @@ async function handleIncomingEditMessage(data) {
         const plaintext = await crypto_engine.decryptPayload(sharedSecret, { payload: data.payload, iv: data.iv });
         const decrypted = JSON.parse(plaintext);
         
-        // Update message in database
-        const msgs = await dbGetByIndex('messages', 'chatId', chatId);
-        const msg = msgs.find((m) => m.ts === data.originalTs);
-        if (msg) {
-          msg.content = decrypted.newContent;
-          msg.edited = true;
-          msg.editTs = data.ts || Date.now();
-          await dbPut('messages', msg);
-          
-          // Refresh UI if in this chat
-          if (activeChat && normUid(activeChat) === chatId) {
-            await loadMessages();
-          }
-          console.log('✏️ Message edited (E2EE):', data.originalTs);
-        }
+        const ok = await applyIncomingEdit(decrypted.newContent, data.ts);
+        if (ok) console.log('✏️ Message edited (E2EE):', data.originalTs);
       }
     } catch (err) {
       console.error('E2EE edit decryption failed:', err);
     }
   } else {
     // Handle plaintext edit (fallback)
-    const msgs = await dbGetByIndex('messages', 'chatId', chatId);
-    const msg = msgs.find((m) => m.ts === data.originalTs);
-    if (msg && data.newContent) {
-      msg.content = data.newContent;
-      msg.edited = true;
-      msg.editTs = data.ts || Date.now();
-      await dbPut('messages', msg);
-      
-      if (activeChat && normUid(activeChat) === chatId) {
-        await loadMessages();
-      }
-      console.log('✏️ Message edited (plaintext):', data.originalTs);
+    if (data.newContent) {
+      const ok = await applyIncomingEdit(data.newContent, data.ts);
+      if (ok) console.log('✏️ Message edited (plaintext):', data.originalTs);
     }
   }
 }
@@ -2874,6 +2881,35 @@ let localMessageRefs = new Set();
 
 function makeMessageRefKey(from, ts) {
   return `${normUid(from)}:${Number(ts)}`;
+}
+
+function buildClientMsgId(from, ts) {
+  return `${normUid(from)}:${Number(ts)}`;
+}
+
+function findRenderedMessageByMsgId(msgId) {
+  if (!msgId) return null;
+  return document.querySelector(`#messagesArea .msg[data-msg-id="${CSS.escape(String(msgId))}"]`);
+}
+
+function flashMessageTarget(el) {
+  if (!el) return;
+  el.classList.remove('reply-target-flash');
+  void el.offsetWidth;
+  el.classList.add('reply-target-flash');
+  setTimeout(() => el.classList.remove('reply-target-flash'), 1300);
+}
+
+function scrollToReplyTarget(replyMeta) {
+  if (!replyMeta?.ts) return;
+  const msgId = replyMeta.msgId || buildClientMsgId(replyMeta.from, replyMeta.ts);
+  const target = findRenderedMessageByMsgId(msgId) || document.querySelector(`#messagesArea .msg[data-ts="${Number(replyMeta.ts)}"]`);
+  if (!target) {
+    showToast('Оригинал сообщения не найден');
+    return;
+  }
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  flashMessageTarget(target);
 }
 
 const EMOJI_CATEGORIES = {
@@ -3480,7 +3516,8 @@ async function handleIncomingMessage(msg) {
   const here = activeChat ? normUid(activeChat) : '';
   const ch = normUid(chatId);
   const sameChat = !!(here && here === ch);
-  const localMsg = {chatId, from, to, type, content, ts, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom};
+  const incomingMsgId = msg.msgId || buildClientMsgId(from, ts);
+  const localMsg = {chatId, from, to, type, content, ts, msgId: incomingMsgId, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom};
   await dbPut('messages', localMsg);
 
   if (sameChat) {
@@ -3829,19 +3866,23 @@ async function sendMessage(type, content){
   // FIX #2: include reply quote if replying
   const replySnap = replyingToMsg ? {
     ts: replyingToMsg.ts,
+    msgId: replyingToMsg.msgId || buildClientMsgId(replyingToMsg.from, replyingToMsg.ts),
     from: replyingToMsg.from,
     type: replyingToMsg.type,
     preview: replyingToMsg.type === 'text'
       ? String(replyingToMsg.content || '').slice(0, 80)
       : '📎 ' + replyingToMsg.type
   } : undefined;
+  const msgTs = Date.now();
+  const msgId = buildClientMsgId(myProfile.uuid, msgTs);
 
   const message = {
     from: normUid(myProfile.uuid),
     to: activeChat,
     type,
     content,
-    ts: Date.now(),
+    ts: msgTs,
+    msgId,
     ...(isRoom ? { roomId: activeChat } : {}),
     ...(replySnap ? { replyTo: replySnap } : {})
   };
@@ -3942,7 +3983,7 @@ async function sendMessage(type, content){
     }
   }
 
-  const localMsg = {...message, chatId: activeChat, read: true, reactions: {}, forwardFrom: forwardingFromMsg ? {
+  const localMsg = {...message, type, content, msgId, replyTo: replySnap, chatId: activeChat, read: true, reactions: {}, forwardFrom: forwardingFromMsg ? {
     uuid: forwardingFromMsg.from,
     name: contacts.find((c) => normUid(c.uuid) === normUid(forwardingFromMsg.from))?.nickname || 
           (normUid(forwardingFromMsg.from) === normUid(myProfile.uuid) ? 'Вы' : String(forwardingFromMsg.from).slice(0, 8))
@@ -4073,7 +4114,73 @@ function renderSidebar() {
     item.appendChild(meta);
     item.onclick = () => openChat(c.uuid);
     item.oncontextmenu = (e) => { e.preventDefault(); showChatCtxMenu(e, c.uuid); };
+    bindChatItemLongPress(item, c.uuid);
     list.appendChild(item);
+  }
+}
+
+function bindChatItemLongPress(item, chatId) {
+  let timer = null;
+  let moved = false;
+  let sx = 0;
+  let sy = 0;
+  let longPressTriggered = false;
+  const start = (x, y) => {
+    sx = x;
+    sy = y;
+    moved = false;
+    longPressTriggered = false;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      longPressTriggered = true;
+      renameContactPrompt(chatId);
+    }, 550);
+  };
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+  };
+  item.addEventListener('touchstart', (e) => {
+    const t = e.touches?.[0];
+    if (!t) return;
+    start(t.clientX, t.clientY);
+  }, { passive: true });
+  item.addEventListener('touchmove', (e) => {
+    const t = e.touches?.[0];
+    if (!t) return;
+    if (Math.abs(t.clientX - sx) > 12 || Math.abs(t.clientY - sy) > 12) {
+      moved = true;
+      cancel();
+    }
+  }, { passive: true });
+  item.addEventListener('touchend', () => {
+    if (!moved) cancel();
+  }, { passive: true });
+  item.addEventListener('touchcancel', cancel, { passive: true });
+  item.addEventListener('click', (e) => {
+    if (longPressTriggered) {
+      e.preventDefault();
+      e.stopPropagation();
+      longPressTriggered = false;
+    }
+  }, true);
+}
+
+async function renameContactPrompt(chatId) {
+  const uid = normUid(chatId);
+  const contact = contacts.find((c) => normUid(c.uuid) === uid);
+  if (!contact) return;
+  const current = contact.nickname || contact.uuid;
+  const next = prompt('Введите новое имя контакта', current);
+  if (next == null) return;
+  const trimmed = String(next).trim().slice(0, 64);
+  if (!trimmed || trimmed === current) return;
+  contact.nickname = trimmed;
+  await dbPut('contacts', contact).catch(() => {});
+  renderSidebar();
+  if (activeChat && normUid(activeChat) === uid) {
+    renderChatHeader();
   }
 }
 
@@ -4441,11 +4548,15 @@ async function sendEditMessage(newContent) {
   
   const c = contacts.find((x) => normUid(x.uuid) === activeChat);
   const isRoom = c && (c.kind === 'group' || c.kind === 'channel');
+  const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
+  const originalMsg = msgs.find((m) => m.ts === editingMessageTs);
+  const originalMsgId = originalMsg?.msgId || buildClientMsgId(myProfile.uuid, editingMessageTs);
   
   // Send edit-msg to server
   const editData = {
     to: activeChat,
     originalTs: editingMessageTs,
+    originalMsgId,
     newContent,
     ts: Date.now()
   };
@@ -4476,7 +4587,8 @@ async function sendEditMessage(newContent) {
           payload: encPayload.payload,
           iv: encPayload.iv,
           signature,
-          originalTs: editingMessageTs
+          originalTs: editingMessageTs,
+          originalMsgId
         });
       }
     } catch (err) {
@@ -4488,12 +4600,12 @@ async function sendEditMessage(newContent) {
   }
   
   // Update local message
-  const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
-  const msg = msgs.find((m) => m.ts === editingMessageTs);
+  const msg = originalMsg || msgs.find((m) => m.ts === editingMessageTs);
   if (msg) {
     msg.content = newContent;
     msg.edited = true;
     msg.editTs = Date.now();
+    msg.msgId = msg.msgId || originalMsgId;
     await dbPut('messages', msg);
   }
   
@@ -4705,6 +4817,7 @@ function appendAlbum(msgs, area) {
   const wrapper = document.createElement('div');
   wrapper.className = 'msg ' + (isOut ? 'out' : 'in');
   wrapper.dataset.ts = first.ts;
+  wrapper.dataset.msgId = first.msgId || buildClientMsgId(first.from, first.ts);
 
   if (!isOut) {
     const mav = document.createElement('div');
@@ -4811,6 +4924,7 @@ function renderMediaAlbum() {
   const wrapper = document.createElement('div');
   wrapper.className = 'msg ' + (isOut ? 'out' : 'in');
   wrapper.dataset.ts = pendingMediaGroup[0].ts;
+  wrapper.dataset.msgId = pendingMediaGroup[0].msgId || buildClientMsgId(pendingMediaGroup[0].from, pendingMediaGroup[0].ts);
   
   // Create bubble
   const bubble = document.createElement('div');
@@ -4942,7 +5056,7 @@ function appendMessage(msg){
   const contact = contacts.find((c) => normUid(c.uuid) === activeChat) || {};
   const wrapper=document.createElement('div');
   wrapper.className='msg'+(isOut?' out':'');
-  if(msg.id) wrapper.dataset.msgId=msg.id;
+  wrapper.dataset.msgId = msg.msgId || buildClientMsgId(msg.from, msg.ts);
   // FIX (Недочёт #6): data-ts for delivery receipt lookup
   wrapper.dataset.ts = msg.ts;
   localMessageRefs.add(makeMessageRefKey(msg.from, msg.ts));
@@ -4964,6 +5078,7 @@ function appendMessage(msg){
   if (msg.replyTo) {
     const rq = document.createElement('div');
     rq.className = 'reply-quote';
+    rq.title = 'Перейти к оригинальному сообщению';
     const authorEl = document.createElement('div');
     authorEl.className = 'reply-quote-author';
     const rauthor = contacts.find(c=>normUid(c.uuid)===normUid(msg.replyTo.from));
@@ -4974,6 +5089,10 @@ function appendMessage(msg){
     textEl.textContent = refExists ? (msg.replyTo.preview || '') : 'Сообщение удалено';
     rq.appendChild(authorEl);
     rq.appendChild(textEl);
+    rq.addEventListener('click', (e) => {
+      e.stopPropagation();
+      scrollToReplyTarget(msg.replyTo);
+    });
     bubble.appendChild(rq);
   }
 

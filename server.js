@@ -473,6 +473,7 @@ async function handleMessage(ws, msg, setUserId, ip) {
       handleMessageReaction(uuid, data);
       break;
     case 'edit-msg':
+    case 'edit-message':
       handleEditMessage(uuid, data);
       break;
     case 'ping':
@@ -631,7 +632,7 @@ function handleLogin(ws, msg, setUserId, ip) {
   if (pending.length > 0) {
     console.log(`📨 Delivering ${pending.length} queued messages to ${user.nickname}`);
     pending.forEach(qMsg => {
-      if (qMsg.type && ['msg', 'rtc-offer', 'rtc-answer', 'rtc-ice', 'edit-msg'].includes(qMsg.type)) {
+      if (qMsg.type && ['msg', 'rtc-offer', 'rtc-answer', 'rtc-ice', 'edit-msg', 'edit-message'].includes(qMsg.type)) {
         safeWsSend(ws, { type: qMsg.type, data: qMsg });
       } else {
         safeWsSend(ws, { type: 'message', data: qMsg });
@@ -744,12 +745,13 @@ function handleSendMessage(fromUuid, data) {
   const sender = normUid(fromUuid);
   const toRaw = data.to;
   const to = normUid(toRaw);
-  const { content, ts, type: msgType, roomId, payload, iv, signature, forwardFrom, replyTo } = data;
+  const { content, ts, type: msgType, roomId, payload, iv, signature, forwardFrom, replyTo, msgId } = data;
   const message = {
     from: sender,
     to,
     content,
     ts,
+    msgId: msgId || `${sender}:${Number(ts || Date.now())}`,
     type: msgType,
     roomId: roomId || (rooms.has(to) ? to : undefined),
     // E2EE fields (preserved for forwarding and replies)
@@ -1138,6 +1140,7 @@ function handleEditMessage(fromUuid, data) {
   if (!data?.to || !data?.originalTs) return;
   
   const toUuid = normUid(data.to);
+  const originalMsgId = data.originalMsgId || `${fromUuid}:${Number(data.originalTs)}`;
   
   // Check if this is an E2EE edit (has encrypted payload)
   if (data.payload && data.iv && data.signature) {
@@ -1150,12 +1153,13 @@ function handleEditMessage(fromUuid, data) {
       iv: data.iv,
       signature: data.signature,
       originalTs: data.originalTs,
+      originalMsgId,
       ts: data.ts || Date.now()
     };
     
     const toUser = getUserLive(toUuid);
     if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
-      safeWsSend(toUser.ws, { type: 'edit-msg', data: message });
+      safeWsSend(toUser.ws, { type: 'edit-message', data: message });
       console.log(`✏️ E2EE edit-msg: ${fromUuid.substring(0, 8)}… → ${toUuid.substring(0, 8)}…`);
     } else {
       // Queue for offline delivery
@@ -1169,13 +1173,14 @@ function handleEditMessage(fromUuid, data) {
       to: toUuid,
       type: 'edit-msg',
       originalTs: data.originalTs,
+      originalMsgId,
       newContent: data.newContent,
       ts: data.ts || Date.now()
     };
     
     const toUser = getUserLive(toUuid);
     if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
-      safeWsSend(toUser.ws, { type: 'edit-msg', data: message });
+      safeWsSend(toUser.ws, { type: 'edit-message', data: message });
     } else {
       enqueueMessageToStore(message);
     }
