@@ -894,11 +894,12 @@ body.ctx-open::before{
   .mobile-bottom-nav{
     position:fixed;left:10px;right:10px;bottom:calc(8px + env(safe-area-inset-bottom));height:66px;z-index:420;
     max-width:min(100vw - 20px,520px);margin-left:auto;margin-right:auto;
-    border-radius:24px;background:var(--glass-bg);
-    backdrop-filter:blur(22px) saturate(1.15);
-    -webkit-backdrop-filter:blur(22px) saturate(1.15);
-    border:1px solid rgba(255,255,255,.1);
-    box-shadow:0 10px 36px rgba(0,0,0,.35);
+    border-radius:24px;
+    background:rgba(30,34,44,0.65);
+    backdrop-filter:blur(20px) saturate(1.5);
+    -webkit-backdrop-filter:blur(20px) saturate(1.5);
+    border:1px solid rgba(255,255,255,0.08);
+    box-shadow:0 10px 36px rgba(0,0,0,0.35);
     display:grid;grid-template-columns:repeat(4,1fr);padding:6px 8px;gap:4px;
     transition:opacity var(--motion-fast) ease, transform var(--motion-med) var(--spring);
   }
@@ -950,11 +951,11 @@ body.ctx-open::before{
 }
 :root[data-theme="light"] #mainChat{background:transparent!important}
 :root[data-theme="light"] .mobile-bottom-nav{
-  background:rgba(255,255,255,.55)!important;
-  border:1px solid rgba(30,41,59,.14);
-  backdrop-filter:blur(28px) saturate(1.4)!important;
-  -webkit-backdrop-filter:blur(28px) saturate(1.4)!important;
-  box-shadow:0 12px 40px rgba(15,23,42,.14);
+  background:rgba(255,255,255,0.45);
+  border:1px solid rgba(255,255,255,0.4);
+  backdrop-filter:blur(25px) saturate(1.8);
+  -webkit-backdrop-filter:blur(25px) saturate(1.8);
+  box-shadow:0 12px 40px rgba(15,23,42,0.12);
 }
 :root[data-theme="light"] .mobile-nav-item{color:#0f172a}
 :root[data-theme="light"] .mobile-nav-item.active{color:var(--accent);background:transparent}
