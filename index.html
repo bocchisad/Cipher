@@ -3594,8 +3594,18 @@ function setupReg(){
 
       await startApp(receivedUuid);
 
-      showToast('✓ Аккаунт создан! UUID скопирован.');
-      copyTextSafe(receivedUuid).catch(()=>{});
+      // FIX: Show modal with UUID instead of auto-copy (clipboard requires user gesture)
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
+      modal.innerHTML = '<div style="background:var(--bg1);border-radius:16px;padding:24px;max-width:380px;width:100%;text-align:center;border:1px solid var(--border);"><h3 style="margin:0 0 12px 0;font-size:20px;color:var(--text);">Аккаунт создан!</h3><p style="margin:0 0 16px 0;color:var(--text2);font-size:14px;">Сохраните ваш UUID — он понадобится для входа на других устройствах</p><div style="background:var(--bg3);padding:12px;border-radius:8px;font-family:monospace;font-size:13px;word-break:break-all;margin-bottom:16px;color:var(--text);" id="regUuidDisplay">'+receivedUuid+'</div><button id="copyUuidBtn" style="width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:16px;margin-bottom:10px;cursor:pointer;">Копировать UUID</button><button id="closeUuidBtn" style="width:100%;padding:14px;background:var(--bg3);color:var(--text);border:none;border-radius:10px;font-size:16px;cursor:pointer;">Закрыть</button></div>';
+      document.body.appendChild(modal);
+      document.getElementById('copyUuidBtn').onclick = () => {
+        copyTextSafe(receivedUuid).then(ok => {
+          showToast(ok ? 'UUID скопирован!' : 'Ошибка копирования');
+          if (ok) modal.remove();
+        });
+      };
+      document.getElementById('closeUuidBtn').onclick = () => modal.remove();
 
       regBtn.disabled=false;
       regBtn.textContent='Регистрация';
@@ -5082,7 +5092,8 @@ function groupMessagesIntoAlbums(msgs) {
           i++;
         } else break;
       }
-      out.push(batch.length > 1 ? batch : m);
+      // FIX: Always return media as arrays (even single items) so they go through appendAlbum
+      out.push(batch);
     } else {
       out.push(m);
     }
@@ -5096,13 +5107,15 @@ function appendAlbum(msgs, area) {
   const first = msgs[0];
   const isOut = normUid(first.from) === normUid(myProfile.uuid);
   const contact = contacts.find(c => normUid(c.uuid) === activeChat) || {};
+  const isGroup = contact.kind === 'group' || contact.kind === 'channel';
 
   const wrapper = document.createElement('div');
   wrapper.className = 'msg ' + (isOut ? 'out' : 'in');
   wrapper.dataset.ts = first.ts;
   wrapper.dataset.msgId = first.msgId || buildClientMsgId(first.from, first.ts);
 
-  if (!isOut) {
+  // FIX: Don't show chat avatar for groups, only for direct messages
+  if (!isOut && !isGroup) {
     const mav = document.createElement('div');
     mav.className = 'mavatar';
     renderAvatar(mav, contact.avatar, contact.nickname || contact.uuid);
@@ -5111,6 +5124,24 @@ function appendAlbum(msgs, area) {
 
   const stack = document.createElement('div');
   stack.className = 'msg-stack';
+
+  // FIX: Show sender info for group album messages
+  if (isGroup && !isOut) {
+    const sender = contacts.find((c) => normUid(c.uuid) === normUid(first.from));
+    const senderName = sender?.nickname || String(first.from||'').slice(0,8);
+    const senderAv = sender?.avatar || '';
+    const senderEl = document.createElement('div');
+    senderEl.className = 'msg-sender';
+    const senderAvEl = document.createElement('div');
+    senderAvEl.className = 'msg-sender-av';
+    renderAvatar(senderAvEl, senderAv, senderName);
+    const senderNameEl = document.createElement('span');
+    senderNameEl.className = 'msg-sender-name';
+    senderNameEl.textContent = senderName;
+    senderEl.appendChild(senderAvEl);
+    senderEl.appendChild(senderNameEl);
+    stack.appendChild(senderEl);
+  }
 
   // Create bubble (same as renderMediaAlbum)
   const bubble = document.createElement('div');
@@ -5206,19 +5237,26 @@ async function queueMediaForAlbum(msg) {
     pendingMediaFrom = mediaFrom;
   }
   pendingMediaLastTs = mediaTs;
-  // Add to pending group
   pendingMediaGroup.push(msg);
-  
-  // Clear existing timer
+
   if (mediaGroupTimer) {
     clearTimeout(mediaGroupTimer);
   }
-  
-  // Set timer to render group after a short delay (allows batching)
-  // FIX: Balanced timeout at 800ms for PC batching and mobile responsiveness
-  mediaGroupTimer = setTimeout(() => {
-    renderMediaAlbum();
-  }, 800);
+
+  // FIX: Use longer timeout on mobile for better batching, shorter on PC
+  const isMobile = window.matchMedia('(max-width:900px)').matches;
+  const timeout = isMobile ? 1500 : 600;
+
+  // FIX: If only one message and no more coming soon, render immediately
+  if (pendingMediaGroup.length === 1) {
+    mediaGroupTimer = setTimeout(() => {
+      renderMediaAlbum();
+    }, timeout);
+  } else {
+    mediaGroupTimer = setTimeout(() => {
+      renderMediaAlbum();
+    }, timeout);
+  }
 }
 
 function renderMediaAlbum() {
