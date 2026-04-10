@@ -7641,6 +7641,7 @@ let globalAudioLoop = false; // false = no loop, 'all' = loop all, 'one' = loop 
 let globalAudioShuffledIndices = []; // For shuffle mode
 let globalAudioCurrentTs = null; // Currently playing message timestamp
 let globalAudioMessageElement = null; // Currently playing message element in chat
+let globalAudioIsDragging = false; // Prevent UI conflicts during drag
 
 function initGlobalAudioPlayer() {
   const player = document.getElementById('globalAudioPlayer');
@@ -7694,10 +7695,7 @@ function initGlobalAudioPlayer() {
     };
   }
 
-  // Global flag to prevent UI conflicts during drag
-let globalAudioIsDragging = false;
-
-// FIX: Drag-n-drop seek functionality
+  // FIX: Drag-n-drop seek functionality
   setupProgressBarDrag(bar);
 }
 
