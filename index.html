@@ -235,6 +235,8 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 #globalAudioPlayer .player-btn.player-play{width:42px;height:42px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;box-shadow:0 4px 15px rgba(79,142,247,0.4);transition:all .15s ease}
 #globalAudioPlayer .player-btn.player-play:hover{box-shadow:0 6px 20px rgba(79,142,247,0.5);transform:scale(1.08)}
 #globalAudioPlayer .player-btn.player-play:active{transform:scale(0.95);box-shadow:0 2px 10px rgba(79,142,247,0.3)}
+/* FIX: Make SVG icons pass through clicks to parent button */
+#globalAudioPlayer .player-btn svg{pointer-events:none}
 #globalAudioPlayer .player-btn.active{background:rgba(79,142,247,0.3);border-color:var(--accent);color:var(--accent)}
 #globalAudioPlayer .player-info{flex:1;min-width:0;text-align:center;padding:0 8px}
 #globalAudioPlayer .player-from{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,0.3)}
@@ -7650,9 +7652,13 @@ function initGlobalAudioPlayer() {
   if (!player || !playBtn) return;
 
   playBtn.onclick = (e) => toggleGlobalAudio(e);
-  prevBtn.onclick = playPreviousGlobalAudio;
-  nextBtn.onclick = playNextGlobalAudio;
+  prevBtn.onclick = (e) => { if(e) { e.stopPropagation(); e.preventDefault(); } playPreviousGlobalAudio(); };
+  nextBtn.onclick = (e) => { if(e) { e.stopPropagation(); e.preventDefault(); } playNextGlobalAudio(); };
   closeBtn.onclick = closeGlobalAudioPlayer;
+
+  // FIX: Setup keyboard shortcuts and media session
+  setupMediaKeys();
+  setupMediaSession();
 
   // Shuffle button: click to toggle shuffle, double click to toggle loop
   if (shuffleBtn) {
@@ -7814,7 +7820,7 @@ function formatTime(seconds) {
   return m + ':' + s.toString().padStart(2, '0');
 }
 
-// FIX: Debounce toggle to prevent double-clicks - reduced to 100ms for better responsiveness
+// FIX: Debounce toggle to prevent double-clicks - reduced to 50ms for better responsiveness
 let globalAudioTogglePending = false;
 
 function toggleGlobalAudio(e) {
@@ -7831,7 +7837,7 @@ function toggleGlobalAudio(e) {
   // Reduced timeout for faster response while still preventing double-clicks
   setTimeout(() => {
     globalAudioTogglePending = false;
-  }, 100);
+  }, 50);
 
   if (globalAudio.paused) {
     const playPromise = globalAudio.play();
@@ -7854,6 +7860,86 @@ function toggleGlobalAudio(e) {
     updateGlobalAudioUI();
     updateChatAudioButtons();
   }
+}
+
+// FIX: Setup keyboard media keys (Space, Arrow keys)
+function setupMediaKeys() {
+  document.addEventListener('keydown', (e) => {
+    // Only handle if player is visible and not typing in input
+    const player = document.getElementById('globalAudioPlayer');
+    if (!player || player.style.display === 'none') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    switch(e.code) {
+      case 'Space':
+        e.preventDefault();
+        toggleGlobalAudio();
+        break;
+      case 'ArrowLeft':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          playPreviousGlobalAudio();
+        }
+        break;
+      case 'ArrowRight':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          playNextGlobalAudio();
+        }
+        break;
+      case 'MediaPlayPause':
+        e.preventDefault();
+        toggleGlobalAudio();
+        break;
+      case 'MediaTrackPrevious':
+        e.preventDefault();
+        playPreviousGlobalAudio();
+        break;
+      case 'MediaTrackNext':
+        e.preventDefault();
+        playNextGlobalAudio();
+        break;
+    }
+  });
+}
+
+// FIX: Setup Media Session API for AirPods and OS media controls
+function setupMediaSession() {
+  if (!('mediaSession' in navigator)) return;
+
+  navigator.mediaSession.setActionHandler('play', () => {
+    if (globalAudio && globalAudio.paused) {
+      toggleGlobalAudio();
+    }
+  });
+
+  navigator.mediaSession.setActionHandler('pause', () => {
+    if (globalAudio && !globalAudio.paused) {
+      toggleGlobalAudio();
+    }
+  });
+
+  navigator.mediaSession.setActionHandler('previoustrack', () => {
+    playPreviousGlobalAudio();
+  });
+
+  navigator.mediaSession.setActionHandler('nexttrack', () => {
+    playNextGlobalAudio();
+  });
+}
+
+// Update media session metadata when track changes
+function updateMediaSessionMetadata(track) {
+  if (!('mediaSession' in navigator) || !track) return;
+
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: track.title || 'Аудио',
+    artist: track.from || 'Cipher',
+    album: 'Cipher Messenger',
+    artwork: [
+      { src: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="%234f8ef7"/><text x="256" y="320" text-anchor="middle" fill="white" font-size="200" font-family="system-ui">C</text></svg>', sizes: '512x512', type: 'image/svg+xml' }
+    ]
+  });
 }
 
 function getEffectiveIndex() {
@@ -7923,6 +8009,9 @@ function loadAndPlayGlobalAudio(track) {
   document.getElementById('playerFrom').textContent = track.from || '...';
   document.getElementById('playerTitle').textContent = track.title || (track.type === 'voice' ? 'Голосовое сообщение' : 'Аудио');
   document.getElementById('globalAudioPlayer').style.display = 'block';
+
+  // FIX: Update media session metadata for AirPods/OS controls
+  updateMediaSessionMetadata(track);
 
   globalAudio.onloadedmetadata = () => {
     updateGlobalAudioUI();
