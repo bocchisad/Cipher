@@ -458,6 +458,18 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 :root[data-theme="light"] .chat-item:hover{background:#eef0f4}
 :root[data-theme="light"] .chat-item.active{background:#e2e8f8}
 :root[data-theme="light"] .info-top{background:linear-gradient(135deg,#f0f4ff,#f8f9fb)}
+
+/* ===== LIGHT THEME AUDIO PLAYER ===== */
+:root[data-theme="light"] #globalAudioPlayer{background:linear-gradient(135deg,rgba(255,255,255,0.95),rgba(248,249,251,0.98));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(0,0,0,0.08);box-shadow:0 4px 24px rgba(0,0,0,0.12)}
+:root[data-theme="light"] #globalAudioPlayer .player-btn{background:rgba(0,0,0,0.05);border:1px solid rgba(0,0,0,0.1);color:var(--text)}
+:root[data-theme="light"] #globalAudioPlayer .player-btn:hover{background:rgba(58,123,232,0.15);border-color:rgba(58,123,232,0.3);color:var(--accent)}
+:root[data-theme="light"] #globalAudioPlayer .player-btn.active{background:rgba(58,123,232,0.2);border-color:var(--accent);color:var(--accent)}
+:root[data-theme="light"] #globalAudioPlayer .player-btn.player-play{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 15px rgba(58,123,232,0.3)}
+:root[data-theme="light"] #globalAudioPlayer .player-from{text-shadow:0 1px 2px rgba(255,255,255,0.3)}
+:root[data-theme="light"] #globalAudioPlayer .player-bar{background:rgba(0,0,0,0.1)}
+:root[data-theme="light"] #globalAudioPlayer .player-close{background:rgba(0,0,0,0.03);border:1px solid rgba(0,0,0,0.08);color:var(--text2)}
+:root[data-theme="light"] #globalAudioPlayer .player-close:hover{background:rgba(231,76,60,0.1);border-color:rgba(231,76,60,0.2);color:var(--red)}
+:root[data-theme="light"] .msg-audio-track{background:linear-gradient(135deg, rgba(58,123,232,0.1), rgba(58,123,232,0.03))!important}
 :root[data-theme="light"] .tab-content{background:#ffffff}
 :root[data-theme="light"] .date-divider{color:#8a97ab}
 :root[data-theme="light"] #messagesArea{background:var(--chat-thread-bg)}
@@ -7611,6 +7623,8 @@ let globalAudioTimer = null;
 let globalAudioShuffle = false;
 let globalAudioLoop = false; // false = no loop, 'all' = loop all, 'one' = loop one
 let globalAudioShuffledIndices = []; // For shuffle mode
+let globalAudioCurrentTs = null; // Currently playing message timestamp
+let globalAudioMessageElement = null; // Currently playing message element in chat
 
 function initGlobalAudioPlayer() {
   const player = document.getElementById('globalAudioPlayer');
@@ -7692,6 +7706,13 @@ function closeGlobalAudioPlayer() {
   }
   clearInterval(globalAudioTimer);
   globalAudioTimer = null;
+
+  // FIX: Reset chat button UI when closing player
+  if (globalAudioCurrentTs) {
+    updateChatAudioButtonForTs(globalAudioCurrentTs, false, 0, 0);
+    globalAudioCurrentTs = null;
+  }
+
   document.getElementById('globalAudioPlayer').style.display = 'none';
 }
 
@@ -7731,11 +7752,17 @@ function formatTime(seconds) {
 function toggleGlobalAudio() {
   if (!globalAudio) return;
   if (globalAudio.paused) {
-    globalAudio.play().catch(() => {});
+    globalAudio.play().then(() => {
+      updateGlobalAudioUI();
+      updateChatAudioButtons();
+    }).catch((e) => {
+      console.error('Play failed:', e);
+    });
   } else {
     globalAudio.pause();
+    updateGlobalAudioUI();
+    updateChatAudioButtons();
   }
-  updateGlobalAudioUI();
 }
 
 function getEffectiveIndex() {
@@ -7752,6 +7779,14 @@ function getEffectiveIndex() {
 
 function playPreviousGlobalAudio() {
   if (globalAudioPlaylist.length === 0) return;
+
+  // FIX: If current track played >= 3 seconds, restart it instead of going to previous
+  if (globalAudio && globalAudio.currentTime >= 3) {
+    globalAudio.currentTime = 0;
+    globalAudio.play().catch(() => {});
+    updateGlobalAudioUI();
+    return;
+  }
 
   if (globalAudioShuffle && globalAudioShuffledIndices.length > 0) {
     const shuffledPos = getEffectiveIndex();
@@ -7779,10 +7814,17 @@ function playNextGlobalAudio() {
 function loadAndPlayGlobalAudio(track) {
   if (!track) return;
 
+  // FIX: Update previous message element UI before switching
+  if (globalAudioCurrentTs && globalAudioCurrentTs !== track.ts) {
+    updateChatAudioButtonForTs(globalAudioCurrentTs, false, 0, 0);
+  }
+
   if (globalAudio) {
     globalAudio.pause();
     globalAudio = null;
   }
+
+  globalAudioCurrentTs = track.ts;
 
   globalAudio = new Audio(track.url);
   globalAudio.preload = 'metadata';
@@ -7796,8 +7838,14 @@ function loadAndPlayGlobalAudio(track) {
     globalAudio.play().catch(() => {});
   };
 
-  globalAudio.onplay = updateGlobalAudioUI;
-  globalAudio.onpause = updateGlobalAudioUI;
+  globalAudio.onplay = () => {
+    updateGlobalAudioUI();
+    updateChatAudioButtons();
+  };
+  globalAudio.onpause = () => {
+    updateGlobalAudioUI();
+    updateChatAudioButtons();
+  };
   globalAudio.onended = () => {
     if (globalAudioLoop === 'one') {
       // Loop current track
@@ -7807,14 +7855,69 @@ function loadAndPlayGlobalAudio(track) {
       playNextGlobalAudio();
     } else {
       updateGlobalAudioUI();
+      updateChatAudioButtons();
     }
   };
 
   globalAudio.ontimeupdate = updateGlobalAudioUI;
 
-  // Update UI timer
+  // Update UI timer with chat sync
+  startGlobalAudioTimer();
+}
+
+// FIX: Update all chat audio buttons to reflect current state
+function updateChatAudioButtons() {
+  if (!globalAudioCurrentTs) return;
+
+  const isPlaying = globalAudio && !globalAudio.paused;
+  const currentTime = globalAudio ? globalAudio.currentTime : 0;
+  const duration = globalAudio ? (globalAudio.duration || 0) : 0;
+
+  updateChatAudioButtonForTs(globalAudioCurrentTs, isPlaying, currentTime, duration);
+}
+
+// FIX: Update a specific audio button in chat by timestamp
+function updateChatAudioButtonForTs(ts, isPlaying, currentTime, duration) {
+  const msgEl = document.querySelector(`#messagesArea .msg[data-ts="${ts}"]`);
+  if (!msgEl) return;
+
+  const btn = msgEl.querySelector('.voice-play');
+  const fill = msgEl.querySelector('.voice-fill');
+
+  if (btn) {
+    if (isPlaying) {
+      // Pause icon (two bars)
+      btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><rect x="1" y="0" width="4" height="14"/><rect x="7" y="0" width="4" height="14"/></svg>';
+      btn.style.background = 'var(--accent)';
+    } else {
+      // Play icon (triangle)
+      btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>';
+      btn.style.background = 'var(--accent2)';
+    }
+  }
+
+  if (fill && duration > 0) {
+    const pct = (currentTime / duration) * 100;
+    fill.style.width = pct + '%';
+  } else if (fill && !isPlaying && currentTime === 0) {
+    fill.style.width = '0%';
+  }
+}
+
+// FIX: Update timer to also sync chat UI
+function startGlobalAudioTimer() {
   clearInterval(globalAudioTimer);
-  globalAudioTimer = setInterval(updateGlobalAudioUI, 100);
+  globalAudioTimer = setInterval(() => {
+    updateGlobalAudioUI();
+    if (globalAudio && globalAudioCurrentTs) {
+      updateChatAudioButtonForTs(
+        globalAudioCurrentTs,
+        !globalAudio.paused,
+        globalAudio.currentTime,
+        globalAudio.duration || 0
+      );
+    }
+  }, 100);
 }
 
 // Play audio from message (voice or file)
