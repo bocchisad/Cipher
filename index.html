@@ -223,22 +223,29 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 #recordBtn.recording{color:var(--red)}
 @keyframes none{}
 
-/* GLOBAL AUDIO PLAYER (Telegram-style) */
-#globalAudioPlayer{background:var(--bg2);border-bottom:1px solid var(--border);padding:8px 12px;position:relative;z-index:10;flex-shrink:0}
-#globalAudioPlayer .player-inner{display:flex;align-items:center;gap:12px;max-width:600px;margin:0 auto}
-#globalAudioPlayer .player-controls{display:flex;align-items:center;gap:6px;flex-shrink:0}
-#globalAudioPlayer .player-btn{width:32px;height:32px;border-radius:50%;background:var(--bg4);border:none;color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
-#globalAudioPlayer .player-btn:hover{background:var(--accent);color:#fff}
-#globalAudioPlayer .player-btn.player-play{width:36px;height:36px;background:var(--accent);color:#fff}
-#globalAudioPlayer .player-info{flex:1;min-width:0;text-align:center}
-#globalAudioPlayer .player-from{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#globalAudioPlayer .player-title{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-#globalAudioPlayer .player-progress{flex:1;min-width:80px;max-width:200px}
-#globalAudioPlayer .player-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;cursor:pointer}
-#globalAudioPlayer .player-fill{height:100%;background:var(--accent);width:0%;transition:width .1s}
-#globalAudioPlayer .player-time{display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:4px}
-#globalAudioPlayer .player-close{width:28px;height:28px;border-radius:50%;background:none;border:none;color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;flex-shrink:0}
-#globalAudioPlayer .player-close:hover{background:var(--bg4);color:var(--red)}
+/* GLOBAL AUDIO PLAYER (Telegram-style) - Beautiful & Glassy */
+#globalAudioPlayer{background:linear-gradient(135deg,rgba(30,41,59,0.95),rgba(15,23,42,0.98));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,0.08);padding:10px 16px;position:relative;z-index:10;flex-shrink:0;box-shadow:0 4px 24px rgba(0,0,0,0.3)}
+#globalAudioPlayer .player-inner{display:flex;align-items:center;gap:16px;max-width:800px;margin:0 auto}
+#globalAudioPlayer .player-side-left{display:flex;align-items:center;gap:6px;flex-shrink:0}
+#globalAudioPlayer .player-center{flex:1;display:flex;align-items:center;gap:16px;min-width:0}
+#globalAudioPlayer .player-controls{display:flex;align-items:center;gap:8px;flex-shrink:0}
+#globalAudioPlayer .player-btn{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;backdrop-filter:blur(4px)}
+#globalAudioPlayer .player-btn:hover{background:rgba(79,142,247,0.25);border-color:rgba(79,142,247,0.4);color:#fff;transform:scale(1.05)}
+#globalAudioPlayer .player-btn:active{transform:scale(0.95)}
+#globalAudioPlayer .player-btn.player-play{width:42px;height:42px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;box-shadow:0 4px 15px rgba(79,142,247,0.4)}
+#globalAudioPlayer .player-btn.player-play:hover{box-shadow:0 6px 20px rgba(79,142,247,0.5);transform:scale(1.08)}
+#globalAudioPlayer .player-btn.active{background:rgba(79,142,247,0.3);border-color:var(--accent);color:var(--accent)}
+#globalAudioPlayer .player-info{flex:1;min-width:0;text-align:center;padding:0 8px}
+#globalAudioPlayer .player-from{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 2px rgba(0,0,0,0.3)}
+#globalAudioPlayer .player-title{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px;opacity:0.85}
+#globalAudioPlayer .player-progress{flex:1;min-width:100px;max-width:250px}
+#globalAudioPlayer .player-bar{height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;cursor:pointer;position:relative}
+#globalAudioPlayer .player-bar::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.1),transparent);animation:shimmer 2s infinite}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+#globalAudioPlayer .player-fill{height:100%;background:linear-gradient(90deg,var(--accent),#60a5fa);width:0%;transition:width .1s linear;border-radius:2px;box-shadow:0 0 8px rgba(79,142,247,0.5)}
+#globalAudioPlayer .player-time{display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:5px;opacity:0.7}
+#globalAudioPlayer .player-close{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;flex-shrink:0}
+#globalAudioPlayer .player-close:hover{background:rgba(239,68,68,0.2);border-color:rgba(239,68,68,0.3);color:var(--red);transform:rotate(90deg)}
 
 /* RIGHT PANEL */
 #infoPanel{width:var(--info-w);min-width:200px;max-width:min(520px,50vw);flex-shrink:0;background:var(--bg1);border-left:1px solid var(--border);display:flex;flex-direction:column;height:100%;overflow:hidden;min-height:0;margin:0;padding:0;opacity:1;transform:translateX(0);transition:transform .24s ease,width .24s ease,min-width .24s ease,max-width .24s ease,opacity .2s ease,border-color .2s ease}
@@ -882,16 +889,18 @@ body.ctx-open::before{
   #messagesArea{padding:10px min(10px,3vw) 16px;background:var(--chat-thread-bg)}
 
   /* Mobile audio player adjustments */
-  #globalAudioPlayer{padding:6px 10px}
-  #globalAudioPlayer .player-inner{gap:8px}
-  #globalAudioPlayer .player-controls{gap:4px}
-  #globalAudioPlayer .player-btn{width:28px;height:28px}
-  #globalAudioPlayer .player-btn.player-play{width:32px;height:32px}
-  #globalAudioPlayer .player-info{min-width:60px}
+  #globalAudioPlayer{padding:8px 12px}
+  #globalAudioPlayer .player-inner{gap:10px}
+  #globalAudioPlayer .player-side-left{gap:4px}
+  #globalAudioPlayer .player-center{gap:10px;flex-wrap:wrap;justify-content:center}
+  #globalAudioPlayer .player-controls{gap:6px}
+  #globalAudioPlayer .player-btn{width:30px;height:30px}
+  #globalAudioPlayer .player-btn.player-play{width:36px;height:36px}
+  #globalAudioPlayer .player-info{min-width:80px;order:3;width:100%;margin-top:4px}
   #globalAudioPlayer .player-from{font-size:11px}
   #globalAudioPlayer .player-title{font-size:10px}
-  #globalAudioPlayer .player-progress{min-width:60px;max-width:120px}
-  #globalAudioPlayer .player-close{width:24px;height:24px}
+  #globalAudioPlayer .player-progress{min-width:80px;max-width:none;flex:1 1 100%;order:4}
+  #globalAudioPlayer .player-close{width:28px;height:28px}
 
   #infoPanel{
     position:fixed;
@@ -1270,30 +1279,43 @@ body.use-gradients{
       <!-- Global Audio Player (Telegram-style) -->
       <div id="globalAudioPlayer" style="display:none">
         <div class="player-inner">
-          <div class="player-controls">
-            <button class="player-btn" id="playerPrevBtn" title="Предыдущий">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+          <!-- Left: Shuffle & Loop -->
+          <div class="player-side-left">
+            <button class="player-btn" id="playerShuffleBtn" title="Перемешать (2x = зациклить)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
             </button>
-            <button class="player-btn player-play" id="playerPlayBtn" title="Пауза">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-            </button>
-            <button class="player-btn" id="playerNextBtn" title="Следующий">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+            <button class="player-btn" id="playerLoopBtn" title="Зациклить">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 2.5l-4 2 4 2"/><path d="M3 7v10a4 4 0 004 4h12"/><path d="M21 17v-10a4 4 0 00-4-4h-12"/><text x="9" y="15" font-size="8" fill="currentColor" font-weight="bold">1</text></svg>
             </button>
           </div>
-          <div class="player-info">
-            <div class="player-from" id="playerFrom">...</div>
-            <div class="player-title" id="playerTitle">...</div>
-          </div>
-          <div class="player-progress">
-            <div class="player-bar">
-              <div class="player-fill" id="playerFill"></div>
+          <!-- Center: Controls + Info -->
+          <div class="player-center">
+            <div class="player-controls">
+              <button class="player-btn" id="playerPrevBtn" title="Предыдущий">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+              </button>
+              <button class="player-btn player-play" id="playerPlayBtn" title="Пауза">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              </button>
+              <button class="player-btn" id="playerNextBtn" title="Следующий">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+              </button>
             </div>
-            <div class="player-time">
-              <span id="playerCurrent">0:00</span>
-              <span id="playerTotal">0:00</span>
+            <div class="player-info">
+              <div class="player-from" id="playerFrom">...</div>
+              <div class="player-title" id="playerTitle">...</div>
+            </div>
+            <div class="player-progress">
+              <div class="player-bar">
+                <div class="player-fill" id="playerFill"></div>
+              </div>
+              <div class="player-time">
+                <span id="playerCurrent">0:00</span>
+                <span id="playerTotal">0:00</span>
+              </div>
             </div>
           </div>
+          <!-- Right: Close -->
           <button class="player-close" id="playerCloseBtn" title="Закрыть">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -1327,7 +1349,7 @@ body.use-gradients{
         <button class="icon-btn" id="attachBtn" title="Прикрепить файл">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
         </button>
-        <input type="file" id="fileInput" style="display:none" multiple accept="image/*,video/*,*/*">
+        <input type="file" id="fileInput" style="display:none" multiple>
         <button class="icon-btn" id="recordBtn" title="Голосовое сообщение">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10a7 7 0 01-14 0M12 19v3M8 22h8"/></svg>
         </button>
@@ -5688,44 +5710,42 @@ function appendMessage(msg, skipAnim = false){
   } else if(msg.type==='file'){
     try{
       const fd=JSON.parse(msg.content);
-      const row=document.createElement('div');
-      row.className='msg-file';
 
-      // FIX: Check if audio file
+      // FIX: Check if audio file - render as track
       const isAudio = fd.name && /\.(mp3|ogg|wav|m4a|aac|flac|wma)$/i.test(fd.name);
 
-      const icon=document.createElement('div');
-      icon.className='file-icon';
       if (isAudio) {
-        icon.innerHTML=`<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
-        icon.style.cursor='pointer';
-        icon.onclick = async () => {
-          const allMsgs = await dbGetByIndex('messages', 'chatId', activeChat);
-          playAudioFromMessage(msg, allMsgs);
-        };
+        // Render as audio track (similar to voice message)
+        const trackRow = makeAudioTrackPlayer(fd, msg);
+        bubble.appendChild(trackRow);
       } else {
+        // Regular file
+        const row=document.createElement('div');
+        row.className='msg-file';
+        const icon=document.createElement('div');
+        icon.className='file-icon';
         icon.innerHTML=`<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>`;
-      }
 
-      const fi=document.createElement('div');
-      fi.className='file-info';
-      const fn=document.createElement('div');
-      fn.className='file-name';
-      fn.textContent=fd.name;
-      const fs=document.createElement('div');
-      fs.className='file-size';
-      fs.textContent=fmtSize(fd.size||0);
-      fi.appendChild(fn);
-      fi.appendChild(fs);
-      const dl=document.createElement('a');
-      dl.href=fd.data;
-      dl.download=fd.name;
-      dl.innerHTML=`<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
-      dl.style.color='var(--accent)';
-      row.appendChild(icon);
-      row.appendChild(fi);
-      row.appendChild(dl);
-      bubble.appendChild(row);
+        const fi=document.createElement('div');
+        fi.className='file-info';
+        const fn=document.createElement('div');
+        fn.className='file-name';
+        fn.textContent=fd.name;
+        const fs=document.createElement('div');
+        fs.className='file-size';
+        fs.textContent=fmtSize(fd.size||0);
+        fi.appendChild(fn);
+        fi.appendChild(fs);
+        const dl=document.createElement('a');
+        dl.href=fd.data;
+        dl.download=fd.name;
+        dl.innerHTML=`<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
+        dl.style.color='var(--accent)';
+        row.appendChild(icon);
+        row.appendChild(fi);
+        row.appendChild(dl);
+        bubble.appendChild(row);
+      }
     }catch(e){
       const p=document.createElement('div');
       p.textContent='[файл]';
@@ -5910,6 +5930,55 @@ function makeVoicePlayer(dataUrl, msg){
   row.appendChild(btn);
   row.appendChild(bar);
   row.appendChild(dur);
+  return row;
+}
+
+// FIX: Audio track player for MP3 and other audio files
+function makeAudioTrackPlayer(fd, msg){
+  const row=document.createElement('div');
+  row.className='msg-voice msg-audio-track';
+  row.style.cursor='pointer';
+  row.style.background='linear-gradient(135deg, rgba(79,142,247,0.15), rgba(79,142,247,0.05))';
+
+  const btn=document.createElement('button');
+  btn.className='voice-play';
+  btn.style.background='var(--accent)';
+  btn.innerHTML=`<svg width="14" height="14" fill="white" viewBox="0 0 24 24"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><polygon points="9,18 9,5 21,3 21,16"/></svg>`;
+
+  const bar=document.createElement('div');
+  bar.className='voice-bar';
+  bar.style.flex='1';
+  const fill=document.createElement('div');
+  fill.className='voice-fill';
+  fill.style.width='0%';
+  bar.appendChild(fill);
+
+  const info=document.createElement('div');
+  info.className='audio-track-info';
+  info.style.cssText='display:flex;flex-direction:column;min-width:0;margin-right:8px';
+
+  const title=document.createElement('div');
+  title.className='audio-track-title';
+  title.style.cssText='font-size:12px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+  title.textContent = fd.name || 'Аудио';
+
+  const size=document.createElement('div');
+  size.className='audio-track-size';
+  size.style.cssText='font-size:10px;color:var(--text3)';
+  size.textContent = fmtSize(fd.size||0);
+
+  info.appendChild(title);
+  info.appendChild(size);
+
+  // FIX: Use global audio player
+  row.onclick = async () => {
+    const allMsgs = await dbGetByIndex('messages', 'chatId', activeChat);
+    playAudioFromMessage(msg, allMsgs);
+  };
+
+  row.appendChild(btn);
+  row.appendChild(info);
+  row.appendChild(bar);
   return row;
 }
 
@@ -7539,6 +7608,9 @@ let globalAudio = null;
 let globalAudioPlaylist = []; // Array of {url, title, from, ts, type}
 let globalAudioIndex = 0;
 let globalAudioTimer = null;
+let globalAudioShuffle = false;
+let globalAudioLoop = false; // false = no loop, 'all' = loop all, 'one' = loop one
+let globalAudioShuffledIndices = []; // For shuffle mode
 
 function initGlobalAudioPlayer() {
   const player = document.getElementById('globalAudioPlayer');
@@ -7546,6 +7618,8 @@ function initGlobalAudioPlayer() {
   const prevBtn = document.getElementById('playerPrevBtn');
   const nextBtn = document.getElementById('playerNextBtn');
   const closeBtn = document.getElementById('playerCloseBtn');
+  const shuffleBtn = document.getElementById('playerShuffleBtn');
+  const loopBtn = document.getElementById('playerLoopBtn');
   const bar = document.querySelector('#globalAudioPlayer .player-bar');
 
   if (!player || !playBtn) return;
@@ -7555,6 +7629,37 @@ function initGlobalAudioPlayer() {
   nextBtn.onclick = playNextGlobalAudio;
   closeBtn.onclick = closeGlobalAudioPlayer;
 
+  // Shuffle button: click to toggle shuffle, double click to toggle loop
+  if (shuffleBtn) {
+    shuffleBtn.onclick = () => {
+      globalAudioShuffle = !globalAudioShuffle;
+      shuffleBtn.classList.toggle('active', globalAudioShuffle);
+      if (globalAudioShuffle) {
+        // Build shuffled indices
+        globalAudioShuffledIndices = buildShuffledIndices();
+      }
+      showToast(globalAudioShuffle ? 'Перемешивание включено' : 'Перемешивание выключено');
+    };
+  }
+
+  if (loopBtn) {
+    loopBtn.onclick = () => {
+      // Cycle: false -> 'all' -> 'one' -> false
+      if (!globalAudioLoop) {
+        globalAudioLoop = 'all';
+        loopBtn.classList.add('active');
+        showToast('Зацикливание плейлиста');
+      } else if (globalAudioLoop === 'all') {
+        globalAudioLoop = 'one';
+        showToast('Зацикливание трека');
+      } else {
+        globalAudioLoop = false;
+        loopBtn.classList.remove('active');
+        showToast('Зацикливание выключено');
+      }
+    };
+  }
+
   if (bar) {
     bar.onclick = (e) => {
       if (!globalAudio || !globalAudio.duration) return;
@@ -7563,6 +7668,21 @@ function initGlobalAudioPlayer() {
       globalAudio.currentTime = pct * globalAudio.duration;
     };
   }
+}
+
+function buildShuffledIndices() {
+  const indices = globalAudioPlaylist.map((_, i) => i);
+  // Fisher-Yates shuffle
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  // Make sure current track is first
+  const currentRealIndex = indices.indexOf(globalAudioIndex);
+  if (currentRealIndex > 0) {
+    [indices[0], indices[currentRealIndex]] = [indices[currentRealIndex], indices[0]];
+  }
+  return indices;
 }
 
 function closeGlobalAudioPlayer() {
@@ -7618,15 +7738,41 @@ function toggleGlobalAudio() {
   updateGlobalAudioUI();
 }
 
+function getEffectiveIndex() {
+  if (globalAudioShuffle && globalAudioShuffledIndices.length > 0) {
+    // Find position in shuffled array
+    for (let i = 0; i < globalAudioShuffledIndices.length; i++) {
+      if (globalAudioShuffledIndices[i] === globalAudioIndex) {
+        return i;
+      }
+    }
+  }
+  return globalAudioIndex;
+}
+
 function playPreviousGlobalAudio() {
   if (globalAudioPlaylist.length === 0) return;
-  globalAudioIndex = (globalAudioIndex - 1 + globalAudioPlaylist.length) % globalAudioPlaylist.length;
+
+  if (globalAudioShuffle && globalAudioShuffledIndices.length > 0) {
+    const shuffledPos = getEffectiveIndex();
+    const newShuffledPos = (shuffledPos - 1 + globalAudioShuffledIndices.length) % globalAudioShuffledIndices.length;
+    globalAudioIndex = globalAudioShuffledIndices[newShuffledPos];
+  } else {
+    globalAudioIndex = (globalAudioIndex - 1 + globalAudioPlaylist.length) % globalAudioPlaylist.length;
+  }
   loadAndPlayGlobalAudio(globalAudioPlaylist[globalAudioIndex]);
 }
 
 function playNextGlobalAudio() {
   if (globalAudioPlaylist.length === 0) return;
-  globalAudioIndex = (globalAudioIndex + 1) % globalAudioPlaylist.length;
+
+  if (globalAudioShuffle && globalAudioShuffledIndices.length > 0) {
+    const shuffledPos = getEffectiveIndex();
+    const newShuffledPos = (shuffledPos + 1) % globalAudioShuffledIndices.length;
+    globalAudioIndex = globalAudioShuffledIndices[newShuffledPos];
+  } else {
+    globalAudioIndex = (globalAudioIndex + 1) % globalAudioPlaylist.length;
+  }
   loadAndPlayGlobalAudio(globalAudioPlaylist[globalAudioIndex]);
 }
 
@@ -7653,7 +7799,11 @@ function loadAndPlayGlobalAudio(track) {
   globalAudio.onplay = updateGlobalAudioUI;
   globalAudio.onpause = updateGlobalAudioUI;
   globalAudio.onended = () => {
-    if (globalAudioIndex < globalAudioPlaylist.length - 1) {
+    if (globalAudioLoop === 'one') {
+      // Loop current track
+      globalAudio.currentTime = 0;
+      globalAudio.play().catch(() => {});
+    } else if (globalAudioIndex < globalAudioPlaylist.length - 1 || globalAudioLoop === 'all') {
       playNextGlobalAudio();
     } else {
       updateGlobalAudioUI();
@@ -7684,9 +7834,14 @@ function playAudioFromMessage(msg, allMessages) {
   globalAudioPlaylist = audioMsgs.map(m => {
     let url = m.content;
     let title = 'Аудио';
+    let duration = null;
 
     if (m.type === 'voice') {
       title = 'Голосовое сообщение';
+      // FIX: Parse voice content to extract data URL
+      const voiceMeta = parseVoiceContent(m.content);
+      url = voiceMeta.data || m.content;
+      duration = voiceMeta.duration;
     } else if (m.type === 'file') {
       try {
         const fd = JSON.parse(m.content);
@@ -7700,7 +7855,7 @@ function playAudioFromMessage(msg, allMessages) {
     const fromContact = contacts.find(c => normUid(c.uuid) === normUid(m.from));
     const fromName = fromContact?.nickname || String(m.from || '').slice(0, 8);
 
-    return { url, title, from: fromName, ts: m.ts, type: m.type };
+    return { url, title, from: fromName, ts: m.ts, type: m.type, duration };
   });
 
   // Find current index
