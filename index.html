@@ -247,10 +247,10 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 #globalAudioPlayer .player-fill{height:100%;background:linear-gradient(90deg,var(--accent),#60a5fa);width:0%;transition:width 0.05s ease-out;border-radius:3px;box-shadow:0 0 10px rgba(79,142,247,0.4);position:relative;pointer-events:none}
 /* Handle attached to the end of fill bar - positioned relative to bar, not fill */
-#globalAudioPlayer .player-handle{position:absolute;top:50%;transform:translate(-50%,-50%) scale(0);width:16px;height:16px;background:#fff;border-radius:50%;box-shadow:0 2px 12px rgba(0,0,0,0.4);transition:all .15s cubic-bezier(0.4,0,0.2,1);border:2px solid var(--accent);pointer-events:auto;cursor:grab;left:0%;margin-left:0}
+#globalAudioPlayer .player-handle{position:absolute;top:50%;left:0%;width:16px;height:16px;margin:0;padding:0;background:#fff;border-radius:50%;box-shadow:0 2px 12px rgba(0,0,0,0.4);border:2px solid var(--accent);pointer-events:auto;cursor:grab;z-index:10;box-sizing:border-box;transform:translate(-50%,-50%) scale(0);transition:transform .15s cubic-bezier(0.4,0,0.2,1),box-shadow .15s ease}
 #globalAudioPlayer .player-bar:hover .player-handle,#globalAudioPlayer.playing .player-handle{transform:translate(-50%,-50%) scale(1)}
 #globalAudioPlayer .player-bar:hover .player-handle{box-shadow:0 3px 16px rgba(79,142,247,0.6)}
-#globalAudioPlayer .player-bar.dragging .player-handle{transform:translate(-50%,-50%) scale(1.35);box-shadow:0 4px 20px rgba(79,142,247,0.8);cursor:grabbing;border-width:3px}
+#globalAudioPlayer .player-bar.dragging .player-handle{transform:translate(-50%,-50%) scale(1.35);box-shadow:0 4px 20px rgba(79,142,247,0.8);cursor:grabbing;border-width:3px;transition:none}
 #globalAudioPlayer .player-bar.dragging .player-fill{transition:none}
 #globalAudioPlayer .player-time{display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:5px;opacity:0.7}
 #globalAudioPlayer .player-close{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;flex-shrink:0}
@@ -479,9 +479,9 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 :root[data-theme="light"] #globalAudioPlayer .player-from{text-shadow:0 1px 2px rgba(255,255,255,0.3)}
 :root[data-theme="light"] #globalAudioPlayer .player-bar{background:rgba(0,0,0,0.1)}
 /* Light theme handle styles */
-:root[data-theme="light"] #globalAudioPlayer .player-handle{background:#fff;border-color:var(--accent);box-shadow:0 2px 12px rgba(0,0,0,0.25)}
+:root[data-theme="light"] #globalAudioPlayer .player-handle{background:#fff;border:2px solid var(--accent);box-shadow:0 2px 12px rgba(0,0,0,0.25)}
 :root[data-theme="light"] #globalAudioPlayer .player-bar:hover .player-handle,:root[data-theme="light"] #globalAudioPlayer.playing .player-handle{box-shadow:0 3px 16px rgba(58,123,232,0.5)}
-:root[data-theme="light"] #globalAudioPlayer .player-bar.dragging .player-handle{box-shadow:0 4px 20px rgba(58,123,232,0.6)}
+:root[data-theme="light"] #globalAudioPlayer .player-bar.dragging .player-handle{box-shadow:0 4px 20px rgba(58,123,232,0.6);border-width:3px}
 :root[data-theme="light"] #globalAudioPlayer .player-close{background:rgba(0,0,0,0.03);border:1px solid rgba(0,0,0,0.08);color:var(--text2)}
 :root[data-theme="light"] #globalAudioPlayer .player-close:hover{background:rgba(231,76,60,0.1);border-color:rgba(231,76,60,0.2);color:var(--red)}
 :root[data-theme="light"] .msg-audio-track{background:linear-gradient(135deg, rgba(58,123,232,0.1), rgba(58,123,232,0.03))!important}
@@ -7723,13 +7723,15 @@ function setupProgressBarDrag(bar) {
   };
 
   const updateUI = (pct) => {
+    const pctStr = (pct * 100) + '%';
+
     // Update fill width
     const fill = document.getElementById('playerFill');
-    if (fill) fill.style.width = (pct * 100) + '%';
+    if (fill) fill.style.width = pctStr;
 
-    // Update handle position independently
+    // Update handle position - synchronized with fill
     const handle = document.getElementById('playerHandle');
-    if (handle) handle.style.left = (pct * 100) + '%';
+    if (handle) handle.style.left = pctStr;
 
     // Update time display without changing audio position yet
     const current = document.getElementById('playerCurrent');
@@ -7896,14 +7898,10 @@ function updateGlobalAudioUI() {
 
   const pct = dur ? (globalAudio.currentTime / globalAudio.duration) * 100 : 0;
 
-  // FIX: Don't update progress bar during drag to prevent flickering
-  if (!globalAudioIsDragging && fill) {
-    fill.style.width = pct + '%';
-  }
-
-  // FIX: Always update handle position to match current time
-  if (handle) {
-    handle.style.left = pct + '%';
+  // FIX: Don't update progress bar and handle during drag to prevent flickering
+  if (!globalAudioIsDragging) {
+    if (fill) fill.style.width = pct + '%';
+    if (handle) handle.style.left = pct + '%';
   }
 
   // Update play button icon and playing class
