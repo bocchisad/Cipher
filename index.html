@@ -439,6 +439,9 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
   :root[data-theme="light"] #chatView{background:var(--chat-thread-bg);overflow:hidden}
   :root[data-theme="light"] #messagesArea{background:transparent}
 }
+@media (max-width:900px){
+  #app:not(.app-chat-open) .sidebar-bottom{display:none!important}
+}
 body.use-gradients #app:not(.app-chat-open) #sidebar{
   background:var(--grad-sidebar)!important;
 }
@@ -6604,6 +6607,13 @@ function setupEvents(){
   // mobileInfoBtn теперь подключён в doToggleInfoPanel ниже — не дублируем здесь
 
   const closeInfoBtn = document.getElementById('closeInfoPanelBtn');
+  const deleteChatBtn = document.getElementById('deleteChatBtn');
+  function setDeleteChatBtnState(disabled) {
+    if (!deleteChatBtn) return;
+    deleteChatBtn.disabled = disabled;
+    deleteChatBtn.style.pointerEvents = disabled ? 'none' : '';
+    deleteChatBtn.style.opacity = disabled ? '0.5' : '';
+  }
   if (closeInfoBtn) closeInfoBtn.onclick = () => {
     const ip = document.getElementById('infoPanel');
     if (!ip) return;
@@ -6612,12 +6622,12 @@ function setupEvents(){
       ip.classList.remove('info-open');
       document.getElementById('app')?.classList.remove('info-overlay');
     } else {
-      // FIX #6: on desktop toggle info-hidden so it CAN be re-opened
       ip.classList.add('info-hidden');
       localStorage.setItem('infoPanelHidden', 'true');
       updateInfoResizerVisibility();
     }
     document.body.style.overflow = '';
+    setDeleteChatBtnState(false);
   };
 
   // UNIFIED info panel toggle — одна кнопка для мобайла и ПК
@@ -6627,15 +6637,18 @@ function setupEvents(){
     const ip = document.getElementById('infoPanel');
     if (!ip) return;
     const isMobile = window.matchMedia('(max-width:900px)').matches;
+    let willBeOpen;
     if (isMobile) {
-      const open = !ip.classList.contains('info-open');
-      ip.classList.toggle('info-open', open);
-      document.getElementById('app')?.classList.toggle('info-overlay', open);
+      willBeOpen = !ip.classList.contains('info-open');
+      ip.classList.toggle('info-open', willBeOpen);
+      document.getElementById('app')?.classList.toggle('info-overlay', willBeOpen);
     } else {
+      willBeOpen = ip.classList.contains('info-hidden');
       ip.classList.toggle('info-hidden');
       localStorage.setItem('infoPanelHidden', ip.classList.contains('info-hidden'));
       updateInfoResizerVisibility();
     }
+    setDeleteChatBtnState(willBeOpen);
   }
   if (toggleInfoBtn) {
     toggleInfoBtn.onclick = doToggleInfoPanel;
