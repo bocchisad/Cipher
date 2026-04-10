@@ -171,6 +171,10 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .check.delivered{color:var(--green)}
 .msg .mavatar{width:28px;height:28px;border-radius:50%;background:var(--bg4);flex-shrink:0;overflow:hidden}
 .msg .mavatar img{width:100%;height:100%;object-fit:cover}
+.msg-sender{display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:12px;color:var(--text2)}
+.msg-sender-av{width:20px;height:20px;border-radius:50%;background:var(--bg4);overflow:hidden;flex-shrink:0}
+.msg-sender-av img{width:100%;height:100%;object-fit:cover}
+.msg-sender-name{font-weight:500}
 .msg-img{max-width:240px;border-radius:8px;cursor:pointer;display:block;margin-bottom:4px}
 .msg-video{max-width:240px;border-radius:8px;display:block;margin-bottom:4px;background:var(--bg4)}
 .msg-voice{display:flex;align-items:center;gap:10px;padding:4px 0;}
@@ -5219,10 +5223,12 @@ async function queueMediaForAlbum(msg) {
 
 function renderMediaAlbum() {
   if (pendingMediaGroup.length === 0) return;
-  
+
   const area = document.getElementById('messagesArea');
   const isOut = normUid(pendingMediaGroup[0].from) === normUid(myProfile.uuid);
-  
+  const contact = contacts.find((c) => normUid(c.uuid) === activeChat) || {};
+  const isGroup = contact.kind === 'group' || contact.kind === 'channel';
+
   // Create wrapper
   const wrapper = document.createElement('div');
   wrapper.className = 'msg ' + (isOut ? 'out' : 'in');
@@ -5230,6 +5236,24 @@ function renderMediaAlbum() {
   wrapper.dataset.msgId = pendingMediaGroup[0].msgId || buildClientMsgId(pendingMediaGroup[0].from, pendingMediaGroup[0].ts);
   const stack = document.createElement('div');
   stack.className = 'msg-stack';
+
+  // FIX: Show sender info for group media messages
+  if (isGroup && !isOut) {
+    const sender = contacts.find((c) => normUid(c.uuid) === normUid(pendingMediaGroup[0].from));
+    const senderName = sender?.nickname || String(pendingMediaGroup[0].from||'').slice(0,8);
+    const senderAv = sender?.avatar || '';
+    const senderEl = document.createElement('div');
+    senderEl.className = 'msg-sender';
+    const senderAvEl = document.createElement('div');
+    senderAvEl.className = 'msg-sender-av';
+    renderAvatar(senderAvEl, senderAv, senderName);
+    const senderNameEl = document.createElement('span');
+    senderNameEl.className = 'msg-sender-name';
+    senderNameEl.textContent = senderName;
+    senderEl.appendChild(senderAvEl);
+    senderEl.appendChild(senderNameEl);
+    stack.appendChild(senderEl);
+  }
   
   // Create bubble
   const bubble = document.createElement('div');
@@ -5365,14 +5389,15 @@ function appendMessage(msg){
   // Regular message rendering (existing code continues...)
   const isOut = normUid(msg.from) === normUid(myProfile.uuid);
   const contact = contacts.find((c) => normUid(c.uuid) === activeChat) || {};
+  const isGroup = contact.kind === 'group' || contact.kind === 'channel';
   const wrapper=document.createElement('div');
   wrapper.className='msg'+(isOut?' out':'');
   wrapper.dataset.msgId = msg.msgId || buildClientMsgId(msg.from, msg.ts);
-  // FIX (Недочёт #6): data-ts for delivery receipt lookup
   wrapper.dataset.ts = msg.ts;
   localMessageRefs.add(makeMessageRefKey(msg.from, msg.ts));
 
-  if(!isOut){
+  // FIX: Don't show chat avatar for groups, only for direct messages
+  if(!isOut && !isGroup){
     const mav=document.createElement('div');
     mav.className='mavatar';
     renderAvatar(mav, contact.avatar, contact.nickname||contact.uuid);
@@ -5381,6 +5406,25 @@ function appendMessage(msg){
 
   const stack=document.createElement('div');
   stack.className='msg-stack';
+
+  // FIX: Show sender info for group messages
+  if (isGroup && !isOut) {
+    const sender = contacts.find((c) => normUid(c.uuid) === normUid(msg.from));
+    const senderName = sender?.nickname || String(msg.from||'').slice(0,8);
+    const senderAv = sender?.avatar || '';
+    const senderEl = document.createElement('div');
+    senderEl.className = 'msg-sender';
+    const senderAvEl = document.createElement('div');
+    senderAvEl.className = 'msg-sender-av';
+    renderAvatar(senderAvEl, senderAv, senderName);
+    const senderNameEl = document.createElement('span');
+    senderNameEl.className = 'msg-sender-name';
+    senderNameEl.textContent = senderName;
+    senderEl.appendChild(senderAvEl);
+    senderEl.appendChild(senderNameEl);
+    stack.appendChild(senderEl);
+  }
+
 
   const bubble=document.createElement('div');
   bubble.className='bubble';
