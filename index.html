@@ -3786,29 +3786,30 @@ async function handleIncomingMessage(msg) {
     }
   }
 
-  updateLastMessage(chatId, content, ts, type);
-
   let contact = contacts.find((c) => normUid(c.uuid) === chatId);
   // Auto-create contact from incoming DM if sender not in contacts list
   if (!contact && !roomId) {
+    const preview = buildLastPreview(type, content);
     contact = {
       uuid: chatId,
       nickname: String(from || '').slice(0, 12) || chatId.slice(0, 12),
       avatar: '',
       online: true,
-      lastMsg: '',
-      lastTs: 0,
-      unread: 0,
+      lastMsg: preview,
+      lastTs: ts,
+      unread: sameChat ? 0 : 1,
       type: 'friend',
       kind: 'friend'
     };
     contacts.push(contact);
     const cleaned = sanitizeContact(contact);
     if (cleaned) await dbPut('contacts', cleaned).catch(() => {});
-  }
-  if (contact && !sameChat) {
-    contact.unread = (contact.unread || 0) + 1;
-    await dbPut('contacts', contact);
+  } else if (contact) {
+    updateLastMessage(chatId, content, ts, type);
+    if (!sameChat) {
+      contact.unread = (contact.unread || 0) + 1;
+      await dbPut('contacts', contact);
+    }
   }
 
   // FIX (Недочёт #4): Browser notifications
@@ -5210,10 +5211,10 @@ async function queueMediaForAlbum(msg) {
   }
   
   // Set timer to render group after a short delay (allows batching)
-  // FIX: Increased timeout to 1200ms to allow batch processing of multiple files
+  // FIX: Balanced timeout at 800ms for PC batching and mobile responsiveness
   mediaGroupTimer = setTimeout(() => {
     renderMediaAlbum();
-  }, 1200);
+  }, 800);
 }
 
 function renderMediaAlbum() {
@@ -7065,34 +7066,57 @@ async function exportData(){
     data:toBase64(new Uint8Array(ct))
   };
   const blob=new Blob([JSON.stringify(result)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
+  const filename='cipher_backup_'+new Date().toISOString().slice(0,10)+'.json';
   const isMobile = window.matchMedia('(max-width:900px)').matches;
+
+  if (isMobile && navigator.share && navigator.canShare) {
+    const file = new File([blob], filename, {type: 'application/json'});
+    const shareData = {files: [file], title: 'Cipher Backup', text: 'Резервная копия Cipher'};
+    if (navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        showToast('Данные экспортированы');
+        return;
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.log('Share failed, falling back:', err);
+        }
+      }
+    }
+  }
+
+  const url=URL.createObjectURL(blob);
   if (isMobile) {
     try {
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = reader.result;
-        const newWindow = window.open();
-        if (newWindow) {
-          newWindow.document.write('<html><head><title>Скачать бэкап</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:sans-serif;padding:20px;text-align:center;"><h3>Нажмите и удерживайте ссылку для сохранения</h3><a href="'+dataUrl+'" download="cipher_backup_'+new Date().toISOString().slice(0,10)+'.json" style="display:inline-block;padding:15px 30px;background:var(--accent);color:#fff;text-decoration:none;border-radius:8px;margin-top:20px;">Скачать бэкап</a></body></html>');
-        } else {
-          navigator.clipboard.writeText(dataUrl).then(() => showToast('Данные скопированы, вставьте в файл')).catch(() => showToast('Ошибка копирования'));
-        }
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+        modal.innerHTML = '<div style="background:var(--bg1);border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;"><h3 style="margin:0 0 16px 0;font-size:18px;">Сохранить бэкап</h3><p style="margin:0 0 20px 0;color:var(--text2);font-size:14px;">Нажмите кнопку ниже, чтобы скопировать данные или откройте меню "Поделиться"</p><button id="copyBackupBtn" style="width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:16px;margin-bottom:10px;">Копировать в буфер</button><button id="closeBackupBtn" style="width:100%;padding:14px;background:var(--bg3);color:var(--text);border:none;border-radius:10px;font-size:16px;">Закрыть</button></div>';
+        document.body.appendChild(modal);
+        document.getElementById('copyBackupBtn').onclick = () => {
+          navigator.clipboard.writeText(dataUrl).then(() => {
+            showToast('Данные скопированы');
+            modal.remove();
+          }).catch(() => showToast('Ошибка копирования'));
+        };
+        document.getElementById('closeBackupBtn').onclick = () => modal.remove();
       };
       reader.readAsDataURL(blob);
     } catch (_) {
-      showToast('Используйте ПК для экспорта');
+      showToast('Ошибка экспорта');
     }
   } else {
     const a=document.createElement('a');
     a.href=url;
-    a.download='cipher_backup_'+new Date().toISOString().slice(0,10)+'.json';
+    a.download=filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    showToast('Данные экспортированы');
   }
-  showToast('Данные экспортированы');
 }
 
 async function importData(ev){
