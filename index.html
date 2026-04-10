@@ -3786,6 +3786,12 @@ async function handleIncomingMessage(msg) {
   const localMsg = {chatId, from, to, type, content, ts, msgId: incomingMsgId, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom};
   await dbPut('messages', localMsg);
 
+  // FIX: Flush pending media album when a non-media message arrives
+  const isMedia = type === 'image' || type === 'video';
+  if (!isMedia && pendingMediaGroup.length && normUid(pendingMediaChatId) === ch) {
+    renderMediaAlbum();
+  }
+
   if (sameChat) {
     if (!renderedMsgIds.has(ts.toString())) {
       renderedMsgIds.add(ts.toString());
@@ -4977,6 +4983,10 @@ function showMessageCtxMenu(e, msg){
 }
 
 async function openChat(uuid){
+  // FIX: Flush any pending media from previous chat before switching
+  if (pendingMediaGroup.length) {
+    renderMediaAlbum();
+  }
   activeChat = normUid(uuid);
   renderedMsgIds = new Set();
 
@@ -5239,24 +5249,25 @@ async function queueMediaForAlbum(msg) {
   pendingMediaLastTs = mediaTs;
   pendingMediaGroup.push(msg);
 
+  // FIX: Smart timer - extend by 400ms per new photo, max 2500ms from first
+  const isMobile = window.matchMedia('(max-width:900px)').matches;
+  const baseTimeout = isMobile ? 1200 : 500;
+  const maxTimeout = isMobile ? 2500 : 1500;
+  const extendBy = 400;
+
   if (mediaGroupTimer) {
     clearTimeout(mediaGroupTimer);
   }
 
-  // FIX: Use longer timeout on mobile for better batching, shorter on PC
-  const isMobile = window.matchMedia('(max-width:900px)').matches;
-  const timeout = isMobile ? 1500 : 600;
+  // Calculate remaining time based on first message timestamp
+  const firstMsgTs = pendingMediaGroup[0].ts || Date.now();
+  const elapsed = Date.now() - firstMsgTs;
+  const remaining = Math.max(0, maxTimeout - elapsed);
+  const nextTimeout = pendingMediaGroup.length === 1 ? baseTimeout : Math.min(remaining || extendBy, extendBy);
 
-  // FIX: If only one message and no more coming soon, render immediately
-  if (pendingMediaGroup.length === 1) {
-    mediaGroupTimer = setTimeout(() => {
-      renderMediaAlbum();
-    }, timeout);
-  } else {
-    mediaGroupTimer = setTimeout(() => {
-      renderMediaAlbum();
-    }, timeout);
-  }
+  mediaGroupTimer = setTimeout(() => {
+    renderMediaAlbum();
+  }, nextTimeout);
 }
 
 function renderMediaAlbum() {
