@@ -1056,8 +1056,8 @@ function handleCreateCommentsGroup(fromUuid, data) {
   normalizeRoom(channel);
   saveRoomsJSON();
   
-  // Notify creator
-  if (u?.ws) safeWsSend(u.ws, { type: 'room-created', data: { room: group } });
+  // Notify creator (не переключаем чат — пользователь остаётся в канале)
+  if (u?.ws) safeWsSend(u.ws, { type: 'room-created', data: { room: group, skipOpenChat: true } });
   if (u?.ws) safeWsSend(u.ws, { type: 'room-updated', data: { room: channel } });
   
   console.log(`📁 Comments group created: ${group.title} for channel ${channel.title}`);
@@ -1073,8 +1073,9 @@ function handlePollVote(fromUuid, data, ws) {
   const pollData = data.pollData;
   const roomId = data.roomId;
   
-  if (roomId && rooms.has(roomId)) {
-    const room = rooms.get(roomId);
+  const rid = roomId ? normUid(roomId) : '';
+  if (rid && rooms.has(rid)) {
+    const room = rooms.get(rid);
     for (const memberId of room.members) {
       if (normUid(memberId) === normUid(fromUuid)) continue;
       const u = getUserLive(memberId);
@@ -1082,9 +1083,23 @@ function handlePollVote(fromUuid, data, ws) {
         safeWsSend(u.ws, { 
           type: 'poll-vote-update', 
           data: { 
+            roomId: rid,
             msgId: data.msgId,
             pollData: pollData
           } 
+        });
+      }
+    }
+  } else if (rid) {
+    // ЛС: клиент шлёт roomId = peer (как chatId у голосующего). У получателя те же сообщения лежат в чате с uuid голосующего.
+    const recipient = normUid(rid);
+    const voter = normUid(fromUuid);
+    if (recipient !== voter) {
+      const u = getUserLive(recipient);
+      if (u?.ws && u.ws.readyState === WebSocket.OPEN) {
+        safeWsSend(u.ws, {
+          type: 'poll-vote-update',
+          data: { roomId: voter, msgId: data.msgId, pollData }
         });
       }
     }
