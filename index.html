@@ -5112,6 +5112,44 @@ document.addEventListener('click',e=>{
           showToast(ok ? '📋 Текст скопирован' : '❌ Не удалось скопировать');
         });
       }
+      if(action.dataset.action==='add-track-to-profile') {
+        (async () => {
+          const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
+          const msg = msgs.find((m) => m.ts === ts);
+          if (msg && msg.type === 'file' && msg.content) {
+            try {
+              const fd = JSON.parse(msg.content);
+              if (fd.data) {
+                const track = {
+                  id: Date.now() + Math.random().toString(36).slice(2),
+                  title: fd.name.replace(/\.[^/.]+$/, '') || 'Без названия',
+                  artist: '',
+                  dataUrl: fd.data,
+                  size: fd.data.length * 0.75, // approximate
+                  addedAt: Date.now()
+                };
+                if (!myProfile.tracks) myProfile.tracks = [];
+                myProfile.tracks.push(track);
+                await dbPut('profile', { key: 'profile', ...myProfile });
+                showToast('🎵 Трек добавлен в профиль');
+                // Send profile update to server
+                if(ws && ws.readyState === WebSocket.OPEN) {
+                  sendToServer('profile-update', { 
+                    nickname: myProfile.nickname, 
+                    avatar: myProfile.avatar,
+                    bio: myProfile.bio,
+                    tracks: myProfile.tracks,
+                    attachedChannelId: myProfile.attachedChannelId
+                  });
+                }
+              }
+            } catch(err) {
+              console.error('Failed to add track:', err);
+              showToast('❌ Не удалось добавить трек');
+            }
+          }
+        })();
+      }
     } else {
       const chatId=menu.dataset.chatId;
       if(action.dataset.action==='delete-local') deleteChatLocal(chatId);
@@ -5537,6 +5575,16 @@ function showMessageCtxMenu(e, msg){
     html += `<div class="ctx-item" data-action="msg-copy">📋 Копировать</div>`;
   }
   
+  // Add option to add audio file to profile
+  if (msg.type === 'file' && msg.content) {
+    try {
+      const fd = JSON.parse(msg.content);
+      if (fd.name && fd.data && (fd.name.endsWith('.mp3') || fd.name.endsWith('.ogg') || fd.name.endsWith('.wav') || fd.name.endsWith('.m4a') || fd.name.endsWith('.webm'))) {
+        html += `<div class="ctx-item" data-action="add-track-to-profile">🎵 Добавить в профиль</div>`;
+      }
+    } catch {}
+  }
+  
   html += `<div class="ctx-item" data-action="msg-del-me">🗑 Удалить у меня</div>`;
   if (isMine) html += `<div class="ctx-item danger" data-action="msg-del-both">Удалить у всех</div>`;
   menu.innerHTML = html;
@@ -5605,9 +5653,33 @@ function renderChatHeader(){
     }
   }
   const av=document.getElementById('headerAv');
-  if(av) renderAvatar(av, contact.avatar, displayName || contact.uuid);
+  if(av) {
+    renderAvatar(av, contact.avatar, displayName || contact.uuid);
+    // Add click handler to open mini profile
+    av.style.cursor = 'pointer';
+    av.onclick = (e) => {
+      e.stopPropagation();
+      if (typeof openMiniUserProfileEnhanced === 'function') {
+        openMiniUserProfileEnhanced(contact.uuid);
+      } else if (typeof openMiniUserProfile === 'function') {
+        openMiniUserProfile(contact.uuid);
+      }
+    };
+  }
   const nameEl=document.getElementById('headerName');
-  if(nameEl) nameEl.textContent=displayName || contact.uuid;
+  if(nameEl) {
+    nameEl.textContent=displayName || contact.uuid;
+    // Add click handler to open mini profile
+    nameEl.style.cursor = 'pointer';
+    nameEl.onclick = (e) => {
+      e.stopPropagation();
+      if (typeof openMiniUserProfileEnhanced === 'function') {
+        openMiniUserProfileEnhanced(contact.uuid);
+      } else if (typeof openMiniUserProfile === 'function') {
+        openMiniUserProfile(contact.uuid);
+      }
+    };
+  }
 
   const allowCalls = (!contact.kind || contact.kind === 'friend' || contact.kind === 'stranger');
   const ab = document.getElementById('audioCallBtn');
@@ -8493,7 +8565,7 @@ async function exportData(){
         const dataUrl = reader.result;
         const modal = document.createElement('div');
         modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
-        modal.innerHTML = '<div style="background:var(--bg1);border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;"><h3 style="margin:0 0 16px 0;font-size:18px;">Сохранить бэкап</h3><p style="margin:0 0 20px 0;color:var(--text2);font-size:14px;">Нажмите кнопку ниже, чтобы скопировать данные или откройте меню "Поделиться"</p><button id="copyBackupBtn" style="width:100%;padding:14px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:16px;margin-bottom:10px;">Копировать в буфер</button><button id="closeBackupBtn" style="width:100%;padding:14px;background:var(--bg3);color:var(--text);border:none;border-radius:10px;font-size:16px;">Закрыть</button></div>';
+        modal.innerHTML = '<div style="background:var(--bg1);border-radius:16px;padding:24px;max-width:340px;width:100%;text-align:center;"><h3 style="margin:0 0 16px 0;font-size:18px;">Сохранить бэкап</h3><p style="margin:0 0 20px 0;color:var(--text2);font-size:14px;">Нажмите кнопку ниже, чтобы скопировать данные или откройте меню "Поделиться"</p><button type="button" id="mobileProfileSettingsBtn" style="width:100%;padding:10px;border:none;background:var(--bg3);color:var(--accent);border-radius:10px;margin-bottom:6px">Настройки профиля</button><button type="button" id="myUuidBtn" style="width:100%;padding:10px;border:none;background:var(--bg3);color:var(--text);border-radius:10px;margin-bottom:6px">Мой UUID</button><button type="button" id="clearDataBtn" style="width:100%;padding:10px;border:none;background:var(--bg3);color:var(--danger);border-radius:10px">Очистить данные</button><button type="button" id="switchAccountBtn" style="width:100%;padding:10px;border:none;background:var(--bg3);color:var(--text);border-radius:10px;margin-top:6px">Сменить аккаунт</button></div>';
         document.body.appendChild(modal);
         document.getElementById('copyBackupBtn').onclick = () => {
           navigator.clipboard.writeText(dataUrl).then(() => {
@@ -10877,14 +10949,56 @@ async function loadComments(groupId, postTs) {
     const nameEl = document.createElement('div');
     nameEl.style.cssText = 'color:var(--accent);font-weight:600;margin-bottom:4px;font-size:13px';
     nameEl.textContent = authorName;
-    const textEl = document.createElement('div');
-    textEl.style.cssText = 'color:var(--text);white-space:pre-wrap;word-break:break-word';
-    textEl.textContent = comment.content || '';
+    const contentEl = document.createElement('div');
+    contentEl.style.cssText = 'color:var(--text);word-break:break-word';
+    
+    // Render different message types
+    if (comment.type === 'text') {
+      contentEl.style.whiteSpace = 'pre-wrap';
+      contentEl.textContent = comment.content || '';
+    } else if (comment.type === 'image' && comment.content) {
+      const img = document.createElement('img');
+      img.src = comment.content;
+      img.style.cssText = 'max-width:200px;max-height:150px;border-radius:8px;cursor:pointer';
+      img.onclick = () => window.open(comment.content, '_blank');
+      contentEl.appendChild(img);
+    } else if (comment.type === 'video' && comment.content) {
+      const video = document.createElement('video');
+      video.src = comment.content;
+      video.controls = true;
+      video.style.cssText = 'max-width:200px;max-height:150px;border-radius:8px';
+      contentEl.appendChild(video);
+    } else if (comment.type === 'file' && comment.content) {
+      try {
+        const fd = JSON.parse(comment.content);
+        // Check if audio file
+        if (fd.name && (fd.name.endsWith('.mp3') || fd.name.endsWith('.ogg') || fd.name.endsWith('.wav') || fd.name.endsWith('.m4a') || fd.name.endsWith('.webm'))) {
+          const audio = document.createElement('audio');
+          audio.src = fd.data;
+          audio.controls = true;
+          audio.style.cssText = 'width:200px;height:40px';
+          contentEl.appendChild(audio);
+        } else {
+          // Regular file
+          const fileLink = document.createElement('a');
+          fileLink.href = fd.data;
+          fileLink.download = fd.name;
+          fileLink.style.cssText = 'display:flex;align-items:center;gap:6px;color:var(--accent);text-decoration:none';
+          fileLink.innerHTML = `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg> ${escapeHtml(fd.name)}`;
+          contentEl.appendChild(fileLink);
+        }
+      } catch {
+        contentEl.textContent = '📎 Файл';
+      }
+    } else {
+      contentEl.textContent = comment.content || '';
+    }
+    
     const timeEl = document.createElement('div');
     timeEl.style.cssText = 'color:var(--text3);font-size:11px;margin-top:4px';
     timeEl.textContent = fmtTime(comment.ts);
     body.appendChild(nameEl);
-    body.appendChild(textEl);
+    body.appendChild(contentEl);
     body.appendChild(timeEl);
     row.appendChild(avWrap);
     row.appendChild(body);
@@ -10899,6 +11013,12 @@ async function loadComments(groupId, postTs) {
 function wireCallUiOnce() {
   if (window._callUi) return;
   window._callUi = true;
+  const mClear=document.getElementById('clearDataBtn');
+  if(mClear) mClear.onclick=()=>{ localStorage.clear(); indexedDB.deleteDatabase('e2ee'); location.reload(); };
+  const mSwitch=document.getElementById('switchAccountBtn');
+  if(mSwitch) mSwitch.onclick=()=>{ disconnectWebSocket(); localStorage.removeItem('cipherAuth'); location.reload(); };
+  const mProfileSettings=document.getElementById('mobileProfileSettingsBtn');
+  if(mProfileSettings) mProfileSettings.onclick=()=>{ openSettings(); };
   const h = document.getElementById('callHangupBtn');
   if (h) h.onclick = () => endCall(null, true);
   const m = document.getElementById('callToggleMic');
