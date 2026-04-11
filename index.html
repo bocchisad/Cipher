@@ -1758,26 +1758,28 @@ body.use-gradients{
   </div>
 </div>
 
-<!-- COMMENTS VIEW MODAL -->
-<div class="modal-overlay" id="commentsViewModal" style="display:none">
-  <div class="modal" style="width:min(480px,94vw);max-height:min(90dvh,700px);display:flex;flex-direction:column">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <h2 style="margin:0">Комментарии</h2>
+<!-- COMMENTS VIEW MODAL (полный экран, как обсуждение в Telegram) -->
+<div class="modal-overlay" id="commentsViewModal" style="display:none;padding:0;align-items:stretch;justify-content:stretch;min-height:100dvh;height:100%">
+  <div class="modal" id="commentsViewPanel" style="width:100%;height:100%;max-height:100%;margin:0;border-radius:0;display:flex;flex-direction:column;border:none;box-shadow:none;max-width:none">
+    <div style="flex-shrink:0;padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div style="min-width:0">
+        <div id="commentsViewTitle" style="font-weight:600;font-size:17px;line-height:1.25">Обсуждение</div>
+        <div id="commentsViewSubtitle" style="font-size:12px;color:var(--text2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Комментарии</div>
+      </div>
       <button type="button" class="icon-btn" id="commentsViewClose" title="Закрыть">
         <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
     <!-- Original post preview -->
-    <div id="commentsPostPreview" style="padding:12px;background:var(--bg3);border-radius:var(--r);margin-bottom:12px;flex-shrink:0">
+    <div id="commentsPostPreview" style="padding:12px;background:var(--bg3);border-bottom:1px solid var(--border);flex-shrink:0">
       <div style="font-size:12px;color:var(--text2);margin-bottom:6px" id="commentsPostDate"></div>
       <div id="commentsPostContent" style="font-size:14px"></div>
     </div>
     <!-- Comments list -->
-    <div id="commentsList" style="flex:1;overflow-y:auto;margin-bottom:12px;min-height:150px">
-      <div id="commentsEmpty" style="text-align:center;color:var(--text2);padding:24px;font-size:13px">Нет комментариев</div>
+    <div id="commentsList" style="flex:1;overflow-y:auto;min-height:0;padding:0 8px">
     </div>
     <!-- Join/Input area -->
-    <div id="commentsInputArea" style="border-top:1px solid var(--border);padding-top:12px">
+    <div id="commentsInputArea" style="flex-shrink:0;border-top:1px solid var(--border);padding:10px 12px;padding-bottom:max(10px, env(safe-area-inset-bottom))">
       <div id="commentsJoinPrompt" style="display:none;text-align:center">
         <p style="font-size:13px;color:var(--text2);margin-bottom:12px">Вступите в группу, чтобы оставлять комментарии</p>
         <button type="button" id="commentsJoinBtn" class="btn-primary" style="width:100%;padding:10px">Вступить в чат</button>
@@ -4177,6 +4179,9 @@ async function handleIncomingMessage(msg) {
   const incomingMsgId = msg.msgId || buildClientMsgId(from, ts);
   const localMsg = {chatId, from, to, type, content, ts, msgId: incomingMsgId, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom};
   await dbPut('messages', localMsg);
+  if (type === 'text' && msg.replyTo) {
+    noteIncomingChannelComment(localMsg);
+  }
 
   // FIX: Flush pending media album when a non-media message arrives
   const isMedia = type === 'image' || type === 'video';
@@ -4544,7 +4549,9 @@ async function sendMessage(type, content, options = {}){
     type: replyingToMsg.type,
     preview: replyingToMsg.type === 'text'
       ? String(replyingToMsg.content || '').slice(0, 80)
-      : '📎 ' + replyingToMsg.type
+      : replyingToMsg.type === 'poll'
+        ? 'Опрос'
+        : '📎 ' + replyingToMsg.type
   } : undefined);
   const msgTs = Date.now();
   const msgId = buildClientMsgId(myProfile.uuid, msgTs);
@@ -5966,7 +5973,20 @@ function appendMessage(msg, skipAnim = false){
     const textEl = document.createElement('div');
     textEl.className = 'reply-quote-text';
     const refExists = localMessageRefs.has(makeMessageRefKey(msg.replyTo.from, msg.replyTo.ts));
-    textEl.textContent = refExists ? (msg.replyTo.preview || '') : 'Сообщение удалено';
+    const rp = (msg.replyTo.preview && String(msg.replyTo.preview).trim()) ? String(msg.replyTo.preview).trim() : '';
+    if (rp) {
+      textEl.textContent = rp;
+    } else if (refExists) {
+      const rt = msg.replyTo.type;
+      if (rt === 'poll') textEl.textContent = 'Опрос';
+      else if (rt === 'image') textEl.textContent = '📷 Фото';
+      else if (rt === 'video') textEl.textContent = '🎬 Видео';
+      else if (rt === 'voice') textEl.textContent = '🎵 Голосовое';
+      else if (rt === 'file') textEl.textContent = '📎 Файл';
+      else textEl.textContent = (msg.replyTo.preview && String(msg.replyTo.preview).trim()) || 'Сообщение';
+    } else {
+      textEl.textContent = 'Сообщение удалено';
+    }
     rq.appendChild(authorEl);
     rq.appendChild(textEl);
     rq.addEventListener('click', (e) => {
@@ -6096,14 +6116,27 @@ function appendMessage(msg, skipAnim = false){
   if (isChannel && contact.commentsEnabled && contact.linkedGroupId) {
     const commentsRow = document.createElement('div');
     commentsRow.className = 'msg-comments-btn';
+    commentsRow.dataset.postFrom = String(msg.from || '');
+    commentsRow.dataset.postTs = String(msg.ts || '');
     commentsRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-top:4px;padding:4px 8px;cursor:pointer;color:var(--text2);font-size:12px;border-radius:6px;transition:background .15s;';
+    const n0 = getChannelCommentCount(contact.uuid, msg.from, msg.ts);
     commentsRow.innerHTML = `
       <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-      <span>Оставить комментарий</span>
+      <span class="msg-comments-label">${n0 > 0 ? `Комментарии · ${n0}` : 'Комментарии'}</span>
     `;
     commentsRow.onmouseenter = () => { commentsRow.style.background = 'var(--bg3)'; };
     commentsRow.onmouseleave = () => { commentsRow.style.background = 'transparent'; };
     commentsRow.onclick = () => openCommentsView(msg, contact.linkedGroupId);
+    dbGetByIndex('messages', 'chatId', normUid(contact.linkedGroupId)).then((gmsgs) => {
+      const nn = gmsgs.filter((m) =>
+        m.replyTo &&
+        normUid(m.replyTo.from) === normUid(msg.from) &&
+        m.replyTo.ts === msg.ts
+      ).length;
+      setChannelCommentCount(contact.uuid, msg.from, msg.ts, nn);
+      const lab = commentsRow.querySelector('.msg-comments-label');
+      if (lab) lab.textContent = nn > 0 ? `Комментарии · ${nn}` : 'Комментарии';
+    }).catch(() => {});
     stack.appendChild(commentsRow);
   }
   
@@ -6362,6 +6395,10 @@ async function finalizePollMultiVote(msg, pollData) {
     showToast('Выберите хотя бы один вариант');
     return;
   }
+  const allowed = pollData.showCorrect && pollData.correctOption != null
+    ? new Set((pollData.options || []).filter((o) => o.id === pollData.correctOption).map((o) => o.id))
+    : null;
+  const hasWrongMulti = allowed && [...set].some((id) => !allowed.has(id));
   if (!pollData.submitted) pollData.submitted = {};
   if (!pollData.votes) pollData.votes = {};
   pollData.votes[myUid] = Array.from(set);
@@ -6376,7 +6413,74 @@ async function finalizePollMultiVote(msg, pollData) {
     pollData
   });
   await refreshPollMessagesUi(msg);
-  showToast('Голос засчитан');
+  if (hasWrongMulti) showToast('Неверный ответ');
+  else showToast('Голос засчитан');
+}
+
+function pollVotersForOption(pollData, optId) {
+  const names = [];
+  for (const [uid, v] of Object.entries(pollData.votes || {})) {
+    if (!isPollVoteCommitted(pollData, normUid(uid))) continue;
+    const picked = Array.isArray(v) ? v.includes(optId) : v === optId;
+    if (!picked) continue;
+    const n = contacts.find(c => normUid(c.uuid) === normUid(uid))?.nickname || String(uid).slice(0, 10);
+    names.push(n);
+  }
+  return names.sort((a, b) => a.localeCompare(b, 'ru'));
+}
+
+function bindPollLongPressRevoke(container, msg) {
+  let t = null;
+  const clear = () => {
+    if (t) { clearTimeout(t); t = null; }
+  };
+  const start = (e) => {
+    if (e.target && e.target.closest && e.target.closest('button')) return;
+    clear();
+    t = setTimeout(() => {
+      t = null;
+      revokeMyPollVote(msg);
+    }, 620);
+  };
+  container.addEventListener('touchstart', start, { passive: true });
+  container.addEventListener('touchend', clear);
+  container.addEventListener('touchcancel', clear);
+  container.addEventListener('touchmove', clear);
+  container.addEventListener('mousedown', start);
+  container.addEventListener('mouseup', clear);
+  container.addEventListener('mouseleave', clear);
+}
+
+async function revokeMyPollVote(msg) {
+  const rid = getPollRoomId(msg);
+  const msgs = await dbGetByIndex('messages', 'chatId', rid);
+  const fresh = msgs.find((m) => m.ts === msg.ts && normUid(m.from) === normUid(msg.from));
+  if (!fresh || fresh.type !== 'poll') return;
+  let pollData;
+  try {
+    pollData = JSON.parse(fresh.content);
+  } catch (_) {
+    return;
+  }
+  const myUid = normUid(myProfile.uuid);
+  if (!isPollVoteCommitted(pollData, myUid)) return;
+  if (pollData.closed) {
+    showToast('Опрос закрыт');
+    return;
+  }
+  delete pollData.votes[myUid];
+  if (pollData.submitted) delete pollData.submitted[myUid];
+  pollMultiDraft.delete(getPollMsgKey(fresh));
+  recountPollVotes(pollData);
+  const updatedMsg = { ...fresh, content: JSON.stringify(pollData) };
+  await dbPut('messages', updatedMsg);
+  sendToServer('poll-vote', {
+    roomId: rid,
+    msgId: fresh.msgId || buildClientMsgId(fresh.from, fresh.ts),
+    pollData
+  });
+  await refreshPollMessagesUi(fresh);
+  showToast('Голос отменён');
 }
 
 function renderPoll(msg, pollData) {
@@ -6399,14 +6503,18 @@ function renderPoll(msg, pollData) {
   optionsContainer.style.cssText = 'display:flex;flex-direction:column;gap:8px';
   
   const totalVotes = pollData.totalVotes || 0;
-  const optVotes = (pollData.options || []).map(o => o.votes || 0);
+  const baseOpts = pollData.options || [];
+  const optVotes = baseOpts.map(o => o.votes || 0);
   const maxVotes = Math.max(1, ...optVotes, 0);
+  const optsDisplay = (showResults && !isAnonymous)
+    ? [...baseOpts].sort((a, b) => (a.votes || 0) - (b.votes || 0))
+    : [...baseOpts];
   
   if (pollData.multiple && !committed && !pollData.closed) {
     const key = getPollMsgKey(msg);
     if (!pollMultiDraft.has(key)) pollMultiDraft.set(key, new Set());
     const draft = pollMultiDraft.get(key);
-    (pollData.options || []).forEach(opt => {
+    baseOpts.forEach(opt => {
       const optRow = document.createElement('label');
       optRow.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;color:var(--text)';
       const cb = document.createElement('input');
@@ -6430,9 +6538,9 @@ function renderPoll(msg, pollData) {
     done.onclick = () => finalizePollMultiVote(msg, pollData);
     optionsContainer.appendChild(done);
   } else {
-    (pollData.options || []).forEach(opt => {
+    optsDisplay.forEach(opt => {
       const optRow = document.createElement('div');
-      optRow.style.cssText = 'position:relative';
+      optRow.style.cssText = 'position:relative;display:flex;flex-direction:column';
       
       const votes = opt.votes || 0;
       const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
@@ -6442,22 +6550,39 @@ function renderPoll(msg, pollData) {
       
       if (showResults) {
         const barBg = document.createElement('div');
-        barBg.style.cssText = `height:36px;background:var(--bg2);border-radius:6px;position:relative;overflow:hidden;${isSelected ? 'border:2px solid var(--accent)' : ''}`;
+        const radius = (!isAnonymous) ? '6px 6px 0 0' : '6px';
+        barBg.style.cssText = `min-height:36px;background:var(--bg2);border:1px solid var(--border);border-radius:${radius};position:relative;overflow:hidden;${isSelected ? 'outline:2px solid var(--accent);outline-offset:-1px' : ''}${!isAnonymous ? ';cursor:pointer' : ''}`;
         
         const barFill = document.createElement('div');
-        barFill.style.cssText = `position:absolute;top:0;left:0;height:100%;width:${percentage}%;background:${isCorrect ? '#4CAF50' : (isWinner ? 'var(--accent)' : 'var(--bg4)')};opacity:0.6;transition:width 0.3s`;
+        barFill.style.cssText = `position:absolute;top:0;left:0;height:100%;width:${percentage}%;background:${isCorrect ? '#4CAF50' : (isWinner ? 'var(--accent)' : 'var(--bg4)')};opacity:0.55;transition:width 0.3s`;
         barBg.appendChild(barFill);
         
         const barText = document.createElement('div');
-        barText.style.cssText = 'position:absolute;top:0;left:0;right:0;height:100%;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:13px;z-index:1';
-        barText.innerHTML = `<span>${escapeHtml(opt.text)}${isCorrect ? ' ✓' : ''}</span><span>${percentage}% (${votes})</span>`;
+        barText.style.cssText = 'position:relative;padding:10px 12px;font-size:13px;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:8px';
+        barText.innerHTML = `<span>${escapeHtml(opt.text)}${isCorrect ? ' ✓' : ''}</span><span style="flex-shrink:0">${percentage}% (${votes})</span>`;
         barBg.appendChild(barText);
         
         optRow.appendChild(barBg);
+        
+        if (!isAnonymous) {
+          const detail = document.createElement('div');
+          detail.style.cssText = 'display:none;padding:8px 12px;font-size:12px;color:var(--text2);background:var(--bg1);border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;line-height:1.4';
+          const voters = pollVotersForOption(pollData, opt.id);
+          detail.textContent = voters.length ? voters.join(', ') : 'Пока никто не голосовал за этот вариант';
+          let open = false;
+          barBg.onclick = (e) => {
+            e.stopPropagation();
+            open = !open;
+            detail.style.display = open ? 'block' : 'none';
+            barBg.style.borderBottomLeftRadius = open ? '0' : '6px';
+            barBg.style.borderBottomRightRadius = open ? '0' : '6px';
+          };
+          optRow.appendChild(detail);
+        }
       } else {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.style.cssText = 'width:100%;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;text-align:left;cursor:pointer;font-size:13px;color:var(--text);transition:background 0.15s';
+        btn.style.cssText = 'width:100%;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;text-align:left;cursor:pointer;font-size:13px;color:var(--text);transition:background 0.15s,border-color .2s';
         btn.textContent = opt.text;
         btn.onmouseenter = () => { btn.style.background = 'var(--bg4)'; };
         btn.onmouseleave = () => { btn.style.background = 'var(--bg2)'; };
@@ -6471,34 +6596,49 @@ function renderPoll(msg, pollData) {
   
   container.appendChild(optionsContainer);
   
-  if (!isAnonymous && showResults) {
-    const voters = document.createElement('div');
-    voters.style.cssText = 'margin-top:10px;font-size:11px;color:var(--text3);line-height:1.45';
-    const lines = [];
-    for (const [uid, v] of Object.entries(pollData.votes || {})) {
-      if (!isPollVoteCommitted(pollData, normUid(uid))) continue;
-      const name = contacts.find(c => normUid(c.uuid) === normUid(uid))?.nickname || String(uid).slice(0, 8);
-      const bits = Array.isArray(v)
-        ? v.map(id => (pollData.options || []).find(o => o.id === id)?.text).filter(Boolean)
-        : [(pollData.options || []).find(o => o.id === v)?.text].filter(Boolean);
-      if (bits.length) lines.push(`${escapeHtml(name)}: ${escapeHtml(bits.join(', '))}`);
-    }
-    voters.innerHTML = lines.length ? lines.join('<br>') : '';
-    container.appendChild(voters);
-  }
-  
   const footer = document.createElement('div');
-  footer.style.cssText = 'margin-top:12px;font-size:11px;color:var(--text2);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px';
+  footer.style.cssText = 'margin-top:12px;font-size:11px;color:var(--text2);display:flex;flex-direction:column;gap:6px';
   const totalText = `${totalVotes} голос${totalVotes % 10 === 1 && totalVotes % 100 !== 11 ? '' : totalVotes % 10 >= 2 && totalVotes % 10 <= 4 && (totalVotes % 100 < 10 || totalVotes % 100 >= 20) ? 'а' : 'ов'}`;
-  const anonText = isAnonymous ? ' · Анонимно' : ' · Видно участников';
-  let hint = '';
+  const anonText = isAnonymous ? 'Анонимный опрос' : 'Видно участников';
+  const row1 = document.createElement('div');
+  row1.style.cssText = 'display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;width:100%';
+  row1.innerHTML = `<span>${totalText}</span><span>${anonText}</span>`;
+  footer.appendChild(row1);
   if (pollData.multiple && !committed && !pollData.closed) {
-    hint = '<span>Выберите варианты и нажмите «Проголосовать»</span>';
+    const h = document.createElement('div');
+    h.style.cssText = 'font-size:11px;color:var(--text3)';
+    h.textContent = 'Выберите варианты и нажмите «Проголосовать»';
+    footer.appendChild(h);
   } else if (committed) {
-    hint = '<span>Вы проголосовали</span>';
+    const h = document.createElement('div');
+    h.style.cssText = 'font-size:11px;color:var(--text3)';
+    h.textContent = 'Вы проголосовали';
+    footer.appendChild(h);
   }
-  footer.innerHTML = `<span>${totalText}${anonText}</span>${hint}`;
+  if (!isAnonymous && showResults) {
+    const h = document.createElement('div');
+    h.style.cssText = 'font-size:11px;color:var(--text3);margin-top:2px';
+    h.textContent = 'Нажмите на строку варианта — список проголосовавших';
+    footer.appendChild(h);
+  }
+  if (committed && !pollData.closed) {
+    const hintLong = document.createElement('div');
+    hintLong.style.cssText = 'font-size:10px;color:var(--text3);opacity:.9';
+    hintLong.textContent = 'Долгое нажатие на опрос — отменить голос';
+    footer.appendChild(hintLong);
+    const revokeBtn = document.createElement('button');
+    revokeBtn.type = 'button';
+    revokeBtn.className = 'btn-ghost';
+    revokeBtn.textContent = 'Отменить голос';
+    revokeBtn.style.cssText = 'width:100%;margin-top:4px;padding:8px;font-size:12px';
+    revokeBtn.onclick = (e) => {
+      e.stopPropagation();
+      revokeMyPollVote(msg);
+    };
+    footer.appendChild(revokeBtn);
+  }
   container.appendChild(footer);
+  bindPollLongPressRevoke(container, msg);
   
   return container;
 }
@@ -6510,6 +6650,7 @@ async function voteInPoll(msg, pollData, optionId) {
     showToast('Вы уже проголосовали');
     return;
   }
+  const wrong = !!(pollData.showCorrect && pollData.correctOption != null && optionId !== pollData.correctOption);
   if (!pollData.votes) pollData.votes = {};
   if (!pollData.submitted) pollData.submitted = {};
   pollData.votes[myUid] = optionId;
@@ -6524,7 +6665,8 @@ async function voteInPoll(msg, pollData, optionId) {
     pollData
   });
   await refreshPollMessagesUi(msg);
-  showToast('Голос засчитан');
+  if (wrong) showToast('Неверный ответ');
+  else showToast('Голос засчитан');
 }
 
 function parseVoiceContent(raw) {
@@ -6568,6 +6710,7 @@ function buildLastPreview(type, content){
   if(type==='image') return '📷 Фото';
   if(type==='voice') return '🎵 Голосовое';
   if(type==='video') return '🎬 Видео';
+  if (type === 'poll') return 'Опрос';
   if(type==='file'){
     try { return '📎 ' + JSON.parse(content).name; } catch { return '📎 Файл'; }
   }
@@ -8296,6 +8439,42 @@ function showAttachMenu() {
 
 const pollMultiDraft = new Map();
 
+const channelCommentCountCache = new Map();
+
+function channelCommentCacheKey(channelId, postFrom, postTs) {
+  return `${normUid(channelId)}|${normUid(postFrom)}|${Number(postTs)}`;
+}
+
+function setChannelCommentCount(channelId, postFrom, postTs, n) {
+  channelCommentCountCache.set(channelCommentCacheKey(channelId, postFrom, postTs), Math.max(0, Number(n) || 0));
+}
+
+function getChannelCommentCount(channelId, postFrom, postTs) {
+  return channelCommentCountCache.get(channelCommentCacheKey(channelId, postFrom, postTs)) || 0;
+}
+
+function noteIncomingChannelComment(localMsg) {
+  if (!localMsg?.replyTo || !localMsg.chatId) return;
+  const gid = normUid(localMsg.chatId);
+  const ch = contacts.find((c) => c.kind === 'channel' && normUid(c.linkedGroupId) === gid);
+  if (!ch) return;
+  const k = channelCommentCacheKey(ch.uuid, localMsg.replyTo.from, localMsg.replyTo.ts);
+  channelCommentCountCache.set(k, (channelCommentCountCache.get(k) || 0) + 1);
+  if (normUid(activeChat) === normUid(ch.uuid)) refreshCommentLabelsIfChannelOpen(ch.uuid);
+}
+
+function refreshCommentLabelsIfChannelOpen(channelUuid) {
+  if (normUid(activeChat) !== normUid(channelUuid)) return;
+  document.querySelectorAll('.msg-comments-btn[data-post-ts]').forEach((el) => {
+    const pf = el.dataset.postFrom;
+    const ts = Number(el.dataset.postTs);
+    if (!pf || !Number.isFinite(ts)) return;
+    const n = getChannelCommentCount(channelUuid, pf, ts);
+    const lab = el.querySelector('.msg-comments-label');
+    if (lab) lab.textContent = n > 0 ? `Комментарии · ${n}` : 'Комментарии';
+  });
+}
+
 function getPollMsgKey(msg) {
   return msg.msgId || buildClientMsgId(msg.from, msg.ts);
 }
@@ -9865,10 +10044,10 @@ async function openCommentsView(postMsg, linkedGroupId) {
   currentCommentsGroupId = linkedGroupId;
   
   const modal = document.getElementById('commentsViewModal');
+  const subEl = document.getElementById('commentsViewSubtitle');
   const postDate = document.getElementById('commentsPostDate');
   const postContent = document.getElementById('commentsPostContent');
   const commentsList = document.getElementById('commentsList');
-  const commentsEmpty = document.getElementById('commentsEmpty');
   const joinPrompt = document.getElementById('commentsJoinPrompt');
   const joinBtn = document.getElementById('commentsJoinBtn');
   const composer = document.getElementById('commentsComposer');
@@ -9889,15 +10068,21 @@ async function openCommentsView(postMsg, linkedGroupId) {
   } else if (postMsg.type === 'file') {
     contentHtml = '📎 Файл';
   } else if (postMsg.type === 'poll') {
-    contentHtml = '📊 Опрос';
+    contentHtml = 'Опрос';
   } else {
     contentHtml = escapeHtml(String(postMsg.content || ''));
   }
   postContent.innerHTML = contentHtml;
   
-  // Канал, из которого открыли комментарии (для настроек «только участники»)
   const channel = contacts.find(c => normUid(c.uuid) === normUid(activeChat) && c.kind === 'channel')
     || contacts.find(c => c.kind === 'channel' && normUid(c.linkedGroupId) === normUid(linkedGroupId));
+  if (subEl) {
+    subEl.textContent = channel?.nickname
+      ? `Комментарии · ${channel.nickname}`
+      : 'Комментарии к посту';
+  }
+  
+  // Канал — для настроек «только участники группы»
   const group = contacts.find(c => normUid(c.uuid) === normUid(linkedGroupId));
   const isMember = group?.roomMembers?.some(m => normUid(m) === normUid(myProfile.uuid));
   const membersOnly = !!(channel?.commentsMembersOnly);
@@ -9935,7 +10120,12 @@ async function openCommentsView(postMsg, linkedGroupId) {
     
     // Send comment as reply to original post
     await sendMessage('text', text, { 
-      replyTo: { from: postMsg.from, ts: postMsg.ts, preview: contentHtml.slice(0, 100) },
+      replyTo: {
+        from: postMsg.from,
+        ts: postMsg.ts,
+        type: postMsg.type,
+        preview: (postMsg.type === 'text' ? String(postMsg.content || '').slice(0, 100) : contentHtml)
+      },
       toGroupId: linkedGroupId 
     });
     
@@ -9963,25 +10153,29 @@ async function openCommentsView(postMsg, linkedGroupId) {
 
 async function loadComments(groupId, postTs) {
   const commentsList = document.getElementById('commentsList');
-  const commentsEmpty = document.getElementById('commentsEmpty');
+  if (!commentsList || !currentCommentsPost) return;
   
-  // Load messages from linked group that are replies to this post
   const msgs = await dbGetByIndex('messages', 'chatId', normUid(groupId));
   const comments = msgs.filter(m => 
     m.replyTo && 
     normUid(m.replyTo.from) === normUid(currentCommentsPost.from) &&
     m.replyTo.ts === postTs
   ).sort((a, b) => a.ts - b.ts);
+  const chForCache = contacts.find((c) => normUid(c.uuid) === normUid(activeChat) && c.kind === 'channel');
   
+  commentsList.innerHTML = '';
   if (comments.length === 0) {
-    commentsList.innerHTML = '';
-    commentsList.appendChild(commentsEmpty);
-    commentsEmpty.style.display = 'block';
+    const empty = document.createElement('div');
+    empty.className = 'comments-empty-state';
+    empty.style.cssText = 'text-align:center;color:var(--text2);padding:28px 16px;font-size:14px';
+    empty.textContent = 'Пока нет комментариев…';
+    commentsList.appendChild(empty);
+    if (chForCache && currentCommentsPost) {
+      setChannelCommentCount(chForCache.uuid, currentCommentsPost.from, postTs, 0);
+      refreshCommentLabelsIfChannelOpen(chForCache.uuid);
+    }
     return;
   }
-  
-  commentsEmpty.style.display = 'none';
-  commentsList.innerHTML = '';
   
   comments.forEach(comment => {
     const row = document.createElement('div');
@@ -9998,6 +10192,10 @@ async function loadComments(groupId, postTs) {
     
     commentsList.appendChild(row);
   });
+  if (chForCache && currentCommentsPost) {
+    setChannelCommentCount(chForCache.uuid, currentCommentsPost.from, postTs, comments.length);
+    refreshCommentLabelsIfChannelOpen(chForCache.uuid);
+  }
 }
 
 function wireCallUiOnce() {
