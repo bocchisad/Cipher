@@ -293,7 +293,10 @@ function loadRoomsJSON() {
           members: Array.isArray(room.members) ? room.members : [],
           admins: Array.isArray(room.admins) ? room.admins : [],
           username: room.username || undefined,
-          avatar: room.avatar || ''
+          avatar: room.avatar || '',
+          linkedGroupId: room.linkedGroupId || undefined,
+          commentsEnabled: room.commentsEnabled || false,
+          commentsMembersOnly: room.commentsMembersOnly || false
         };
         normalizeRoom(r);
         rooms.set(id, r);
@@ -473,6 +476,12 @@ async function handleMessage(ws, msg, setUserId, ip) {
       break;
     case 'room-update':
       handleRoomUpdate(uuid, data);
+      break;
+    case 'channel-create-comments-group':
+      handleCreateCommentsGroup(uuid, data);
+      break;
+    case 'poll-vote':
+      handlePollVote(uuid, data, ws);
       break;
     case 'room-delete':
       handleRoomDelete(uuid, data);
@@ -991,9 +1000,97 @@ function handleRoomUpdate(fromUuid, data) {
       channelUsernames.set(nu, room.id);
     }
   }
+  // Comments settings for channels
+  if (room.kind === 'channel') {
+    if (data.commentsEnabled !== undefined) {
+      room.commentsEnabled = !!data.commentsEnabled;
+    }
+    if (data.commentsMembersOnly !== undefined) {
+      room.commentsMembersOnly = !!data.commentsMembersOnly;
+    }
+    // Link or create linked group for comments
+    if (data.linkedGroupId !== undefined) {
+      room.linkedGroupId = data.linkedGroupId || null;
+    }
+  }
   normalizeRoom(room);
   saveRoomsJSON();
   broadcastRoomToMembers(room);
+}
+
+function handleCreateCommentsGroup(fromUuid, data) {
+  const u = getUserLive(fromUuid);
+  if (!data?.channelId || !data?.title) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Укажите ID канала и название группы' } });
+    return;
+  }
+  const channelId = normUid(data.channelId);
+  const channel = rooms.get(channelId);
+  if (!channel || channel.kind !== 'channel') {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Канал не найден' } });
+    return;
+  }
+  if (normUid(channel.owner) !== normUid(fromUuid)) {
+    if (u?.ws) safeWsSend(u.ws, { type: 'error', data: { error: 'Только владелец может создать группу комментариев' } });
+    return;
+  }
+  
+  // Create linked group for comments
+  const groupId = generateUUID();
+  const owner = normUid(fromUuid);
+  const group = {
+    id: groupId,
+    title: String(data.title).slice(0, 64),
+    kind: 'group',
+    owner,
+    members: [owner],
+    admins: [],
+    avatar: data.avatar || channel.avatar || ''
+  };
+  normalizeRoom(group);
+  rooms.set(groupId, group);
+  
+  // Link group to channel
+  channel.linkedGroupId = groupId;
+  channel.commentsEnabled = true;
+  normalizeRoom(channel);
+  saveRoomsJSON();
+  
+  // Notify creator
+  if (u?.ws) safeWsSend(u.ws, { type: 'room-created', data: { room: group } });
+  if (u?.ws) safeWsSend(u.ws, { type: 'room-updated', data: { room: channel } });
+  
+  console.log(`📁 Comments group created: ${group.title} for channel ${channel.title}`);
+}
+
+function handlePollVote(fromUuid, data, ws) {
+  if (!data?.msgId || !data?.pollData) {
+    if (ws) safeWsSend(ws, { type: 'error', data: { error: 'Invalid poll vote data' } });
+    return;
+  }
+  
+  // Broadcast poll vote update to all room members
+  const pollData = data.pollData;
+  const roomId = data.roomId;
+  
+  if (roomId && rooms.has(roomId)) {
+    const room = rooms.get(roomId);
+    for (const memberId of room.members) {
+      if (normUid(memberId) === normUid(fromUuid)) continue;
+      const u = getUserLive(memberId);
+      if (u?.ws && u.ws.readyState === WebSocket.OPEN) {
+        safeWsSend(u.ws, { 
+          type: 'poll-vote-update', 
+          data: { 
+            msgId: data.msgId,
+            pollData: pollData
+          } 
+        });
+      }
+    }
+  }
+  
+  console.log(`🗳️ Poll vote from ${fromUuid.substring(0, 8)}...`);
 }
 
 function handleRoomDelete(fromUuid, data) {
