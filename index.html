@@ -8605,26 +8605,21 @@ function initLightboxBindings() {
 // ==================== WEBRTC CALLS ====================
 const RTC_CFG = {
   iceServers: [
-    { urls: "stun:stun.relay.metered.ca:80" },
+    { urls: 'stun:stun.relay.metered.ca:80' },
     {
-      urls: "turn:global.relay.metered.ca:80",
-      username: "0b93c5365ea98b60ac7211c5",
-      credential: "YH+mP8Jn9m6guYa6",
+      urls: 'turn:turn.relay.metered.ca:80',
+      username: '0b93c5365ea98b60ac7211c5',
+      credential: 'YH+mP8Jn9m6guYa6'
     },
     {
-      urls: "turn:global.relay.metered.ca:80?transport=tcp",
-      username: "0b93c5365ea98b60ac7211c5",
-      credential: "YH+mP8Jn9m6guYa6",
+      urls: 'turn:turn.relay.metered.ca:80?transport=tcp',
+      username: '0b93c5365ea98b60ac7211c5',
+      credential: 'YH+mP8Jn9m6guYa6'
     },
     {
-      urls: "turn:global.relay.metered.ca:443",
-      username: "0b93c5365ea98b60ac7211c5",
-      credential: "YH+mP8Jn9m6guYa6",
-    },
-    {
-      urls: "turns:global.relay.metered.ca:443?transport=tcp",
-      username: "0b93c5365ea98b60ac7211c5",
-      credential: "YH+mP8Jn9m6guYa6",
+      urls: 'turn:turn.relay.metered.ca:443',
+      username: '0b93c5365ea98b60ac7211c5',
+      credential: 'YH+mP8Jn9m6guYa6'
     }
   ],
   iceCandidatePoolSize: 10,
@@ -8636,6 +8631,8 @@ let rtcLocal = null;
 let rtcVideoOffer = false;
 /** Собеседник в текущем звонке (куда слать hangup / ICE) */
 let rtcRemoteUuid = null;
+/** Буфер для ICE кандидатов, пришедших до установки remoteDescription */
+const pendingIceCandidates = [];
 
 function sdpToJSON(desc) {
   if (!desc) return null;
@@ -8828,7 +8825,7 @@ async function startOutgoingCall(video) {
   if (!crypto_engine.pubKeysCache.has(peer)) {
     sendToServer('get-pub-keys', { targetUuid: peer });
     showToast('Запрос ключей для защищенного звонка...');
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 800));
   }
   
   if (!crypto_engine.pubKeysCache.has(peer)) {
@@ -8982,6 +8979,18 @@ async function handleRtcSignalIncoming(kind, data) {
         };
         await rtcPc.setRemoteDescription(new RTCSessionDescription(sdp));
         console.log('✅ Remote description set (offer)');
+        
+        // Apply any pending ICE candidates received before remoteDescription was set
+        while (pendingIceCandidates.length > 0) {
+          const candidate = pendingIceCandidates.shift();
+          try {
+            await rtcPc.addIceCandidate(new RTCIceCandidate(candidate));
+            console.log('🧊 Applied pending ICE candidate');
+          } catch (err) {
+            console.error('❌ Failed to apply pending ICE candidate:', err);
+          }
+        }
+        
         const answer = await rtcPc.createAnswer();
         await rtcPc.setLocalDescription(answer);
       
@@ -9018,6 +9027,12 @@ async function handleRtcSignalIncoming(kind, data) {
     }
   } else if (kind === 'rtc-ice' && rtcPc && decryptedData.candidate) {
     try {
+      // If remoteDescription not yet set, buffer the candidate
+      if (!rtcPc.remoteDescription) {
+        pendingIceCandidates.push(decryptedData.candidate);
+        console.log('🧊 Buffered ICE candidate (remoteDescription not set)');
+        return;
+      }
       await rtcPc.addIceCandidate(new RTCIceCandidate(decryptedData.candidate));
     } catch (err) {
       console.error('❌ Failed to add ICE candidate:', err);
@@ -9068,15 +9083,14 @@ function stopCallTimer() {
 // Encrypt call signaling data (SDP/ICE) using E2EE
 async function encryptCallSignal(data, peerUuid) {
   try {
-    if (!crypto_engine.myKeys) return null;
+    if (!crypto_engine.myKeys) {
+      throw new Error('E2EE ключи не загружены');
+    }
     
     // Get peer's public keys
     let pubKeys = crypto_engine.pubKeysCache.get(peerUuid);
     if (!pubKeys) {
-      sendToServer('get-pub-keys', { targetUuid: peerUuid });
-      await new Promise(r => setTimeout(r, 500));
-      pubKeys = crypto_engine.pubKeysCache.get(peerUuid);
-      if (!pubKeys) return null;
+      throw new Error('Публичные ключи собеседника отсутствуют в кэше');
     }
     
     // Derive shared secret
