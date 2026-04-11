@@ -189,6 +189,16 @@ button,.icon-btn,.chat-item,.msg,.media-thumb,.file-row,.link-row,.ctx-item,.tab
 .msg-sender-name{font-weight:500}
 .clickable-user-av{cursor:pointer}
 .clickable-user-av:hover{opacity:.92}
+.mini-profile-overlay{display:flex;align-items:center;justify-content:center;padding:12px;background:rgba(0,0,0,.5)}
+.mini-profile-modal{box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.mini-profile-modal.show{transform:scale(1)}
+.mini-profile-track-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s}
+.mini-profile-track-item:last-child{border-bottom:none}
+.mini-profile-track-item:hover{background:var(--bg4)}
+.mini-profile-track-play{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff}
+.mini-profile-track-info{flex:1;min-width:0}
+.mini-profile-track-title{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini-profile-track-artist{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #commentsViewPanel{box-shadow:0 12px 48px rgba(0,0,0,.4)}
 .comments-post-preview{border-radius:16px}
 .comment-thread-row{border-radius:14px}
@@ -1574,6 +1584,12 @@ body.use-gradients{
                 <input type="checkbox" id="roomSettingsCommentsMembersOnly">
               </label>
             </div>
+            <div class="settings-toggle-row" style="margin-bottom:10px">
+              <span>Разрешить медиа в комментариях</span>
+              <label class="settings-gradient-label">
+                <input type="checkbox" id="roomSettingsCommentsMediaEnabled">
+              </label>
+            </div>
             <div id="roomSettingsLinkedGroupInfo" style="display:none;margin-bottom:10px;padding:8px;background:var(--bg3);border-radius:8px;font-size:12px">
               <span id="roomSettingsLinkedGroupText"></span>
             </div>
@@ -1596,8 +1612,10 @@ body.use-gradients{
 
 <!-- SETTINGS MODAL -->
 <div class="modal-overlay" id="settingsModal" style="display:none">
-  <div class="modal" style="width:420px">
+  <div class="modal" style="width:420px;max-height:85vh;overflow-y:auto">
     <h2>Настройки профиля</h2>
+    
+    <!-- Основная информация -->
     <div class="settings-section">
       <h3>Аватар</h3>
       <div class="settings-av" id="settingsAv"></div>
@@ -1605,17 +1623,65 @@ body.use-gradients{
     </div>
     <div class="settings-section">
       <h3>Никнейм</h3>
-      <input id="settingsNick" type="text" placeholder="Ваш никнейм">
+      <input id="settingsNick" type="text" placeholder="Ваш никнейм" maxlength="32">
+    </div>
+    <div class="settings-section">
+      <h3>О себе</h3>
+      <textarea id="settingsBio" rows="3" placeholder="Расскажите о себе..." maxlength="140" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg2);color:var(--text);resize:none;font-size:14px;font-family:inherit"></textarea>
+      <div style="text-align:right;font-size:11px;color:var(--text2);margin-top:4px"><span id="settingsBioCount">0</span>/140</div>
     </div>
     <div class="settings-section">
       <h3>Ваш Username (UUID)</h3>
       <div class="settings-id" id="settingsIdBox">...</div>
       <div class="copy-hint">Нажмите, чтобы скопировать</div>
     </div>
+    
+    <!-- Музыка / Треки -->
+    <div class="settings-section">
+      <h3>Треки в профиле</h3>
+      <div id="settingsTracksList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+        <div style="color:var(--text2);font-size:13px;text-align:center;padding:12px">Нет добавленных треков</div>
+      </div>
+      <button type="button" id="settingsAddTrackBtn" class="btn-ghost" style="width:100%;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+        Добавить трек
+      </button>
+      <input type="file" id="settingsTrackFile" accept="audio/*" style="display:none" multiple>
+    </div>
+    
+    <!-- Прикрепленный канал -->
+    <div class="settings-section">
+      <h3>Прикрепленный канал</h3>
+      <div id="settingsAttachedChannel" style="display:none">
+        <div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--bg3);border-radius:var(--r);border:1px solid var(--border)">
+          <div id="settingsAttachedChannelAv" style="width:40px;height:40px;border-radius:50%;overflow:hidden;background:var(--bg4);flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div id="settingsAttachedChannelName" style="font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+            <div style="font-size:12px;color:var(--text2)">Канал</div>
+          </div>
+          <button type="button" id="settingsDetachChannelBtn" class="icon-btn" title="Открепить" style="width:32px;height:32px">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="settingsNoAttachedChannel" style="color:var(--text2);font-size:13px;text-align:center;padding:12px">
+        Нет прикрепленного канала
+      </div>
+      <select id="settingsChannelSelect" style="width:100%;margin-top:8px;padding:10px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:14px;display:none">
+        <option value="">Выберите канал...</option>
+      </select>
+      <button type="button" id="settingsAttachChannelBtn" class="btn-ghost" style="width:100%;margin-top:8px;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Прикрепить канал
+      </button>
+    </div>
+    
     <div class="settings-section settings-toggle-row">
       <span>Градиентный фон</span>
       <label class="settings-gradient-label"><input type="checkbox" id="gradientToggle" aria-label="Градиентный фон"></label>
     </div>
+    
+    <!-- Данные -->
     <div class="settings-section">
       <h3>Данные</h3>
       <button class="export-btn" id="exportBtn">
@@ -1627,15 +1693,16 @@ body.use-gradients{
         Загрузить данные
       </button>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none">
-      <!-- FIX (FIXES_REPORT 2.7): Clear all local data button -->
       <button class="btn-danger" id="clearDataBtn" style="width:100%;margin-top:8px;padding:10px 14px;font-size:13px;text-align:left;display:flex;align-items:center;gap:8px">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
         Очистить все чаты и контакты
       </button>
     </div>
+    
     <div class="settings-section">
       <button type="button" class="btn-ghost" id="switchAccountBtn" style="width:100%;justify-content:center">Сменить аккаунт</button>
     </div>
+    
     <div class="modal-btns">
       <button class="btn-ghost" id="settingsCancel">Отмена</button>
       <button class="btn-primary" style="width:auto;padding:9px 20px" id="settingsSave">Сохранить</button>
@@ -1790,25 +1857,87 @@ body.use-gradients{
         <button type="button" id="commentsJoinBtn" class="btn-primary" style="width:100%;padding:10px">Вступить в чат</button>
       </div>
       <div id="commentsComposer" style="display:none">
-        <div style="display:flex;gap:8px">
+        <!-- Media attachment preview for comments -->
+        <div id="commentsAttachPreview" style="display:none;margin-bottom:8px;padding:8px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div id="commentsAttachIcon" style="width:40px;height:40px;border-radius:8px;background:var(--bg4);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div id="commentsAttachName" style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Файл</div>
+              <div id="commentsAttachSize" style="font-size:11px;color:var(--text2)"></div>
+            </div>
+            <button type="button" id="commentsAttachRemove" class="icon-btn" style="width:28px;height:28px;flex-shrink:0">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:flex-end">
+          <button type="button" id="commentsAttachBtn" class="icon-btn" style="width:44px;height:44px;flex-shrink:0;border-radius:14px;background:var(--bg3)" title="Прикрепить файл">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+          </button>
           <textarea id="commentsInput" rows="2" placeholder="Написать комментарий..." style="flex:1;padding:12px 14px;border-radius:16px;border:1px solid var(--border);background:var(--bg2);color:var(--text);resize:none;font-size:14px"></textarea>
           <button type="button" id="commentsSendBtn" class="send-btn" style="width:44px;height:44px;padding:0;flex-shrink:0;border-radius:14px">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
         </div>
+        <input type="file" id="commentsFileInput" style="display:none">
       </div>
     </div>
   </div>
 </div>
 
 <!-- Мини-профиль пользователя (по клику на аватар) -->
-<div class="modal-overlay" id="miniUserProfileModal" style="display:none">
-  <div class="modal" style="width:min(340px,92vw);border-radius:22px;padding:22px 20px 18px;text-align:center" onclick="event.stopPropagation()">
-    <div id="miniProfileAv" style="width:88px;height:88px;border-radius:50%;margin:0 auto 14px;overflow:hidden;background:var(--bg4)"></div>
-    <div id="miniProfileNick" style="font-weight:600;font-size:18px;line-height:1.25"></div>
-    <div id="miniProfileId" style="font-size:12px;color:var(--text2);word-break:break-all;margin-top:10px;cursor:pointer;line-height:1.35" title="Нажмите, чтобы скопировать UUID"></div>
-    <button type="button" class="btn-primary" id="miniProfileWriteBtn" style="width:100%;margin-top:18px;padding:11px;border-radius:14px">Написать</button>
-    <button type="button" class="btn-ghost" id="miniProfileCloseBtn" style="width:100%;margin-top:8px;padding:9px;border-radius:14px">Закрыть</button>
+<div class="modal-overlay mini-profile-overlay" id="miniUserProfileModal" style="display:none;opacity:0;transition:opacity .2s ease">
+  <div class="modal mini-profile-modal" style="width:min(360px,92vw);border-radius:22px;padding:0;text-align:center;transform:scale(.95);transition:transform .2s cubic-bezier(.34,1.56,.64,1);overflow:hidden" onclick="event.stopPropagation()">
+    
+    <!-- Шапка с градиентом -->
+    <div style="position:relative;height:100px;background:linear-gradient(135deg,var(--accent),var(--accent-dark,#6a5af9));flex-shrink:0">
+      <button type="button" id="miniProfileCloseBtn" style="position:absolute;top:10px;right:10px;width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,.2);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);transition:background .2s" onmouseover="this.style.background='rgba(0,0,0,.35)'" onmouseout="this.style.background='rgba(0,0,0,.2)'">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    
+    <!-- Аватар (перекрывает градиент) -->
+    <div style="position:relative;margin-top:-40px;padding:0 20px">
+      <div id="miniProfileAv" style="width:80px;height:80px;border-radius:50%;margin:0 auto;overflow:hidden;background:var(--bg4);border:4px solid var(--bg1);box-shadow:0 4px 20px rgba(0,0,0,.2)"></div>
+    </div>
+    
+    <!-- Информация -->
+    <div style="padding:14px 20px 16px">
+      <div id="miniProfileNick" style="font-weight:700;font-size:20px;line-height:1.3;color:var(--text)"></div>
+      <div id="miniProfileStatus" style="font-size:13px;color:var(--accent);margin-top:4px;font-weight:500"></div>
+      <div id="miniProfileId" style="font-size:12px;color:var(--text2);word-break:break-all;margin-top:8px;cursor:pointer;padding:6px 10px;background:var(--bg3);border-radius:8px;transition:background .15s" onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='var(--bg3)'" title="Нажмите, чтобы скопировать UUID"></div>
+      
+      <!-- О себе -->
+      <div id="miniProfileBio" style="font-size:14px;color:var(--text);margin-top:12px;line-height:1.5;white-space:pre-wrap;word-break:break-word;display:none;max-height:100px;overflow-y:auto;padding:8px 12px;background:var(--bg3);border-radius:10px;text-align:left"></div>
+      
+      <!-- Прикрепленный канал -->
+      <div id="miniProfileAttachedChannel" style="display:none;margin-top:14px">
+        <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Канал</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:12px;border:1px solid var(--border);cursor:pointer;transition:background .15s,transform .1s" onmouseover="this.style.background='var(--bg4)'" onmouseout="this.style.background='var(--bg3)'" onmousedown="this.style.transform='scale(.98)'" onmouseup="this.style.transform='scale(1)'">
+          <div id="miniProfileChannelAv" style="width:36px;height:36px;border-radius:50%;overflow:hidden;background:var(--bg4);flex-shrink:0"></div>
+          <div style="flex:1;min-width:0;text-align:left">
+            <div id="miniProfileChannelName" style="font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)"></div>
+          </div>
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color:var(--text2);flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+      </div>
+      
+      <!-- Плейлист треков -->
+      <div id="miniProfileTracks" style="display:none;margin-top:14px;text-align:left">
+        <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;padding-left:4px">Треки</div>
+        <div id="miniProfileTracksList" style="max-height:180px;overflow-y:auto;border-radius:12px;background:var(--bg3);border:1px solid var(--border)">
+          <!-- Треки будут добавлены сюда -->
+        </div>
+      </div>
+      
+      <!-- Кнопка написать -->
+      <button type="button" class="btn-primary" id="miniProfileWriteBtn" style="width:100%;margin-top:16px;padding:12px;border-radius:12px;font-weight:600;font-size:15px;display:flex;align-items:center;justify-content:center;gap:8px">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        Написать
+      </button>
+    </div>
   </div>
 </div>
 
@@ -3065,7 +3194,8 @@ async function upsertRoomContact(room) {
     // Comments settings for channels
     linkedGroupId: room.linkedGroupId || undefined,
     commentsEnabled: room.commentsEnabled || false,
-    commentsMembersOnly: room.commentsMembersOnly || false
+    commentsMembersOnly: room.commentsMembersOnly || false,
+    commentsMediaEnabled: room.commentsMediaEnabled !== false // по умолчанию включено
   };
   if (existing) {
     Object.assign(existing, meta);
@@ -3441,6 +3571,14 @@ function fileToBase64(file){
     fr.onload=e=>res(e.target.result);
     fr.readAsDataURL(file);
   });
+}
+
+function formatFileSize(bytes){
+  if(!bytes) return '0 B';
+  const k=1024;
+  const sizes=['B','KB','MB','GB'];
+  const i=Math.floor(Math.log(bytes)/Math.log(k));
+  return parseFloat((bytes/Math.pow(k,i)).toFixed(1))+' '+sizes[i];
 }
 
 function escapeHtml(text){
@@ -7101,6 +7239,7 @@ function openRoomSettingsModal(roomId) {
         const commentsEnabled = document.getElementById('roomSettingsCommentsEnabled');
         const commentsOptions = document.getElementById('roomSettingsCommentsOptions');
         const commentsMembersOnly = document.getElementById('roomSettingsCommentsMembersOnly');
+        const commentsMediaEnabled = document.getElementById('roomSettingsCommentsMediaEnabled');
         const linkedGroupInfo = document.getElementById('roomSettingsLinkedGroupInfo');
         const linkedGroupText = document.getElementById('roomSettingsLinkedGroupText');
         const createGroupBtn = document.getElementById('roomSettingsCreateCommentsGroup');
@@ -7116,6 +7255,9 @@ function openRoomSettingsModal(roomId) {
         }
         if (commentsMembersOnly) {
           commentsMembersOnly.checked = !!contact.commentsMembersOnly;
+        }
+        if (commentsMediaEnabled) {
+          commentsMediaEnabled.checked = contact.commentsMediaEnabled !== false;
         }
         if (linkedGroupInfo && linkedGroupText) {
           if (contact.linkedGroupId) {
@@ -7163,9 +7305,11 @@ function saveRoomSettingsFromModal() {
     // Comments settings
     const commentsEnabled = document.getElementById('roomSettingsCommentsEnabled');
     const commentsMembersOnly = document.getElementById('roomSettingsCommentsMembersOnly');
+    const commentsMediaEnabled = document.getElementById('roomSettingsCommentsMediaEnabled');
     if (commentsEnabled) {
       payload.commentsEnabled = commentsEnabled.checked;
       payload.commentsMembersOnly = commentsMembersOnly?.checked || false;
+      payload.commentsMediaEnabled = commentsMediaEnabled?.checked !== false;
     }
   }
   sendToServer('room-update', payload);
@@ -7550,6 +7694,33 @@ function setupEvents(){
     settingsIdBox.addEventListener('click', onCopyOwnId);
     settingsIdBox.addEventListener('touchend', onCopyOwnId, { passive: false });
   }
+  // Settings: Add track
+  const settingsAddTrackBtn = document.getElementById('settingsAddTrackBtn');
+  const settingsTrackFile = document.getElementById('settingsTrackFile');
+  if (settingsAddTrackBtn && settingsTrackFile) {
+    settingsAddTrackBtn.onclick = () => settingsTrackFile.click();
+    settingsTrackFile.onchange = async () => {
+      const files = [...(settingsTrackFile.files || [])];
+      if (!files.length) return;
+      for (const f of files) {
+        if (f.type.startsWith('audio/')) {
+          await addProfileTrack(f);
+        }
+      }
+      settingsTrackFile.value = '';
+    };
+  }
+  
+  // Settings: Attach channel
+  const settingsAttachChannelBtn = document.getElementById('settingsAttachChannelBtn');
+  const settingsDetachChannelBtn = document.getElementById('settingsDetachChannelBtn');
+  if (settingsAttachChannelBtn) {
+    settingsAttachChannelBtn.onclick = showChannelSelect;
+  }
+  if (settingsDetachChannelBtn) {
+    settingsDetachChannelBtn.onclick = detachProfileChannel;
+  }
+  
   document.getElementById('exportBtn').onclick=exportData;
   document.getElementById('importBtn').onclick=()=>{
     const f = document.getElementById('importFile');
@@ -8080,6 +8251,24 @@ function openSettings(){
   document.getElementById('settingsIdBox').textContent=myProfile.uuid;
   const av=document.getElementById('settingsAv');
   renderAvatar(av, myProfile.avatar, myProfile.nickname||myProfile.uuid);
+  
+  // Bio
+  const bioEl = document.getElementById('settingsBio');
+  const bioCountEl = document.getElementById('settingsBioCount');
+  if (bioEl) {
+    bioEl.value = myProfile.bio || '';
+    if (bioCountEl) bioCountEl.textContent = String(bioEl.value.length);
+    bioEl.oninput = () => {
+      if (bioCountEl) bioCountEl.textContent = String(bioEl.value.length);
+    };
+  }
+  
+  // Refresh tracks list
+  refreshSettingsTracksList();
+  
+  // Refresh attached channel
+  refreshSettingsAttachedChannel();
+  
   const gt = document.getElementById('gradientToggle');
   if (gt) {
     try {
@@ -8094,18 +8283,152 @@ function openSettings(){
 async function saveSettings(){
   const nick=document.getElementById('settingsNick').value.trim();
   if(nick) myProfile.nickname=nick;
+  
+  // Save bio
+  const bioEl = document.getElementById('settingsBio');
+  if (bioEl) myProfile.bio = bioEl.value.trim().slice(0, 140);
 
   await dbPut('profile', {key: 'profile', ...myProfile});
 
   // FIX: send 'nickname' not 'nick'
   if(ws && ws.readyState === WebSocket.OPEN) {
-    sendToServer('profile-update', { nickname: myProfile.nickname, avatar: myProfile.avatar });
+    sendToServer('profile-update', { 
+      nickname: myProfile.nickname, 
+      avatar: myProfile.avatar,
+      bio: myProfile.bio,
+      tracks: myProfile.tracks,
+      attachedChannelId: myProfile.attachedChannelId
+    });
   }
 
   renderSidebar();
   if(activeChat) renderChatHeader();
   document.getElementById('settingsModal').style.display='none';
   showToast('Сохранено');
+}
+
+// ==================== PROFILE TRACKS ====================
+function refreshSettingsTracksList() {
+  const list = document.getElementById('settingsTracksList');
+  if (!list) return;
+  const tracks = myProfile.tracks || [];
+  if (tracks.length === 0) {
+    list.innerHTML = '<div style="color:var(--text2);font-size:13px;text-align:center;padding:12px">Нет добавленных треков</div>';
+    return;
+  }
+  list.innerHTML = '';
+  tracks.forEach((track, idx) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)';
+    row.innerHTML = `
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(track.title || 'Без названия')}</div>
+        <div style="font-size:11px;color:var(--text2)">${escapeHtml(track.artist || '')}</div>
+      </div>
+      <button type="button" class="icon-btn" data-idx="${idx}" style="width:28px;height:28px;flex-shrink:0" title="Удалить">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    `;
+    row.querySelector('button').onclick = () => removeProfileTrack(idx);
+    list.appendChild(row);
+  });
+}
+
+function removeProfileTrack(idx) {
+  if (!myProfile.tracks) return;
+  myProfile.tracks.splice(idx, 1);
+  refreshSettingsTracksList();
+}
+
+async function addProfileTrack(file) {
+  if (!file || !file.type.startsWith('audio/')) return;
+  
+  // Read audio metadata and create data URL
+  const dataUrl = await fileToBase64(file);
+  const track = {
+    id: Date.now() + Math.random().toString(36).slice(2),
+    title: file.name.replace(/\.[^/.]+$/, ''),
+    artist: '',
+    dataUrl: dataUrl,
+    size: file.size,
+    addedAt: Date.now()
+  };
+  
+  if (!myProfile.tracks) myProfile.tracks = [];
+  myProfile.tracks.push(track);
+  refreshSettingsTracksList();
+}
+
+// ==================== PROFILE ATTACHED CHANNEL ====================
+function refreshSettingsAttachedChannel() {
+  const attachedDiv = document.getElementById('settingsAttachedChannel');
+  const noAttachedDiv = document.getElementById('settingsNoAttachedChannel');
+  const select = document.getElementById('settingsChannelSelect');
+  const attachBtn = document.getElementById('settingsAttachChannelBtn');
+  
+  // Get owned channels
+  const ownedChannels = contacts.filter(c => c.kind === 'channel' && c.isOwner);
+  
+  if (select) {
+    select.innerHTML = '<option value="">Выберите канал...</option>';
+    ownedChannels.forEach(ch => {
+      const opt = document.createElement('option');
+      opt.value = ch.uuid;
+      opt.textContent = ch.nickname || ch.username || ch.uuid.slice(0, 12);
+      select.appendChild(opt);
+    });
+  }
+  
+  const attachedId = myProfile.attachedChannelId;
+  if (attachedId && attachedDiv && noAttachedDiv) {
+    const ch = contacts.find(c => normUid(c.uuid) === normUid(attachedId));
+    if (ch) {
+      attachedDiv.style.display = 'block';
+      noAttachedDiv.style.display = 'none';
+      const avPh = document.getElementById('settingsAttachedChannelAv');
+      const nameEl = document.getElementById('settingsAttachedChannelName');
+      if (avPh) renderAvatar(avPh, ch.avatar, ch.nickname || ch.username);
+      if (nameEl) nameEl.textContent = ch.nickname || ch.username || ch.uuid.slice(0, 12);
+    } else {
+      attachedDiv.style.display = 'none';
+      noAttachedDiv.style.display = 'block';
+    }
+    if (attachBtn) {
+      attachBtn.style.display = 'none';
+      if (select) select.style.display = 'none';
+    }
+  } else {
+    if (attachedDiv) attachedDiv.style.display = 'none';
+    if (noAttachedDiv) noAttachedDiv.style.display = 'block';
+    if (attachBtn) {
+      attachBtn.style.display = ownedChannels.length > 0 ? 'flex' : 'none';
+      if (select) select.style.display = 'none';
+    }
+  }
+}
+
+function showChannelSelect() {
+  const select = document.getElementById('settingsChannelSelect');
+  const btn = document.getElementById('settingsAttachChannelBtn');
+  if (select) {
+    select.style.display = 'block';
+    select.onchange = () => {
+      const val = select.value;
+      if (val) {
+        myProfile.attachedChannelId = val;
+        refreshSettingsAttachedChannel();
+      }
+    };
+  }
+  if (btn) btn.style.display = 'none';
+}
+
+function detachProfileChannel() {
+  delete myProfile.attachedChannelId;
+  refreshSettingsAttachedChannel();
 }
 
 // ==================== EXPORT/IMPORT ====================
@@ -8528,30 +8851,174 @@ function openMiniUserProfile(userUuid) {
   if (!u) return;
   miniProfileTargetUuid = u;
   const c = contacts.find((x) => normUid(x.uuid) === u);
-  const nick = c?.nickname || u.slice(0, 12);
-  const av = c?.avatar || '';
+  const isMyProfile = u === normUid(myProfile.uuid);
+  
+  // Get data from contact or myProfile
+  const profile = isMyProfile ? myProfile : (c || {});
+  const nick = profile.nickname || u.slice(0, 12);
+  const av = profile.avatar || '';
+  const bio = profile.bio || '';
+  const tracks = profile.tracks || [];
+  const attachedChannelId = profile.attachedChannelId;
+  
+  // Avatar
   const avEl = document.getElementById('miniProfileAv');
-  const nickEl = document.getElementById('miniProfileNick');
-  const idEl = document.getElementById('miniProfileId');
   if (avEl) {
     avEl.innerHTML = '';
     renderAvatar(avEl, av, nick);
   }
+  
+  // Nickname
+  const nickEl = document.getElementById('miniProfileNick');
   if (nickEl) nickEl.textContent = nick;
+  
+  // Status (online/offline)
+  const statusEl = document.getElementById('miniProfileStatus');
+  if (statusEl) {
+    if (isMyProfile) {
+      statusEl.textContent = 'online';
+    } else {
+      const isOnline = c?.online || false;
+      statusEl.textContent = isOnline ? 'online' : 'offline';
+    }
+  }
+  
+  // UUID
+  const idEl = document.getElementById('miniProfileId');
   if (idEl) idEl.textContent = u;
+  
+  // Bio
+  const bioEl = document.getElementById('miniProfileBio');
+  if (bioEl) {
+    if (bio.trim()) {
+      bioEl.textContent = bio;
+      bioEl.style.display = 'block';
+    } else {
+      bioEl.style.display = 'none';
+    }
+  }
+  
+  // Attached channel
+  const attachedChEl = document.getElementById('miniProfileAttachedChannel');
+  const channelAvEl = document.getElementById('miniProfileChannelAv');
+  const channelNameEl = document.getElementById('miniProfileChannelName');
+  if (attachedChEl && attachedChannelId) {
+    const ch = contacts.find((x) => normUid(x.uuid) === normUid(attachedChannelId) && x.kind === 'channel');
+    if (ch) {
+      attachedChEl.style.display = 'block';
+      if (channelAvEl) {
+        channelAvEl.innerHTML = '';
+        renderAvatar(channelAvEl, ch.avatar, ch.nickname || ch.username);
+      }
+      if (channelNameEl) channelNameEl.textContent = ch.nickname || ch.username || 'Канал';
+      // Click to open channel
+      attachedChEl.onclick = () => {
+        const modal = document.getElementById('miniUserProfileModal');
+        if (modal) {
+          modal.style.opacity = '0';
+          setTimeout(() => { modal.style.display = 'none'; }, 200);
+        }
+        openChat(ch.uuid);
+      };
+    } else {
+      attachedChEl.style.display = 'none';
+    }
+  } else if (attachedChEl) {
+    attachedChEl.style.display = 'none';
+  }
+  
+  // Tracks playlist
+  const tracksEl = document.getElementById('miniProfileTracks');
+  const tracksListEl = document.getElementById('miniProfileTracksList');
+  if (tracksEl && tracksListEl) {
+    if (tracks.length > 0) {
+      tracksEl.style.display = 'block';
+      tracksListEl.innerHTML = '';
+      tracks.forEach((track, idx) => {
+        const row = document.createElement('div');
+        row.className = 'mini-profile-track-item';
+        row.innerHTML = `
+          <div class="mini-profile-track-play">
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </div>
+          <div class="mini-profile-track-info">
+            <div class="mini-profile-track-title">${escapeHtml(track.title || 'Без названия')}</div>
+            <div class="mini-profile-track-artist">${escapeHtml(track.artist || '')}</div>
+          </div>
+        `;
+        row.onclick = () => playMiniProfileTrack(track, idx, tracks);
+        tracksListEl.appendChild(row);
+      });
+    } else {
+      tracksEl.style.display = 'none';
+    }
+  }
+  
+  // Write button
   const writeBtn = document.getElementById('miniProfileWriteBtn');
   if (writeBtn) {
-    if (u === normUid(myProfile.uuid)) {
+    if (isMyProfile) {
       writeBtn.style.display = 'none';
     } else {
-      writeBtn.style.display = 'inline-flex';
+      writeBtn.style.display = 'flex';
       writeBtn.style.width = '100%';
     }
   }
+  
+  // Show modal with animation
   const modal = document.getElementById('miniUserProfileModal');
-  if (modal) modal.style.display = 'flex';
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  const panel = modal?.querySelector('.mini-profile-modal');
+  if (modal) {
+    modal.style.display = 'flex';
+    // Trigger animation
+    requestAnimationFrame(() => {
+      modal.style.opacity = '1';
+      if (panel) panel.classList.add('show');
+    });
+  }
+  
+  // Request extended profile from server
+  if (ws && ws.readyState === WebSocket.OPEN && !isMyProfile) {
     sendToServer('request-profile', { uuid: u });
+  }
+}
+
+function closeMiniProfileModal() {
+  const modal = document.getElementById('miniUserProfileModal');
+  const panel = modal?.querySelector('.mini-profile-modal');
+  if (modal) {
+    modal.style.opacity = '0';
+    if (panel) panel.classList.remove('show');
+    setTimeout(() => {
+      modal.style.display = 'none';
+    }, 200);
+  }
+}
+
+// Track player for mini-profile
+let currentMiniProfileTrackIndex = -1;
+let miniProfileTracksQueue = [];
+
+function playMiniProfileTrack(track, index, allTracks) {
+  if (!track?.dataUrl) return;
+  currentMiniProfileTrackIndex = index;
+  miniProfileTracksQueue = allTracks;
+  
+  // Use global audio player if available
+  if (window.globalAudio && window.playGlobalAudio) {
+    const playlist = allTracks.map((t, i) => ({
+      url: t.dataUrl,
+      title: t.title || 'Без названия',
+      artist: t.artist || '',
+      from: miniProfileTargetUuid,
+      ts: t.addedAt || Date.now()
+    }));
+    window.playGlobalAudio(playlist, index);
+    showToast(`▶ ${track.title || 'Трек'}`);
+  } else {
+    // Fallback - create temporary audio
+    const audio = new Audio(track.dataUrl);
+    audio.play().catch(() => showToast('Не удалось воспроизвести'));
   }
 }
 
@@ -8564,19 +9031,26 @@ function wireMiniUserProfileModalOnce() {
   const idEl = document.getElementById('miniProfileId');
   if (modal) {
     modal.onclick = (e) => {
-      if (e.target === modal) modal.style.display = 'none';
+      if (e.target === modal) closeMiniProfileModal();
     };
   }
   if (closeBtn) {
     closeBtn.onclick = (e) => {
       e.stopPropagation();
-      if (modal) modal.style.display = 'none';
+      closeMiniProfileModal();
     };
   }
   if (writeBtn) {
     writeBtn.onclick = (e) => {
       e.stopPropagation();
+      closeMiniProfileModal();
       if (miniProfileTargetUuid) openMiniUserProfileWrite(miniProfileTargetUuid);
+    };
+  }
+  if (idEl) {
+    idEl.onclick = async () => {
+      const ok = await copyTextSafe(idEl.textContent);
+      showToast(ok ? 'UUID скопирован!' : 'Не удалось скопировать');
     };
   }
   if (idEl) {
@@ -10229,10 +10703,11 @@ async function openCommentsView(postMsg, linkedGroupId) {
       : 'Комментарии к посту';
   }
   
-  // Канал — для настроек «только участники группы»
+  // Канал — для настроек «только участники группы» и медиа
   const group = contacts.find(c => normUid(c.uuid) === normUid(linkedGroupId));
   const isMember = group?.roomMembers?.some(m => normUid(m) === normUid(myProfile.uuid));
   const membersOnly = !!(channel?.commentsMembersOnly);
+  const mediaEnabled = channel?.commentsMediaEnabled !== false; // по умолчанию включено
   
   if (!membersOnly && !isMember) {
     sendToServer('room-join', { roomId: linkedGroupId });
@@ -10257,24 +10732,86 @@ async function openCommentsView(postMsg, linkedGroupId) {
     composer.style.display = 'block';
   }
   
+  // Media attachment controls
+  const attachBtn = document.getElementById('commentsAttachBtn');
+  const fileInput = document.getElementById('commentsFileInput');
+  const attachPreview = document.getElementById('commentsAttachPreview');
+  const attachName = document.getElementById('commentsAttachName');
+  const attachSize = document.getElementById('commentsAttachSize');
+  const attachRemove = document.getElementById('commentsAttachRemove');
+  let pendingAttachment = null;
+  
+  // Show/hide attach button based on media setting
+  if (attachBtn) {
+    attachBtn.style.display = mediaEnabled ? 'flex' : 'none';
+  }
+  
+  // Attach button click
+  if (attachBtn && fileInput) {
+    attachBtn.onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const file = fileInput.files?.[0];
+      if (!file) return;
+      pendingAttachment = file;
+      if (attachPreview) attachPreview.style.display = 'block';
+      if (attachName) attachName.textContent = file.name;
+      if (attachSize) attachSize.textContent = formatFileSize(file.size);
+      fileInput.value = '';
+    };
+  }
+  
+  // Remove attachment
+  if (attachRemove) {
+    attachRemove.onclick = () => {
+      pendingAttachment = null;
+      if (attachPreview) attachPreview.style.display = 'none';
+    };
+  }
+  
   // Load and display comments
   await loadComments(linkedGroupId, postMsg.ts);
   
   // Send button handler
   sendBtn.onclick = async () => {
     const text = commentsInput.value.trim();
-    if (!text) return;
     
-    // Send comment as reply to original post
-    await sendMessage('text', text, { 
-      replyTo: {
-        from: postMsg.from,
-        ts: postMsg.ts,
-        type: postMsg.type,
-        preview: (postMsg.type === 'text' ? String(postMsg.content || '').slice(0, 100) : contentHtml)
-      },
-      toGroupId: linkedGroupId 
-    });
+    // Send media if attached
+    if (pendingAttachment && mediaEnabled) {
+      const file = pendingAttachment;
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+      const type = isImage ? 'image' : (isVideo ? 'video' : 'file');
+      
+      if (type === 'file') {
+        const content = JSON.stringify({ name: file.name, data: await fileToBase64(file) });
+        await sendMessage(type, content, { 
+          replyTo: { from: postMsg.from, ts: postMsg.ts, type: postMsg.type, preview: contentHtml },
+          toGroupId: linkedGroupId 
+        });
+      } else {
+        const dataUrl = await fileToBase64(file);
+        await sendMessage(type, dataUrl, { 
+          replyTo: { from: postMsg.from, ts: postMsg.ts, type: postMsg.type, preview: contentHtml },
+          toGroupId: linkedGroupId 
+        });
+      }
+      
+      pendingAttachment = null;
+      if (attachPreview) attachPreview.style.display = 'none';
+    }
+    
+    // Send text if provided
+    if (text) {
+      await sendMessage('text', text, { 
+        replyTo: {
+          from: postMsg.from,
+          ts: postMsg.ts,
+          type: postMsg.type,
+          preview: (postMsg.type === 'text' ? String(postMsg.content || '').slice(0, 100) : contentHtml)
+        },
+        toGroupId: linkedGroupId 
+      });
+    }
     
     commentsInput.value = '';
     await loadComments(linkedGroupId, postMsg.ts);
@@ -10476,5 +11013,6 @@ if (document.readyState === 'loading') {
   init();
 }
 </script>
+<script src="profile-features.js"></script>
 </body>
 </html>
