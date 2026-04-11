@@ -291,6 +291,7 @@ function playMiniProfileTrack(track, index, allTracks) {
   currentMiniProfileTrackIndex = index;
   miniProfileTracksQueue = allTracks;
   
+  // Use global audio player if available
   if (window.globalAudio && window.playGlobalAudio) {
     const playlist = allTracks.map((t, i) => ({
       url: t.dataUrl,
@@ -301,9 +302,23 @@ function playMiniProfileTrack(track, index, allTracks) {
     }));
     window.playGlobalAudio(playlist, index);
     showToast(`▶ ${track.title || 'Трек'}`);
+  } else if (window.audioPlayer && window.audioPlayer.show) {
+    // Use existing audio player
+    window.audioPlayer.show(track.dataUrl, track.title || 'Без названия', miniProfileTargetUuid, track.addedAt || Date.now());
   } else {
-    const audio = new Audio(track.dataUrl);
-    audio.play().catch(() => showToast('Не удалось воспроизвести'));
+    // Fallback - create temporary audio with controls
+    let audio = window._miniProfileAudio;
+    if (audio && !audio.paused && audio.src === track.dataUrl) {
+      audio.pause();
+      showToast(`⏸ ${track.title || 'Трек'}`);
+      return;
+    }
+    if (audio) audio.pause();
+    audio = new Audio(track.dataUrl);
+    window._miniProfileAudio = audio;
+    audio.play().then(() => {
+      showToast(`▶ ${track.title || 'Трек'}`);
+    }).catch(() => showToast('Не удалось воспроизвести'));
   }
 }
 
