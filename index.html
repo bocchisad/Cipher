@@ -1733,6 +1733,37 @@ class CryptoEngine {
   constructor() {
     this.myKeys = null; // { ecdsaPrivKey, ecdhPrivKey }
     this.pubKeysCache = new Map(); // uuid -> { pub_ecdh, pub_ecdsa }
+    this.keysLoadedPromise = null;
+    this.keysLoadedResolve = null;
+    this.keysLoadedReject = null;
+    this.resetKeysPromise();
+  }
+  
+  resetKeysPromise() {
+    this.keysLoadedPromise = new Promise((resolve, reject) => {
+      this.keysLoadedResolve = resolve;
+      this.keysLoadedReject = reject;
+    });
+  }
+  
+  async waitForKeys(timeoutMs = 5000) {
+    if (this.myKeys) return true;
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout waiting for keys')), timeoutMs)
+    );
+    try {
+      await Promise.race([this.keysLoadedPromise, timeoutPromise]);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+  
+  notifyKeysLoaded() {
+    if (this.keysLoadedResolve) {
+      this.keysLoadedResolve(true);
+      this.resetKeysPromise();
+    }
   }
 
   async generateECDSAKeyPair() {
@@ -2192,6 +2223,7 @@ async function loadKeysAfterAuth(uuid) {
         
         // Set keys in crypto_engine
         crypto_engine.myKeys = verifyKeys;
+        crypto_engine.notifyKeysLoaded();
         
         // NOW publish to server (only after successful IndexedDB save)
         console.log('Publishing public keys to server...');
@@ -2211,6 +2243,7 @@ async function loadKeysAfterAuth(uuid) {
     }
     
     crypto_engine.myKeys = keys;
+    crypto_engine.notifyKeysLoaded();
     console.log('✅ E2EE keys loaded successfully');
   } catch (err) {
     console.error('Failed to load keys:', err);
@@ -3690,6 +3723,7 @@ function setupReg(){
         ecdsa: ecdsaKeyPair.privateKey,
         ecdh: ecdhKeyPair.privateKey
       };
+      crypto_engine.notifyKeysLoaded();
 
       myProfile = {
         uuid: receivedUuid,
@@ -8817,8 +8851,12 @@ async function startOutgoingCall(video) {
   
   // Check if we have E2EE keys for encrypted signaling
   if (!crypto_engine.myKeys) {
-    showToast('🔒 E2EE ключи не загружены. Перезайдите в аккаунт.');
-    return;
+    showToast('🔒 Загрузка E2EE ключей...');
+    const keysReady = await crypto_engine.waitForKeys(5000);
+    if (!keysReady) {
+      showToast('❌ E2EE ключи не загружены. Перезайдите в аккаунт.');
+      return;
+    }
   }
   
   // Get peer's public keys for E2EE call signaling
@@ -8926,6 +8964,16 @@ async function startOutgoingCall(video) {
 
 async function handleRtcSignalIncoming(kind, data) {
   if (!data || !data.from) return;
+  
+  // Wait for E2EE keys if not loaded
+  if (!crypto_engine.myKeys) {
+    const keysReady = await crypto_engine.waitForKeys(5000);
+    if (!keysReady) {
+      console.error('E2EE keys not available for call decryption');
+      showToast('❌ E2EE ключи не загружены. Перезайдите в аккаунт.');
+      return;
+    }
+  }
   
   // Decrypt call signaling data if encrypted
   let decryptedData = data;
