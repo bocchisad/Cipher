@@ -433,16 +433,12 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'rtc-ice':
       handleE2EEMessage(uuid, type, data);
       break;
-
     case 'rtc-hangup':
-      // Этот сигнал идет без E2EE (просто ID), поэтому пробрасываем напрямую
-      const targetUser = getUserLive(data.to);
-      if (targetUser && targetUser.ws && targetUser.ws.readyState === WebSocket.OPEN) {
-        safeWsSend(targetUser.ws, { 
-          type: 'rtc-hangup', 
-          data: { from: uuid } 
-        });
-        console.log(`[RTC] Hangup from ${uuid} to ${data.to}`);
+      if (data?.to) {
+        const targetUser = getUserLive(data.to);
+        if (targetUser?.ws && targetUser.ws.readyState === WebSocket.OPEN) {
+          safeWsSend(targetUser.ws, { type: 'rtc-hangup', data: { from: uuid } });
+        }
       }
       break;
     case 'room-key-share':
