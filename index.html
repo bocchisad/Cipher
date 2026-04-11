@@ -1737,6 +1737,27 @@ body.use-gradients{
   </div>
 </div>
 
+<!-- COMMENTS GROUP CREATE (канал) -->
+<div class="modal-overlay" id="commentsGroupCreateModal" style="display:none">
+  <div class="modal" style="width:min(400px,94vw)">
+    <h2>Группа для комментариев</h2>
+    <p class="add-chat-hint" style="margin-bottom:12px">По умолчанию название и аватар как у канала; к названию добавлена приписка «chat».</p>
+    <label>Название группы</label>
+    <input type="text" id="commentsGroupTitleInput" class="reg-input" maxlength="64" placeholder="Название">
+    <div class="settings-section" style="margin-top:14px">
+      <h3 style="font-size:13px;margin-bottom:6px">Аватар</h3>
+      <div class="pick-member-av" id="commentsGroupAvWrap" style="width:72px;height:72px;cursor:pointer" title="Загрузить">
+        <div class="av" id="commentsGroupAvPh"></div>
+      </div>
+      <input type="file" id="commentsGroupAvatarFile" accept="image/*" style="display:none">
+    </div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button type="button" class="btn-ghost" id="commentsGroupCreateCancel">Отмена</button>
+      <button type="button" class="btn-primary" id="commentsGroupCreateConfirm">Создать</button>
+    </div>
+  </div>
+</div>
+
 <!-- COMMENTS VIEW MODAL -->
 <div class="modal-overlay" id="commentsViewModal" style="display:none">
   <div class="modal" style="width:min(480px,94vw);max-height:min(90dvh,700px);display:flex;flex-direction:column">
@@ -2868,7 +2889,7 @@ function handleServerMessage(msg) {
       handleDeleteForBothReceived(data);
       break;
     case 'room-created':
-      handleRoomCreatedClient(data?.room);
+      handleRoomCreatedClient(data?.room, !!data?.skipOpenChat);
       break;
     case 'room-invite':
       handleRoomInviteClient(data?.room);
@@ -2936,12 +2957,14 @@ function handleServerMessage(msg) {
   }
 }
 
-async function handleRoomCreatedClient(room) {
+async function handleRoomCreatedClient(room, skipOpenChat) {
   if (!room?.id) return;
   await upsertRoomContact(room);
   showToast(room.kind === 'channel' ? 'Канал создан' : 'Группа создана');
   renderSidebar();
-  await openChat(room.id);
+  if (!skipOpenChat) {
+    await openChat(room.id);
+  }
   applyChatComposerVisibility();
 }
 
@@ -2955,12 +2978,9 @@ async function handleRoomInviteClient(room) {
 async function handlePollVoteUpdate(data) {
   if (!data?.msgId || !data?.pollData) return;
   
-  // Update the poll message in the database
   const msgId = data.msgId;
   const pollData = data.pollData;
-  
-  // Find and update the message
-  const chatId = activeChat;
+  const chatId = normUid(data.roomId || activeChat || '');
   if (!chatId) return;
   
   const msgs = await dbGetByIndex('messages', 'chatId', chatId);
@@ -2970,8 +2990,7 @@ async function handlePollVoteUpdate(data) {
     msg.content = JSON.stringify(pollData);
     await dbPut('messages', msg);
     
-    // Re-render if in active chat
-    if (activeChat === chatId) {
+    if (normUid(activeChat) === chatId) {
       const area = document.getElementById('messagesArea');
       if (area) {
         area.innerHTML = '';
@@ -4637,7 +4656,7 @@ async function sendMessage(type, content, options = {}){
     }
   }
 
-  const localMsg = {...message, type, content, msgId, replyTo: replySnap, chatId: activeChat, read: true, reactions: {}, forwardFrom: forwardingFromMsg ? {
+  const localMsg = {...message, type, content, msgId, replyTo: replySnap, chatId: targetChat, read: true, reactions: {}, forwardFrom: forwardingFromMsg ? {
     uuid: forwardingFromMsg.from,
     name: contacts.find((c) => normUid(c.uuid) === normUid(forwardingFromMsg.from))?.nickname || 
           (normUid(forwardingFromMsg.from) === normUid(myProfile.uuid) ? 'Вы' : String(forwardingFromMsg.from).slice(0, 8))
@@ -4658,13 +4677,15 @@ async function sendMessage(type, content, options = {}){
 
   if(!renderedMsgIds.has(message.ts.toString())) {
     renderedMsgIds.add(message.ts.toString());
-    appendMessage(localMsg);
-    scrollBottom();
+    if (normUid(activeChat) === normUid(targetChat)) {
+      appendMessage(localMsg);
+      scrollBottom();
+    }
   }
-  updateLastMessage(activeChat, content, message.ts, type);
+  updateLastMessage(targetChat, content, message.ts, type);
 
   // FIX (3.3): Refresh right info panel after media sends so tabs update immediately
-  if(activeChat && (type === 'image' || type === 'video' || type === 'file')) {
+  if(normUid(activeChat) === normUid(targetChat) && (type === 'image' || type === 'video' || type === 'file')) {
     await renderInfoPanel(activeChat);
   }
 }
@@ -6295,137 +6316,214 @@ function makeAudioTrackPlayer(fd, msg){
 }
 
 // ==================== POLL RENDERING ====================
+function recountPollVotes(pollData) {
+  const votes = pollData.votes || {};
+  const uids = Object.keys(votes);
+  const uidCounts = (uid) => {
+    if (!pollData.multiple) return votes[uid] !== undefined && votes[uid] !== null;
+    if (pollData.submitted?.[uid]) return true;
+    const v = votes[uid];
+    return Array.isArray(v) && v.length > 0;
+  };
+  pollData.totalVotes = uids.filter(uidCounts).length;
+  (pollData.options || []).forEach(opt => {
+    opt.votes = uids.filter(uidCounts).filter(uid => {
+      const v = votes[uid];
+      return Array.isArray(v) ? v.includes(opt.id) : v === opt.id;
+    }).length;
+  });
+}
+
+function isPollVoteCommitted(pollData, myUid) {
+  if (!pollData.multiple) {
+    const v = pollData.votes?.[myUid];
+    return v !== undefined && v !== null;
+  }
+  if (pollData.submitted?.[myUid]) return true;
+  const v = pollData.votes?.[myUid];
+  return Array.isArray(v) && v.length > 0;
+}
+
+async function refreshPollMessagesUi(msg) {
+  const rid = getPollRoomId(msg);
+  if (normUid(activeChat) !== rid) return;
+  const msgs = await dbGetByIndex('messages', 'chatId', rid);
+  const area = document.getElementById('messagesArea');
+  if (!area) return;
+  area.innerHTML = '';
+  msgs.sort((a, b) => a.ts - b.ts).forEach(m => appendMessage(m, true));
+}
+
+async function finalizePollMultiVote(msg, pollData) {
+  const myUid = normUid(myProfile.uuid);
+  const key = getPollMsgKey(msg);
+  const set = pollMultiDraft.get(key) || new Set();
+  if (set.size === 0) {
+    showToast('Выберите хотя бы один вариант');
+    return;
+  }
+  if (!pollData.submitted) pollData.submitted = {};
+  if (!pollData.votes) pollData.votes = {};
+  pollData.votes[myUid] = Array.from(set);
+  pollData.submitted[myUid] = true;
+  pollMultiDraft.delete(key);
+  recountPollVotes(pollData);
+  const updatedMsg = { ...msg, content: JSON.stringify(pollData) };
+  await dbPut('messages', updatedMsg);
+  sendToServer('poll-vote', {
+    roomId: getPollRoomId(msg),
+    msgId: msg.msgId || buildClientMsgId(msg.from, msg.ts),
+    pollData
+  });
+  await refreshPollMessagesUi(msg);
+  showToast('Голос засчитан');
+}
+
 function renderPoll(msg, pollData) {
   const container = document.createElement('div');
   container.className = 'poll-container';
   container.style.cssText = 'background:var(--bg3);border-radius:var(--r);padding:12px;min-width:200px';
   
-  // Question
   const question = document.createElement('div');
   question.style.cssText = 'font-weight:600;margin-bottom:12px;font-size:14px';
   question.textContent = pollData.question || 'Опрос';
   container.appendChild(question);
   
-  // Check if user already voted
-  const myVote = pollData.votes?.[normUid(myProfile.uuid)];
-  const hasVoted = myVote !== undefined;
+  const myUid = normUid(myProfile.uuid);
+  const myVote = pollData.votes?.[myUid];
+  const committed = isPollVoteCommitted(pollData, myUid);
   const isAnonymous = pollData.anonymous !== false;
-  const showResults = hasVoted || pollData.closed;
+  const showResults = committed || pollData.closed;
   
-  // Options container
   const optionsContainer = document.createElement('div');
   optionsContainer.style.cssText = 'display:flex;flex-direction:column;gap:8px';
   
   const totalVotes = pollData.totalVotes || 0;
-  const maxVotes = Math.max(...pollData.options.map(o => o.votes || 0), 1);
+  const optVotes = (pollData.options || []).map(o => o.votes || 0);
+  const maxVotes = Math.max(1, ...optVotes, 0);
   
-  pollData.options.forEach(opt => {
-    const optRow = document.createElement('div');
-    optRow.style.cssText = 'position:relative';
-    
-    const votes = opt.votes || 0;
-    const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
-    const isWinner = votes === maxVotes && votes > 0;
-    const isCorrect = pollData.showCorrect && pollData.correctOption === opt.id;
-    const isSelected = hasVoted && (Array.isArray(myVote) ? myVote.includes(opt.id) : myVote === opt.id);
-    
-    if (showResults) {
-      // Show results with progress bar
-      const barBg = document.createElement('div');
-      barBg.style.cssText = `height:36px;background:var(--bg2);border-radius:6px;position:relative;overflow:hidden;${isSelected ? 'border:2px solid var(--accent)' : ''}`;
+  if (pollData.multiple && !committed && !pollData.closed) {
+    const key = getPollMsgKey(msg);
+    if (!pollMultiDraft.has(key)) pollMultiDraft.set(key, new Set());
+    const draft = pollMultiDraft.get(key);
+    (pollData.options || []).forEach(opt => {
+      const optRow = document.createElement('label');
+      optRow.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:13px;color:var(--text)';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = draft.has(opt.id);
+      cb.onchange = () => {
+        if (cb.checked) draft.add(opt.id);
+        else draft.delete(opt.id);
+      };
+      const span = document.createElement('span');
+      span.textContent = opt.text;
+      optRow.appendChild(cb);
+      optRow.appendChild(span);
+      optionsContainer.appendChild(optRow);
+    });
+    const done = document.createElement('button');
+    done.type = 'button';
+    done.className = 'btn-primary';
+    done.textContent = 'Проголосовать';
+    done.style.cssText = 'width:100%;margin-top:4px;padding:10px';
+    done.onclick = () => finalizePollMultiVote(msg, pollData);
+    optionsContainer.appendChild(done);
+  } else {
+    (pollData.options || []).forEach(opt => {
+      const optRow = document.createElement('div');
+      optRow.style.cssText = 'position:relative';
       
-      const barFill = document.createElement('div');
-      barFill.style.cssText = `position:absolute;top:0;left:0;height:100%;width:${percentage}%;background:${isCorrect ? '#4CAF50' : (isWinner ? 'var(--accent)' : 'var(--bg4)')};opacity:0.6;transition:width 0.3s`;
-      barBg.appendChild(barFill);
+      const votes = opt.votes || 0;
+      const percentage = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+      const isWinner = votes === maxVotes && votes > 0 && maxVotes > 0;
+      const isCorrect = pollData.showCorrect && pollData.correctOption === opt.id;
+      const isSelected = committed && (Array.isArray(myVote) ? myVote.includes(opt.id) : myVote === opt.id);
       
-      const barText = document.createElement('div');
-      barText.style.cssText = 'position:absolute;top:0;left:0;right:0;height:100%;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:13px;z-index:1';
-      barText.innerHTML = `<span>${escapeHtml(opt.text)}${isCorrect ? ' ✓' : ''}</span><span>${percentage}% (${votes})</span>`;
-      barBg.appendChild(barText);
+      if (showResults) {
+        const barBg = document.createElement('div');
+        barBg.style.cssText = `height:36px;background:var(--bg2);border-radius:6px;position:relative;overflow:hidden;${isSelected ? 'border:2px solid var(--accent)' : ''}`;
+        
+        const barFill = document.createElement('div');
+        barFill.style.cssText = `position:absolute;top:0;left:0;height:100%;width:${percentage}%;background:${isCorrect ? '#4CAF50' : (isWinner ? 'var(--accent)' : 'var(--bg4)')};opacity:0.6;transition:width 0.3s`;
+        barBg.appendChild(barFill);
+        
+        const barText = document.createElement('div');
+        barText.style.cssText = 'position:absolute;top:0;left:0;right:0;height:100%;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:13px;z-index:1';
+        barText.innerHTML = `<span>${escapeHtml(opt.text)}${isCorrect ? ' ✓' : ''}</span><span>${percentage}% (${votes})</span>`;
+        barBg.appendChild(barText);
+        
+        optRow.appendChild(barBg);
+      } else {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.style.cssText = 'width:100%;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;text-align:left;cursor:pointer;font-size:13px;color:var(--text);transition:background 0.15s';
+        btn.textContent = opt.text;
+        btn.onmouseenter = () => { btn.style.background = 'var(--bg4)'; };
+        btn.onmouseleave = () => { btn.style.background = 'var(--bg2)'; };
+        btn.onclick = () => voteInPoll(msg, pollData, opt.id);
+        optRow.appendChild(btn);
+      }
       
-      optRow.appendChild(barBg);
-    } else {
-      // Show clickable option for voting
-      const btn = document.createElement('button');
-      btn.style.cssText = 'width:100%;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;text-align:left;cursor:pointer;font-size:13px;color:var(--text);transition:background 0.15s';
-      btn.textContent = opt.text;
-      btn.onmouseenter = () => btn.style.background = 'var(--bg4)';
-      btn.onmouseleave = () => btn.style.background = 'var(--bg2)';
-      btn.onclick = () => voteInPoll(msg, pollData, opt.id);
-      optRow.appendChild(btn);
-    }
-    
-    optionsContainer.appendChild(optRow);
-  });
+      optionsContainer.appendChild(optRow);
+    });
+  }
   
   container.appendChild(optionsContainer);
   
-  // Footer info
+  if (!isAnonymous && showResults) {
+    const voters = document.createElement('div');
+    voters.style.cssText = 'margin-top:10px;font-size:11px;color:var(--text3);line-height:1.45';
+    const lines = [];
+    for (const [uid, v] of Object.entries(pollData.votes || {})) {
+      if (!isPollVoteCommitted(pollData, normUid(uid))) continue;
+      const name = contacts.find(c => normUid(c.uuid) === normUid(uid))?.nickname || String(uid).slice(0, 8);
+      const bits = Array.isArray(v)
+        ? v.map(id => (pollData.options || []).find(o => o.id === id)?.text).filter(Boolean)
+        : [(pollData.options || []).find(o => o.id === v)?.text].filter(Boolean);
+      if (bits.length) lines.push(`${escapeHtml(name)}: ${escapeHtml(bits.join(', '))}`);
+    }
+    voters.innerHTML = lines.length ? lines.join('<br>') : '';
+    container.appendChild(voters);
+  }
+  
   const footer = document.createElement('div');
-  footer.style.cssText = 'margin-top:12px;font-size:11px;color:var(--text2);display:flex;justify-content:space-between';
+  footer.style.cssText = 'margin-top:12px;font-size:11px;color:var(--text2);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px';
   const totalText = `${totalVotes} голос${totalVotes % 10 === 1 && totalVotes % 100 !== 11 ? '' : totalVotes % 10 >= 2 && totalVotes % 10 <= 4 && (totalVotes % 100 < 10 || totalVotes % 100 >= 20) ? 'а' : 'ов'}`;
-  const anonText = isAnonymous ? ' · Анонимно' : '';
-  footer.innerHTML = `<span>${totalText}${anonText}</span>${hasVoted ? '<span>Вы проголосовали</span>' : ''}`;
+  const anonText = isAnonymous ? ' · Анонимно' : ' · Видно участников';
+  let hint = '';
+  if (pollData.multiple && !committed && !pollData.closed) {
+    hint = '<span>Выберите варианты и нажмите «Проголосовать»</span>';
+  } else if (committed) {
+    hint = '<span>Вы проголосовали</span>';
+  }
+  footer.innerHTML = `<span>${totalText}${anonText}</span>${hint}`;
   container.appendChild(footer);
   
   return container;
 }
 
 async function voteInPoll(msg, pollData, optionId) {
-  // Check if already voted
+  if (pollData.multiple) return;
   const myUid = normUid(myProfile.uuid);
-  if (pollData.votes?.[myUid]) {
+  if (pollData.votes?.[myUid] !== undefined && pollData.votes[myUid] !== null) {
     showToast('Вы уже проголосовали');
     return;
   }
-  
-  // Update poll data
   if (!pollData.votes) pollData.votes = {};
-  
-  if (pollData.multiple) {
-    // Allow multiple selections - for now just toggle
-    const current = pollData.votes[myUid] || [];
-    if (current.includes(optionId)) {
-      pollData.votes[myUid] = current.filter(id => id !== optionId);
-    } else {
-      pollData.votes[myUid] = [...current, optionId];
-    }
-  } else {
-    // Single selection
-    pollData.votes[myUid] = optionId;
-  }
-  
-  // Update vote counts
-  pollData.totalVotes = Object.keys(pollData.votes).length;
-  pollData.options.forEach(opt => {
-    opt.votes = Object.values(pollData.votes).filter(v => 
-      Array.isArray(v) ? v.includes(opt.id) : v === opt.id
-    ).length;
-  });
-  
-  // Update message in DB
+  if (!pollData.submitted) pollData.submitted = {};
+  pollData.votes[myUid] = optionId;
+  pollData.submitted[myUid] = true;
+  recountPollVotes(pollData);
   const updatedMsg = { ...msg, content: JSON.stringify(pollData) };
   await dbPut('messages', updatedMsg);
-  
-  // Send vote update to server (for real-time sync in groups/channels)
-  if (msg.roomId || msg.to) {
-    sendToServer('poll-vote', {
-      msgId: msg.msgId || buildClientMsgId(msg.from, msg.ts),
-      optionId,
-      pollData: pollData
-    });
-  }
-  
-  // Re-render messages
-  if (activeChat) {
-    const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
-    const area = document.getElementById('messagesArea');
-    if (area) {
-      area.innerHTML = '';
-      msgs.sort((a, b) => a.ts - b.ts).forEach(m => appendMessage(m, true));
-    }
-  }
-  
+  sendToServer('poll-vote', {
+    roomId: getPollRoomId(msg),
+    msgId: msg.msgId || buildClientMsgId(msg.from, msg.ts),
+    optionId,
+    pollData
+  });
+  await refreshPollMessagesUi(msg);
   showToast('Голос засчитан');
 }
 
@@ -6926,22 +7024,71 @@ function saveRoomSettingsFromModal() {
   showToast('Настройки отправлены на сервер');
 }
 
-async function createCommentsGroupForChannel(channelId) {
+let commentsGroupDraftChannelId = null;
+let commentsGroupDraftAvatar = '';
+
+function openCommentsGroupCreateModal(channelId) {
   const contact = contacts.find(c => normUid(c.uuid) === normUid(channelId));
   if (!contact || contact.kind !== 'channel') return;
-  
-  const defaultTitle = contact.nickname ? `${contact.nickname} chat` : 'Комментарии';
-  const title = prompt('Название группы для комментариев:', defaultTitle);
-  if (!title || !title.trim()) return;
-  
-  // Send request to server to create linked group
-  sendToServer('channel-create-comments-group', {
-    channelId: channelId,
-    title: title.trim(),
-    avatar: contact.avatar || ''
-  });
-  
-  showToast('Создание группы для комментариев...');
+  commentsGroupDraftChannelId = normUid(channelId);
+  const defaultTitle = contact.nickname ? `${contact.nickname} chat` : 'Channel chat';
+  commentsGroupDraftAvatar = contact.avatar || '';
+  const inp = document.getElementById('commentsGroupTitleInput');
+  if (inp) inp.value = defaultTitle;
+  const ph = document.getElementById('commentsGroupAvPh');
+  if (ph) {
+    ph.innerHTML = '';
+    renderAvatar(ph, commentsGroupDraftAvatar, defaultTitle);
+  }
+  document.getElementById('commentsGroupCreateModal').style.display = 'flex';
+}
+
+function wireCommentsGroupCreateModalOnce() {
+  if (window._commentsGroupCreateWired) return;
+  window._commentsGroupCreateWired = true;
+  const cancel = document.getElementById('commentsGroupCreateCancel');
+  const ok = document.getElementById('commentsGroupCreateConfirm');
+  const modal = document.getElementById('commentsGroupCreateModal');
+  const wrap = document.getElementById('commentsGroupAvWrap');
+  const file = document.getElementById('commentsGroupAvatarFile');
+  if (cancel) cancel.onclick = () => { if (modal) modal.style.display = 'none'; commentsGroupDraftChannelId = null; };
+  if (modal) modal.onclick = (e) => { if (e.target === modal) { modal.style.display = 'none'; commentsGroupDraftChannelId = null; } };
+  if (wrap && file) {
+    wrap.onclick = () => file.click();
+    file.onchange = () => {
+      const f = file.files?.[0];
+      if (!f || !f.type.startsWith('image/')) return;
+      const r = new FileReader();
+      r.onload = () => {
+        commentsGroupDraftAvatar = typeof r.result === 'string' ? r.result : '';
+        const ph = document.getElementById('commentsGroupAvPh');
+        const title = document.getElementById('commentsGroupTitleInput')?.value?.trim() || 'chat';
+        if (ph) { ph.innerHTML = ''; renderAvatar(ph, commentsGroupDraftAvatar, title); }
+      };
+      r.readAsDataURL(f);
+      file.value = '';
+    };
+  }
+  if (ok) {
+    ok.onclick = () => {
+      const title = document.getElementById('commentsGroupTitleInput')?.value?.trim();
+      if (!title) { showToast('Укажите название'); return; }
+      if (!commentsGroupDraftChannelId) return;
+      sendToServer('channel-create-comments-group', {
+        channelId: commentsGroupDraftChannelId,
+        title,
+        avatar: commentsGroupDraftAvatar || ''
+      });
+      showToast('Создание группы для комментариев…');
+      if (modal) modal.style.display = 'none';
+      commentsGroupDraftChannelId = null;
+    };
+  }
+}
+
+async function createCommentsGroupForChannel(channelId) {
+  wireCommentsGroupCreateModalOnce();
+  openCommentsGroupCreateModal(channelId);
 }
 
 async function ensureFavoriteContact() {
@@ -7599,6 +7746,7 @@ function setupEvents(){
   }
 
   setupDragDrop();
+  initAttachAndPollUi();
 }
 
 // ==================== DRAG & DROP ====================
@@ -8114,6 +8262,173 @@ async function flushAttachmentQueue() {
   }
   attachmentQueue = [];
   renderAttachQueue();
+}
+
+// ==================== ATTACH MENU + POLLS ====================
+function hideAttachMenu() {
+  const m = document.getElementById('attachMenuModal');
+  if (m) m.style.display = 'none';
+}
+
+function showAttachMenu() {
+  if (!activeChat) {
+    showToast('Выберите чат');
+    return;
+  }
+  const c = contacts.find((x) => normUid(x.uuid) === normUid(activeChat));
+  if (c && c.kind === 'saved') {
+    document.getElementById('fileInput')?.click();
+    return;
+  }
+  const btn = document.getElementById('attachBtn');
+  const modal = document.getElementById('attachMenuModal');
+  const panel = modal?.querySelector('.modal');
+  if (!btn || !modal || !panel) return;
+  const r = btn.getBoundingClientRect();
+  panel.style.position = 'fixed';
+  panel.style.width = '220px';
+  panel.style.left = Math.min(Math.max(8, r.left), window.innerWidth - 228) + 'px';
+  panel.style.right = 'auto';
+  panel.style.top = 'auto';
+  panel.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+  modal.style.display = 'flex';
+}
+
+const pollMultiDraft = new Map();
+
+function getPollMsgKey(msg) {
+  return msg.msgId || buildClientMsgId(msg.from, msg.ts);
+}
+
+function getPollRoomId(msg) {
+  return normUid(msg.chatId || msg.roomId || msg.to || activeChat || '');
+}
+
+function refreshPollCorrectSelect() {
+  const sel = document.getElementById('pollCorrectOption');
+  if (!sel) return;
+  const inputs = [...document.querySelectorAll('#pollOptionsList .poll-option-input')];
+  sel.innerHTML = '';
+  inputs.forEach((inp, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i + 1);
+    const hint = inp.value.trim().slice(0, 28);
+    opt.textContent = hint ? `Вариант ${i + 1}: ${hint}` : `Вариант ${i + 1}`;
+    sel.appendChild(opt);
+  });
+}
+
+function openPollCreateModal() {
+  hideAttachMenu();
+  const c = contacts.find((x) => normUid(x.uuid) === normUid(activeChat));
+  const pollAnon = document.getElementById('pollAnonymous');
+  if (pollAnon) {
+    if (c?.kind === 'channel') {
+      pollAnon.checked = true;
+      pollAnon.disabled = true;
+    } else {
+      pollAnon.disabled = false;
+    }
+  }
+  const q = document.getElementById('pollQuestion');
+  if (q) q.value = '';
+  const list = document.getElementById('pollOptionsList');
+  if (list) {
+    list.innerHTML = '';
+    for (let i = 1; i <= 2; i++) {
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'reg-input poll-option-input';
+      inp.maxLength = 100;
+      inp.placeholder = 'Вариант ' + i;
+      list.appendChild(inp);
+    }
+  }
+  const pm = document.getElementById('pollMultiple');
+  if (pm) pm.checked = false;
+  const psc = document.getElementById('pollShowCorrect');
+  if (psc) psc.checked = false;
+  const block = document.getElementById('pollCorrectOptionBlock');
+  if (block) block.style.display = 'none';
+  refreshPollCorrectSelect();
+  const pcm = document.getElementById('pollCreateModal');
+  if (pcm) pcm.style.display = 'flex';
+}
+
+function initAttachAndPollUi() {
+  if (window._attachPollUi) return;
+  window._attachPollUi = true;
+  wireCommentsGroupCreateModalOnce();
+  const pollShowCorrect = document.getElementById('pollShowCorrect');
+  const block = document.getElementById('pollCorrectOptionBlock');
+  if (pollShowCorrect && block) {
+    pollShowCorrect.onchange = () => {
+      block.style.display = pollShowCorrect.checked ? 'block' : 'none';
+      refreshPollCorrectSelect();
+    };
+  }
+  document.getElementById('pollAddOptionBtn')?.addEventListener('click', () => {
+    const list = document.getElementById('pollOptionsList');
+    if (!list) return;
+    const n = list.querySelectorAll('.poll-option-input').length + 1;
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'reg-input poll-option-input';
+    inp.maxLength = 100;
+    inp.placeholder = 'Вариант ' + n;
+    list.appendChild(inp);
+    refreshPollCorrectSelect();
+  });
+  document.getElementById('pollCancelBtn')?.addEventListener('click', () => {
+    const pcm = document.getElementById('pollCreateModal');
+    if (pcm) pcm.style.display = 'none';
+  });
+  document.getElementById('pollCreateBtn')?.addEventListener('click', () => { submitPollFromModal(); });
+  document.getElementById('attachPollBtn')?.addEventListener('click', () => {
+    hideAttachMenu();
+    openPollCreateModal();
+  });
+  document.getElementById('attachFileBtn')?.addEventListener('click', () => {
+    hideAttachMenu();
+    document.getElementById('fileInput')?.click();
+  });
+}
+
+async function submitPollFromModal() {
+  if (!activeChat) return;
+  const qEl = document.getElementById('pollQuestion');
+  const q = qEl?.value?.trim();
+  const rawOpts = [...document.querySelectorAll('#pollOptionsList .poll-option-input')]
+    .map((inp) => inp.value.trim())
+    .filter(Boolean);
+  if (!q) { showToast('Введите вопрос'); return; }
+  if (rawOpts.length < 2) { showToast('Минимум два непустых варианта'); return; }
+  const c = contacts.find((x) => normUid(x.uuid) === normUid(activeChat));
+  const isChannel = c?.kind === 'channel';
+  const anonymous = isChannel ? true : !!document.getElementById('pollAnonymous')?.checked;
+  const multiple = !!document.getElementById('pollMultiple')?.checked;
+  const showCorrect = !!document.getElementById('pollShowCorrect')?.checked;
+  const options = rawOpts.map((text, i) => ({ id: i + 1, text, votes: 0 }));
+  let correctOption = null;
+  if (showCorrect) {
+    const sel = parseInt(document.getElementById('pollCorrectOption')?.value, 10);
+    correctOption = Number.isFinite(sel) ? sel : null;
+  }
+  const pollData = {
+    question: q,
+    options,
+    anonymous,
+    multiple,
+    showCorrect: showCorrect && correctOption != null,
+    correctOption: showCorrect ? correctOption : null,
+    votes: {},
+    submitted: {},
+    closed: false,
+    totalVotes: 0
+  };
+  const pcm = document.getElementById('pollCreateModal');
+  if (pcm) pcm.style.display = 'none';
+  await sendMessage('poll', JSON.stringify(pollData));
 }
 
 // ==================== GLOBAL AUDIO PLAYER (Telegram-style) ====================
@@ -9580,23 +9895,30 @@ async function openCommentsView(postMsg, linkedGroupId) {
   }
   postContent.innerHTML = contentHtml;
   
-  // Check if user is member of linked group
+  // Канал, из которого открыли комментарии (для настроек «только участники»)
+  const channel = contacts.find(c => normUid(c.uuid) === normUid(activeChat) && c.kind === 'channel')
+    || contacts.find(c => c.kind === 'channel' && normUid(c.linkedGroupId) === normUid(linkedGroupId));
   const group = contacts.find(c => normUid(c.uuid) === normUid(linkedGroupId));
   const isMember = group?.roomMembers?.some(m => normUid(m) === normUid(myProfile.uuid));
-  const channel = contacts.find(c => c.kind === 'channel' && c.linkedGroupId === linkedGroupId);
-  const membersOnly = channel?.commentsMembersOnly || false;
+  const membersOnly = !!(channel?.commentsMembersOnly);
   
-  // Show/hide input based on membership
-  if (membersOnly && !isMember) {
+  if (!membersOnly && !isMember) {
+    sendToServer('room-join', { roomId: linkedGroupId });
+    joinPrompt.style.display = 'none';
+    composer.style.display = 'block';
+    showToast('Вступаем в чат комментариев…');
+    setTimeout(() => {
+      openCommentsView(currentCommentsPost, currentCommentsGroupId);
+    }, 800);
+  } else if (membersOnly && !isMember) {
     joinPrompt.style.display = 'block';
     composer.style.display = 'none';
     joinBtn.onclick = async () => {
       sendToServer('room-join', { roomId: linkedGroupId });
-      showToast('Запрос на вступление отправлен...');
-      // Poll for membership update
+      showToast('Вступление в чат…');
       setTimeout(() => {
         openCommentsView(currentCommentsPost, currentCommentsGroupId);
-      }, 1000);
+      }, 800);
     };
   } else {
     joinPrompt.style.display = 'none';
@@ -9797,4 +10119,3 @@ if (document.readyState === 'loading') {
 </script>
 </body>
 </html>
-
