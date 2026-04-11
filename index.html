@@ -1846,16 +1846,24 @@ class CryptoEngine {
 
   async decryptPrivateKeys(encryptedData, passwordHash) {
     // CRITICAL: Validate input data before attempting decryption
+    console.log('🔓 decryptPrivateKeys called, passwordHash length:', passwordHash?.length);
+    
     if (!encryptedData || typeof encryptedData !== 'object') {
-      console.error('decryptPrivateKeys: encryptedData is null or not an object');
+      console.error('decryptPrivateKeys: encryptedData is null or not an object:', encryptedData);
       throw new Error('Encrypted keys data is missing or invalid');
     }
+    
+    // Log what we received
+    console.log('🔓 encryptedData keys:', Object.keys(encryptedData));
+    console.log('🔓 iv type:', typeof encryptedData.iv, 'iv length:', encryptedData.iv?.length);
+    console.log('🔓 encrypted type:', typeof encryptedData.encrypted, 'encrypted length:', encryptedData.encrypted?.length);
+    
     if (!encryptedData.iv || !encryptedData.encrypted) {
       console.error('decryptPrivateKeys: missing iv or encrypted property', encryptedData);
       throw new Error('Encrypted keys missing iv or encrypted payload');
     }
     if (!passwordHash || typeof passwordHash !== 'string') {
-      console.error('decryptPrivateKeys: passwordHash is missing or invalid');
+      console.error('decryptPrivateKeys: passwordHash is missing or invalid:', passwordHash);
       throw new Error('Password hash is required for key decryption');
     }
 
@@ -1880,10 +1888,26 @@ class CryptoEngine {
       ['decrypt']
     );
 
+    // Validate IV format (should be 24 hex chars = 12 bytes)
+    if (!/^[0-9a-f]{24}$/i.test(encryptedData.iv)) {
+      console.error('decryptPrivateKeys: IV has invalid format:', encryptedData.iv);
+      throw new Error('IV must be 24 hex characters (12 bytes)');
+    }
+    
     const iv = new Uint8Array(
       encryptedData.iv.match(/.{1,2}/g).map(b => parseInt(b, 16))
     );
+    
+    // Validate encrypted data is base64
+    try {
+      atob(encryptedData.encrypted);
+    } catch (e) {
+      console.error('decryptPrivateKeys: encrypted data is not valid base64');
+      throw new Error('Encrypted data is not valid base64');
+    }
+    
     const ciphertext = Uint8Array.from(atob(encryptedData.encrypted), c => c.charCodeAt(0));
+    console.log('🔓 IV and ciphertext prepared, decrypting...');
 
     const decrypted = await window.crypto.subtle.decrypt(
       { name: 'AES-GCM', iv },
@@ -2072,6 +2096,18 @@ const dbOpenE2EE = () => {
 const dbSaveKeys = async (uuid, encryptedKeys) => {
   return new Promise(async (resolve, reject) => {
     try {
+      // Validate encryptedKeys format
+      console.log('💾 dbSaveKeys: saving keys for', uuid);
+      console.log('💾 encryptedKeys type:', typeof encryptedKeys);
+      console.log('💾 encryptedKeys has iv:', !!encryptedKeys?.iv);
+      console.log('💾 encryptedKeys has encrypted:', !!encryptedKeys?.encrypted);
+      
+      if (!encryptedKeys || !encryptedKeys.iv || !encryptedKeys.encrypted) {
+        console.error('❌ dbSaveKeys: encryptedKeys has invalid format:', encryptedKeys);
+        reject(new Error('Invalid encryptedKeys format'));
+        return;
+      }
+      
       const db = await dbOpenE2EE();
       const tx = db.transaction('keys', 'readwrite');
       const store = tx.objectStore('keys');
@@ -2133,11 +2169,13 @@ const dbLoadKeys = async (uuid, passwordHash) => {
         }
         
         try {
+          console.log('🔑 Attempting to decrypt keys for', uuid);
           const decrypted = await crypto_engine.decryptPrivateKeys(row.encrypted, passwordHash);
-          console.log('✅ Keys loaded from IndexedDB for', uuid);
+          console.log('✅ Keys decrypted successfully for', uuid);
           resolve(decrypted);
         } catch (err) {
-          console.error('❌ Failed to decrypt keys:', err);
+          console.error('❌ Failed to decrypt keys for', uuid, ':', err.message);
+          console.error('❌ Error stack:', err.stack);
           resolve(null);
         }
       };
@@ -2162,9 +2200,21 @@ const dbLoadKeys = async (uuid, passwordHash) => {
 // ==================== E2EE KEY LOADING ON AUTH ====================
 async function loadKeysAfterAuth(uuid) {
   try {
+    console.log('🔐 loadKeysAfterAuth called for UUID:', uuid?.substring(0, 8) + '...');
     const passwordHash = localStorage.getItem('cipher_passwordHash');
+    console.log('🔐 loadKeysAfterAuth: passwordHash exists:', !!passwordHash);
+    console.log('🔐 loadKeysAfterAuth: passwordHash length:', passwordHash?.length);
+    console.log('🔐 loadKeysAfterAuth: passwordHash first 20 chars:', passwordHash?.substring(0, 20));
+    
     if (!passwordHash) {
-      console.warn('Password hash not found in localStorage');
+      console.warn('❌ Password hash not found in localStorage');
+      showToast('❌ Ошибка: пароль не найден. Перезайдите.');
+      return;
+    }
+    
+    // Check if keys already loaded
+    if (crypto_engine.myKeys) {
+      console.log('✅ Keys already loaded in crypto_engine');
       return;
     }
     
@@ -2172,8 +2222,9 @@ async function loadKeysAfterAuth(uuid) {
     let db;
     try {
       db = await dbOpenE2EE();
+      console.log('✅ IndexedDB opened successfully');
     } catch (dbErr) {
-      console.warn('IndexedDB not ready, waiting...');
+      console.warn('⚠️ IndexedDB not ready, waiting...', dbErr);
       await new Promise(r => setTimeout(r, 500));
       db = await dbOpenE2EE();
     }
@@ -2245,8 +2296,10 @@ async function loadKeysAfterAuth(uuid) {
     crypto_engine.myKeys = keys;
     crypto_engine.notifyKeysLoaded();
     console.log('✅ E2EE keys loaded successfully');
+    console.log('✅ Keys object has ecdsa:', !!keys.ecdsa);
+    console.log('✅ Keys object has ecdh:', !!keys.ecdh);
   } catch (err) {
-    console.error('Failed to load keys:', err);
+    console.error('❌ Failed to load keys:', err);
     alert('Ошибка доступа к ключам: ' + (err.message || 'Неизвестная ошибка'));
     await logout();
   }
@@ -4255,7 +4308,11 @@ async function startApp(uuid) {
 
   renderSidebar();
 
-  // 3. Настройка событий
+  // 3. Загрузка E2EE ключей
+  console.log('🔐 Loading E2EE keys...');
+  await loadKeysAfterAuth(uuid);
+
+  // 4. Настройка событий
   console.log('🔧 Setting up events...');
   setupEvents();
 
