@@ -13,6 +13,11 @@
         document.documentElement.style.backgroundColor = color;
         const meta = document.querySelector('meta[name="theme-color"]');
         if (meta) meta.setAttribute('content', color);
+        // Apply gradient background by default (stored for later application when body exists)
+        let useGradients = true;
+        const gradVal = localStorage.getItem('cipherUseGradients');
+        if (gradVal !== null) useGradients = gradVal === '1';
+        if (useGradients) document.documentElement.dataset.gradients = '1';
       } catch (_) {}
     })();
     </script>
@@ -167,6 +172,28 @@
       from { opacity: 0; transform: translateX(12px) scale(0.96); }
       to { opacity: 1; transform: translateX(0) scale(1); }
     }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.1); }
+    }
+    @keyframes reactionPop {
+      0% { transform: scale(0.5); opacity: 0; }
+      50% { transform: scale(1.2); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes reactionFade {
+      0% { transform: scale(1); opacity: 1; }
+      100% { transform: scale(0.5); opacity: 0; }
+    }
+    .reaction-pill{animation:reactionPop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)}
+    .reaction-pill.removing{animation:reactionFade 0.15s ease-out forwards}
+    /* Collapsible replies */
+    .replies-container{max-height:500px;overflow:hidden;transition:max-height 0.3s ease-out}
+    .replies-container.collapsed{max-height:0}
+    .replies-toggle{padding:8px 12px;background:var(--bg3);border-radius:6px;color:var(--accent);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;margin:4px 0;transition:background 0.2s}
+    .replies-toggle:hover{background:var(--border)}
+    .replies-toggle svg{transition:transform 0.2s}
+    .replies-toggle.expanded svg{transform:rotate(180deg)}
     .msg{display:flex;gap:10px;align-items:flex-end;max-width:min(92%,560px);width:100%;box-sizing:border-box;animation:msgSlideInLeft 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)}
     .msg.out{animation:msgSlideInRight 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)}
     .msg.no-anim{animation:none!important}
@@ -1208,12 +1235,12 @@
       .sidebar-top .logo#sidebarLogoBtn:hover{opacity:0.88}
       #mobileBottomNav,#mobileCallsView,#mobileSettingsView{display:none!important}
     }
-    body.use-gradients{
+    body.use-gradients, html[data-gradients="1"] body{
       --welcome-bg:var(--grad-welcome);
       --chat-thread-bg:var(--grad-chat-thread);
     }
     @media (min-width:901px){
-      body.use-gradients #sidebar{
+      body.use-gradients #sidebar, html[data-gradients="1"] body #sidebar{
         background:var(--grad-sidebar)!important;
       }
     }
@@ -1920,6 +1947,14 @@
             <button type="button" id="commentsJoinBtn" class="btn-primary" style="width:100%;padding:10px">Вступить в чат</button>
           </div>
           <div id="commentsComposer" style="display:none;position:relative">
+            <!-- Voice record bar for comments (like main chat) -->
+            <div id="commentsVoiceBar" style="display:none;align-items:center;gap:10px;padding:8px 12px;background:var(--bg2);border-radius:8px;margin-bottom:8px;border:1px solid var(--border)">
+              <div class="voice-rec-pulse" style="width:10px;height:10px;border-radius:50%;background:var(--red);animation:pulse 1s infinite"></div>
+              <span id="commentsVoiceTime" style="font-variant-numeric:tabular-nums;font-size:13px;color:var(--text2);min-width:48px">0:00</span>
+              <span style="flex:1;font-size:13px;color:var(--text2)">Запись…</span>
+              <button type="button" id="commentsVoiceCancelBtn" style="padding:6px 12px;border:none;background:var(--bg3);color:var(--text);border-radius:6px;font-size:12px;cursor:pointer">Отмена</button>
+              <button type="button" id="commentsVoiceSendBtn" style="padding:6px 12px;border:none;background:var(--accent);color:#fff;border-radius:6px;font-size:12px;cursor:pointer">Отправить</button>
+            </div>
             <!-- Media attachment preview for comments -->
             <div id="commentsAttachPreview" style="display:none;margin-bottom:8px;padding:8px;background:var(--bg3);border-radius:8px;border:1px solid var(--border)">
               <div style="display:flex;align-items:center;gap:8px">
@@ -1941,15 +1976,15 @@
               </button>
               <!-- Attachment menu -->
               <div id="commentsAttachMenu" style="display:none;position:absolute;bottom:60px;left:12px;background:var(--bg1);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 8px 32px rgba(0,0,0,0.4);z-index:100">
-                <button type="button" id="commentsAttachVoice" class="icon-btn" style="width:100%;padding:10px 14px;border:none;background:transparent;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px;border-radius:8px">
-                  <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                  Голосовое
-                </button>
-                <button type="button" id="commentsAttachFile" class="icon-btn" style="width:100%;padding:10px 14px;border:none;background:transparent;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px;border-radius:8px;margin-top:4px">
+                <button type="button" id="commentsAttachFile" class="icon-btn" style="width:100%;padding:10px 14px;border:none;background:transparent;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:10px;font-size:14px;border-radius:8px">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                   Файл
                 </button>
               </div>
+              <!-- Voice record button like main chat -->
+              <button type="button" id="commentsRecordBtn" class="icon-btn" style="width:44px;height:44px;flex-shrink:0;border-radius:14px;background:var(--bg3)" title="Голосовое сообщение">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              </button>
               <textarea id="commentsInput" rows="1" placeholder="Написать комментарий..." style="flex:1;padding:12px 14px;border-radius:16px;border:1px solid var(--border);background:var(--bg2);color:var(--text);resize:none;font-size:14px;min-height:44px;max-height:120px;overflow-y:auto"></textarea>
               <div style="display:flex;gap:8px">
                 <button type="button" id="commentsCancelBtn" style="width:44px;height:44px;padding:0;flex-shrink:0;border-radius:14px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);cursor:pointer;display:none;align-items:center;justify-content:center">
@@ -6904,6 +6939,144 @@
       pendingCommentMediaLastTs = 0;
     }
 
+    // Helper: Render nested replies with collapsible functionality (>10 replies)
+    function renderCollapsibleReplies(replies, parentEl, parentComment) {
+      if (!replies || replies.length === 0) return;
+
+      const REPLY_COLLAPSE_THRESHOLD = 10;
+      const shouldCollapse = replies.length > REPLY_COLLAPSE_THRESHOLD;
+
+      const repliesWrapper = document.createElement('div');
+      repliesWrapper.style.cssText = 'margin-left:46px;margin-top:4px';
+
+      // Toggle button for collapsed replies
+      if (shouldCollapse) {
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'replies-toggle';
+        toggleBtn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg> Показать ${replies.length} ответов`;
+        repliesWrapper.appendChild(toggleBtn);
+      }
+
+      const repliesContainer = document.createElement('div');
+      repliesContainer.className = 'replies-container';
+      if (shouldCollapse) {
+        repliesContainer.classList.add('collapsed');
+      }
+
+      // Render each reply
+      replies.forEach(reply => {
+        const replyRow = document.createElement('div');
+        replyRow.style.cssText = 'display:flex;gap:8px;padding:8px;margin-bottom:4px;background:var(--bg1);border-radius:8px;align-items:flex-start';
+
+        const replyAv = document.createElement('div');
+        replyAv.style.cssText = 'width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--bg4)';
+        const replyAuthor = contacts.find(c => normUid(c.uuid) === normUid(reply.from));
+        const replyAuthorName = replyAuthor?.nickname || reply.from.slice(0, 6);
+        const replyAuthorAv = replyAuthor?.avatar || '';
+        renderAvatar(replyAv, replyAuthorAv, replyAuthorName);
+        bindMiniProfileAvatar(replyAv, reply.from);
+
+        const replyBody = document.createElement('div');
+        replyBody.style.cssText = 'flex:1;min-width:0';
+        const replyName = document.createElement('div');
+        replyName.style.cssText = 'color:var(--accent);font-weight:600;margin-bottom:2px;font-size:12px';
+        replyName.textContent = replyAuthorName;
+        const replyContent = document.createElement('div');
+        replyContent.style.cssText = 'color:var(--text);word-break:break-word';
+
+        // Render different message types for replies
+        if (reply.type === 'text') {
+          replyContent.style.whiteSpace = 'pre-wrap';
+          replyContent.textContent = reply.content || '';
+        } else if (reply.type === 'image' && reply.content) {
+          let imgSrc = reply.content;
+          try { if (typeof reply.content === 'string') { const p = JSON.parse(reply.content); if (p.data) imgSrc = p.data; } else if (reply.content?.data) imgSrc = reply.content.data; } catch(e){}
+          const img = document.createElement('img');
+          img.src = imgSrc;
+          img.style.cssText = 'max-width:150px;max-height:100px;border-radius:6px;cursor:pointer';
+          img.onclick = () => window.open(imgSrc, '_blank');
+          img.oncontextmenu = (e) => { e.preventDefault(); showCommentImageContextMenu(e, reply, imgSrc, 'image'); };
+          replyContent.appendChild(img);
+        } else if (reply.type === 'video' && reply.content) {
+          let videoSrc = reply.content;
+          try { if (typeof reply.content === 'string') { const p = JSON.parse(reply.content); if (p.data) videoSrc = p.data; } else if (reply.content?.data) videoSrc = reply.content.data; } catch(e){}
+          const video = document.createElement('video');
+          video.src = videoSrc;
+          video.controls = true;
+          video.style.cssText = 'max-width:150px;max-height:100px;border-radius:6px';
+          video.oncontextmenu = (e) => { e.preventDefault(); showCommentImageContextMenu(e, reply, videoSrc, 'video'); };
+          replyContent.appendChild(video);
+        } else if (reply.type === 'voice' && reply.content) {
+          const audioContainer = document.createElement('div');
+          audioContainer.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)';
+          audioContainer.innerHTML = `<button type="button" style="width:24px;height:24px;border-radius:50%;background:var(--accent);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button><div style="flex:1;height:2px;background:var(--border2);border-radius:1px;overflow:hidden"><div style="width:0%;height:100%;background:var(--accent)"></div></div><span style="font-size:10px;color:var(--text2)">0:00</span>`;
+          replyContent.appendChild(audioContainer);
+        } else {
+          replyContent.textContent = reply.content || '';
+        }
+
+        const replyTime = document.createElement('div');
+        replyTime.style.cssText = 'color:var(--text3);font-size:10px;margin-top:2px';
+        replyTime.textContent = fmtTime(reply.ts);
+
+        const replyActions = document.createElement('div');
+        replyActions.style.cssText = 'display:flex;gap:6px;margin-top:4px';
+        const replyReactBtn = document.createElement('button');
+        replyReactBtn.type = 'button';
+        replyReactBtn.style.cssText = 'width:24px;height:24px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+        replyReactBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
+        replyReactBtn.title = 'Реакции';
+        replyReactBtn.onclick = (e) => showCommentReactionPicker(reply, replyReactBtn);
+        const replyMenuBtn = document.createElement('button');
+        replyMenuBtn.type = 'button';
+        replyMenuBtn.style.cssText = 'width:24px;height:24px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+        replyMenuBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>';
+        replyMenuBtn.title = 'Меню';
+        replyMenuBtn.onclick = (e) => { e.stopPropagation(); showCommentContextMenu(e, reply, replyAuthorName); };
+        replyActions.appendChild(replyReactBtn);
+        replyActions.appendChild(replyMenuBtn);
+
+        replyBody.appendChild(replyName);
+        replyBody.appendChild(replyContent);
+        if (reply.reactions && Object.keys(reply.reactions).length > 0) {
+          const replyReactionsEl = document.createElement('div');
+          replyReactionsEl.className = 'msg-reactions';
+          replyReactionsEl.style.cssText = 'display:flex;gap:4px;margin-top:4px;flex-wrap:wrap';
+          renderReactionChips(replyReactionsEl, reply, true);
+          replyBody.appendChild(replyReactionsEl);
+        }
+        replyBody.appendChild(replyActions);
+        replyBody.appendChild(replyTime);
+
+        replyRow.appendChild(replyAv);
+        replyRow.appendChild(replyBody);
+        repliesContainer.appendChild(replyRow);
+      });
+
+      repliesWrapper.appendChild(repliesContainer);
+      parentEl.appendChild(repliesWrapper);
+
+      // Toggle handler
+      if (shouldCollapse) {
+        const toggleBtn = repliesWrapper.querySelector('.replies-toggle');
+        const container = repliesWrapper.querySelector('.replies-container');
+        let expanded = false;
+        toggleBtn.onclick = () => {
+          expanded = !expanded;
+          if (expanded) {
+            container.classList.remove('collapsed');
+            toggleBtn.classList.add('expanded');
+            toggleBtn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg> Скрыть ответы`;
+          } else {
+            container.classList.add('collapsed');
+            toggleBtn.classList.remove('expanded');
+            toggleBtn.innerHTML = `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg> Показать ${replies.length} ответов`;
+          }
+        };
+      }
+    }
+
     // FIX: Render media comment immediately with proper content extraction (no more falling to bottom)
     function renderCommentMediaImmediate(comment, replies, commentsList) {
       const row = document.createElement('div');
@@ -7061,116 +7234,9 @@
       row.appendChild(body);
       commentsList.appendChild(row);
 
-      // Render nested replies (same as regular comments)
+      // Render nested replies with collapsible functionality
       if (replies && replies.length > 0) {
-        const repliesContainer = document.createElement('div');
-        repliesContainer.style.cssText = 'margin-left:46px;margin-top:4px';
-        replies.forEach(reply => {
-          const replyRow = document.createElement('div');
-          replyRow.style.cssText = 'display:flex;gap:8px;padding:8px;margin-bottom:4px;background:var(--bg1);border-radius:8px;align-items:flex-start';
-          const replyAv = document.createElement('div');
-          replyAv.style.cssText = 'width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--bg4)';
-          const replyAuthor = contacts.find(c => normUid(c.uuid) === normUid(reply.from));
-          const replyAuthorName = replyAuthor?.nickname || reply.from.slice(0, 6);
-          const replyAuthorAv = replyAuthor?.avatar || '';
-          renderAvatar(replyAv, replyAuthorAv, replyAuthorName);
-          bindMiniProfileAvatar(replyAv, reply.from);
-
-          const replyBody = document.createElement('div');
-          replyBody.style.cssText = 'flex:1;min-width:0';
-          const replyName = document.createElement('div');
-          replyName.style.cssText = 'color:var(--accent);font-weight:600;margin-bottom:2px;font-size:12px';
-          replyName.textContent = replyAuthorName;
-          const replyContent = document.createElement('div');
-          replyContent.style.cssText = 'color:var(--text);word-break:break-word';
-
-          // Render different message types for replies
-          if (reply.type === 'text') {
-            replyContent.style.whiteSpace = 'pre-wrap';
-            replyContent.textContent = reply.content || '';
-          } else if (reply.type === 'image' && reply.content) {
-            const img = document.createElement('img');
-            img.src = reply.content;
-            img.style.cssText = 'max-width:150px;max-height:100px;border-radius:6px;cursor:pointer';
-            img.onclick = () => window.open(reply.content, '_blank');
-            img.oncontextmenu = (e) => {
-              e.preventDefault();
-              showCommentImageContextMenu(e, reply, reply.content, 'image');
-            };
-            replyContent.appendChild(img);
-          } else if (reply.type === 'video' && reply.content) {
-            const video = document.createElement('video');
-            video.src = reply.content;
-            video.controls = true;
-            video.style.cssText = 'max-width:150px;max-height:100px;border-radius:6px';
-            video.oncontextmenu = (e) => {
-              e.preventDefault();
-              showCommentImageContextMenu(e, reply, reply.content, 'video');
-            };
-            replyContent.appendChild(video);
-          } else if (reply.type === 'voice' && reply.content) {
-            const audioContainer = document.createElement('div');
-            audioContainer.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)';
-            audioContainer.innerHTML = `
-              <button type="button" style="width:24px;height:24px;border-radius:50%;background:var(--accent);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center">
-                <svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-              </button>
-              <div style="flex:1;height:2px;background:var(--border2);border-radius:1px;overflow:hidden">
-                <div style="width:0%;height:100%;background:var(--accent)"></div>
-              </div>
-              <span style="font-size:10px;color:var(--text2)">0:00</span>
-            `;
-            replyContent.appendChild(audioContainer);
-          } else {
-            replyContent.textContent = reply.content || '';
-          }
-
-          const replyTime = document.createElement('div');
-          replyTime.style.cssText = 'color:var(--text3);font-size:10px;margin-top:2px';
-          replyTime.textContent = fmtTime(reply.ts);
-
-          const replyActions = document.createElement('div');
-          replyActions.style.cssText = 'display:flex;gap:6px;margin-top:4px';
-
-          const replyReactBtn = document.createElement('button');
-          replyReactBtn.type = 'button';
-          replyReactBtn.style.cssText = 'width:24px;height:24px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
-          replyReactBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
-          replyReactBtn.title = 'Реакции';
-          replyReactBtn.onclick = (e) => showCommentReactionPicker(reply, replyReactBtn);
-
-          const replyMenuBtn = document.createElement('button');
-          replyMenuBtn.type = 'button';
-          replyMenuBtn.style.cssText = 'width:24px;height:24px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
-          replyMenuBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>';
-          replyMenuBtn.title = 'Меню';
-          replyMenuBtn.onclick = (e) => {
-            e.stopPropagation();
-            showCommentContextMenu(e, reply, replyAuthorName);
-          };
-
-          replyActions.appendChild(replyReactBtn);
-          replyActions.appendChild(replyMenuBtn);
-
-          replyBody.appendChild(replyName);
-          replyBody.appendChild(replyContent);
-
-          // Add reactions for nested replies
-          if (reply.reactions && Object.keys(reply.reactions).length > 0) {
-            const replyReactionsEl = document.createElement('div');
-            replyReactionsEl.className = 'msg-reactions';
-            replyReactionsEl.style.cssText = 'display:flex;gap:4px;margin-top:4px;flex-wrap:wrap';
-            renderReactionChips(replyReactionsEl, reply, true);
-            replyBody.appendChild(replyReactionsEl);
-          }
-
-          replyBody.appendChild(replyTime);
-          replyBody.appendChild(replyActions);
-          replyRow.appendChild(replyAv);
-          replyRow.appendChild(replyBody);
-          repliesContainer.appendChild(replyRow);
-        });
-        commentsList.appendChild(repliesContainer);
+        renderCollapsibleReplies(replies, commentsList, comment);
       }
     }
 
@@ -7816,7 +7882,24 @@
       const list = m.reactions[emoji] || [];
       const me = normUid(myProfile.uuid);
       const remove = list.some((u) => normUid(u) === me);
-      
+
+      // Check reaction limit (max 3 per user) - only when adding new reaction
+      const REACTION_LIMIT = 3;
+      if (!remove) {
+        let userReactionCount = 0;
+        let alreadyReacted = false;
+        for (const [e, users] of Object.entries(m.reactions)) {
+          if (users && users.some(u => normUid(u) === me)) {
+            userReactionCount++;
+            if (e === emoji) alreadyReacted = true;
+          }
+        }
+        if (!alreadyReacted && userReactionCount >= REACTION_LIMIT) {
+          showToast(`❌ Максимум ${REACTION_LIMIT} реакции`);
+          return;
+        }
+      }
+
       // PLAINTEXT reaction - no E2EE, just metadata
       sendToServer('message-reaction', { to: activeChat, ts, emoji, remove });
       
@@ -9838,12 +9921,16 @@
 
     function initGradientPreference() {
       const el = document.getElementById('gradientToggle');
-      if (!el) return;
       let saved = true; // Default to enabled
       try {
         const val = localStorage.getItem('cipherUseGradients');
         if (val !== null) saved = val === '1'; // Use saved value if exists
       } catch (_) {}
+      // Check if gradients already enabled via early script
+      if (document.documentElement.dataset.gradients === '1') {
+        document.body.classList.add('use-gradients');
+      }
+      if (!el) return;
       el.checked = saved;
       applyGradientPreference(saved);
       el.onchange = () => applyGradientPreference(el.checked);
@@ -12470,20 +12557,27 @@
       const attachBtn = document.getElementById('commentsAttachBtn');
       const fileInput = document.getElementById('commentsFileInput');
       const attachMenu = document.getElementById('commentsAttachMenu');
-      const attachVoice = document.getElementById('commentsAttachVoice');
       const attachFile = document.getElementById('commentsAttachFile');
       const attachPreview = document.getElementById('commentsAttachPreview');
       const attachName = document.getElementById('commentsAttachName');
       const attachSize = document.getElementById('commentsAttachSize');
       const attachRemove = document.getElementById('commentsAttachRemove');
+      const recordBtn = document.getElementById('commentsRecordBtn');
+      const voiceBar = document.getElementById('commentsVoiceBar');
+      const voiceTime = document.getElementById('commentsVoiceTime');
+      const voiceCancelBtn = document.getElementById('commentsVoiceCancelBtn');
+      const voiceSendBtn = document.getElementById('commentsVoiceSendBtn');
       let pendingAttachment = null;
       let pendingVoiceBlob = null;
-      let commentMediaRecorder = null;
-      let commentAudioChunks = [];
+      let commentVoiceSession = null;
 
       // Show/hide attach button based on media setting
       if (attachBtn) {
         attachBtn.style.display = mediaEnabled ? 'flex' : 'none';
+      }
+      // Show/hide record button based on media setting
+      if (recordBtn) {
+        recordBtn.style.display = mediaEnabled ? 'flex' : 'none';
       }
 
       // Toggle attachment menu
@@ -12500,49 +12594,98 @@
           }
         });
 
-        // Voice recording button
-        if (attachVoice) {
-          attachVoice.onclick = async () => {
-            attachMenu.style.display = 'none';
-            if (!commentMediaRecorder || commentMediaRecorder.state === 'inactive') {
-              try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                commentMediaRecorder = new MediaRecorder(stream);
-                commentAudioChunks = [];
-
-                commentMediaRecorder.ondataavailable = (e) => {
-                  commentAudioChunks.push(e.data);
-                };
-
-                commentMediaRecorder.onstop = async () => {
-                  pendingVoiceBlob = new Blob(commentAudioChunks, { type: 'audio/webm' });
-                  console.log('Voice recording stopped, blob size:', pendingVoiceBlob.size);
-                  if (attachPreview) attachPreview.style.display = 'block';
-                  if (attachName) attachName.textContent = '🎤 Голосовое сообщение';
-                  if (attachSize) attachSize.textContent = formatFileSize(pendingVoiceBlob.size);
-                  showToast('🎤 Голосовое записано, нажмите отправить');
-                };
-
-                commentMediaRecorder.start();
-                attachVoice.innerHTML = '<svg width="18" height="18" fill="none" stroke="#ff4444" stroke-width="2" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Остановить';
-                showToast('🎤 Запись голосового...');
-              } catch (err) {
-                console.error('Microphone access denied:', err);
-                showToast('❌ Нет доступа к микрофону');
-              }
-            } else {
-              commentMediaRecorder.stop();
-              commentMediaRecorder.stream.getTracks().forEach(track => track.stop());
-              attachVoice.innerHTML = '<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Голосовое';
-            }
-          };
-        }
-
         // File attachment button
         if (attachFile) {
           attachFile.onclick = () => {
             attachMenu.style.display = 'none';
             if (fileInput) fileInput.click();
+          };
+        }
+      }
+
+      // Voice recording like main chat
+      if (recordBtn && mediaEnabled) {
+        recordBtn.onclick = async () => {
+          if (commentVoiceSession) return; // Already recording
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showToast('Запись голоса не поддерживается в этом браузере');
+            return;
+          }
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // Find supported MIME type
+            let mimeType = '';
+            const supportedTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg'];
+            for (const type of supportedTypes) {
+              if (MediaRecorder.isTypeSupported(type)) { mimeType = type; break; }
+            }
+            const recorderOptions = mimeType ? { mimeType } : {};
+            const recorder = new MediaRecorder(stream, recorderOptions);
+            const chunks = [];
+            let started = Date.now();
+            let tickTimer = null;
+
+            recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+
+            const tick = () => {
+              if (!voiceTime || !commentVoiceSession) return;
+              const sec = Math.floor((Date.now() - started) / 1000);
+              voiceTime.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+            };
+
+            recorder.onstop = async () => {
+              if (tickTimer) clearInterval(tickTimer);
+              stream.getTracks().forEach(t => t.stop());
+              voiceBar.style.display = 'none';
+              recordBtn.classList.remove('recording');
+              if (!commentVoiceSession || commentVoiceSession.cancelled) {
+                commentVoiceSession = null;
+                return;
+              }
+              const duration = Math.max(1, Math.floor((Date.now() - started) / 1000));
+              const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
+              pendingVoiceBlob = { blob, duration };
+              if (attachPreview) attachPreview.style.display = 'block';
+              if (attachName) attachName.textContent = '🎤 Голосовое (' + duration + 'с)';
+              if (attachSize) attachSize.textContent = formatFileSize(blob.size);
+              showToast('🎤 Голосовое записано, нажмите отправить');
+              commentVoiceSession = null;
+            };
+
+            // Start recording
+            recorder.start(400);
+            tickTimer = setInterval(tick, 400);
+            tick();
+            commentVoiceSession = { stream, recorder, cancelled: false, tickTimer };
+
+            // Show voice bar
+            voiceBar.style.display = 'flex';
+            recordBtn.classList.add('recording');
+            showToast('🎤 Запись началась...');
+          } catch (err) {
+            console.error('Microphone access denied:', err);
+            showToast('❌ Нет доступа к микрофону');
+          }
+        };
+
+        // Cancel voice recording
+        if (voiceCancelBtn) {
+          voiceCancelBtn.onclick = () => {
+            if (commentVoiceSession) {
+              commentVoiceSession.cancelled = true;
+              try { commentVoiceSession.recorder.stop(); } catch (_) {}
+            }
+            voiceBar.style.display = 'none';
+            recordBtn.classList.remove('recording');
+          };
+        }
+
+        // Send voice recording
+        if (voiceSendBtn) {
+          voiceSendBtn.onclick = () => {
+            if (commentVoiceSession) {
+              try { commentVoiceSession.recorder.stop(); } catch (_) {}
+            }
           };
         }
       }
@@ -12623,11 +12766,12 @@
         }
 
         // Send voice if recorded
-        console.log('Send button clicked, pendingVoiceBlob:', pendingVoiceBlob?.size, 'mediaEnabled:', mediaEnabled);
+        console.log('Send button clicked, pendingVoiceBlob:', pendingVoiceBlob?.blob?.size, 'mediaEnabled:', mediaEnabled);
         if (pendingVoiceBlob && mediaEnabled) {
           console.log('Sending voice message...');
-          const dataUrl = await blobToBase64(pendingVoiceBlob);
-          await sendMessage('voice', dataUrl, {
+          const dataUrl = await blobToBase64(pendingVoiceBlob.blob);
+          const voiceContent = JSON.stringify({ data: dataUrl, duration: pendingVoiceBlob.duration });
+          await sendMessage('voice', voiceContent, {
             replyTo: replyTo,
             toGroupId: linkedGroupId
           });
@@ -12936,135 +13080,9 @@
           row.appendChild(body);
           commentsList.appendChild(row);
 
-          // Render nested replies
+          // Render nested replies with collapsible functionality
           if (replies && replies.length > 0) {
-            const repliesContainer = document.createElement('div');
-            repliesContainer.style.cssText = 'margin-left:46px;margin-top:4px';
-            replies.forEach(reply => {
-              const replyRow = document.createElement('div');
-              replyRow.style.cssText = 'display:flex;gap:8px;padding:8px;margin-bottom:4px;background:var(--bg1);border-radius:8px;align-items:flex-start';
-              const replyAv = document.createElement('div');
-              replyAv.style.cssText = 'width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--bg4)';
-              const replyAuthor = contacts.find(c => normUid(c.uuid) === normUid(reply.from));
-              const replyAuthorName = replyAuthor?.nickname || reply.from.slice(0, 6);
-              const replyAuthorAv = replyAuthor?.avatar || '';
-              renderAvatar(replyAv, replyAuthorAv, replyAuthorName);
-              bindMiniProfileAvatar(replyAv, reply.from);
-
-              const replyBody = document.createElement('div');
-              replyBody.style.cssText = 'min-width:0;flex:1';
-              const replyName = document.createElement('div');
-              replyName.style.cssText = 'color:var(--accent);font-weight:600;margin-bottom:2px;font-size:12px';
-              replyName.textContent = replyAuthorName;
-              const replyContent = document.createElement('div');
-              replyContent.style.cssText = 'color:var(--text);word-break:break-word';
-
-              // Render different message types for replies
-              if (reply.type === 'text') {
-                replyContent.style.whiteSpace = 'pre-wrap';
-                replyContent.textContent = reply.content || '';
-              } else if (reply.type === 'image' && reply.content) {
-                // FIX: Extract data from JSON format for nested reply images
-                let imgSrc = reply.content;
-                try {
-                  if (typeof reply.content === 'string') {
-                    const parsed = JSON.parse(reply.content);
-                    if (parsed.data) imgSrc = parsed.data;
-                  } else if (typeof reply.content === 'object' && reply.content.data) {
-                    imgSrc = reply.content.data;
-                  }
-                } catch (e) {}
-                const img = document.createElement('img');
-                img.src = imgSrc;
-                img.style.cssText = 'max-width:150px;max-height:100px;border-radius:6px;cursor:pointer';
-                img.onclick = () => window.open(imgSrc, '_blank');
-                img.oncontextmenu = (e) => {
-                  e.preventDefault();
-                  showCommentImageContextMenu(e, reply, imgSrc, 'image');
-                };
-                replyContent.appendChild(img);
-              } else if (reply.type === 'video' && reply.content) {
-                // FIX: Extract data from JSON format for nested reply videos
-                let videoSrc = reply.content;
-                try {
-                  if (typeof reply.content === 'string') {
-                    const parsed = JSON.parse(reply.content);
-                    if (parsed.data) videoSrc = parsed.data;
-                  } else if (typeof reply.content === 'object' && reply.content.data) {
-                    videoSrc = reply.content.data;
-                  }
-                } catch (e) {}
-                const video = document.createElement('video');
-                video.src = videoSrc;
-                video.controls = true;
-                video.style.cssText = 'max-width:150px;max-height:100px;border-radius:6px';
-                video.oncontextmenu = (e) => {
-                  e.preventDefault();
-                  showCommentImageContextMenu(e, reply, videoSrc, 'video');
-                };
-                replyContent.appendChild(video);
-              } else if (reply.type === 'voice' && reply.content) {
-                const audioContainer = document.createElement('div');
-                audioContainer.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)';
-                audioContainer.innerHTML = `
-                  <button type="button" style="width:24px;height:24px;border-radius:50%;background:var(--accent);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center">
-                    <svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                  </button>
-                  <div style="flex:1;height:2px;background:var(--border2);border-radius:1px;overflow:hidden">
-                    <div style="width:0%;height:100%;background:var(--accent)"></div>
-                  </div>
-                  <span style="font-size:10px;color:var(--text2)">0:00</span>
-                `;
-                replyContent.appendChild(audioContainer);
-              } else {
-                replyContent.textContent = reply.content || '';
-              }
-
-              const replyTime = document.createElement('div');
-              replyTime.style.cssText = 'color:var(--text3);font-size:10px;margin-top:2px';
-              replyTime.textContent = fmtTime(reply.ts);
-
-              const replyActions = document.createElement('div');
-              replyActions.style.cssText = 'display:flex;gap:6px;margin-top:4px';
-
-              const replyReactBtn = document.createElement('button');
-              replyReactBtn.type = 'button';
-              replyReactBtn.style.cssText = 'width:24px;height:24px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
-              replyReactBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
-              replyReactBtn.title = 'Реакции';
-              replyReactBtn.onclick = (e) => showCommentReactionPicker(reply, replyReactBtn);
-
-              const replyMenuBtn = document.createElement('button');
-              replyMenuBtn.type = 'button';
-              replyMenuBtn.style.cssText = 'width:24px;height:24px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
-              replyMenuBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>';
-              replyMenuBtn.title = 'Меню';
-              replyMenuBtn.onclick = (e) => {
-                e.stopPropagation();
-                showCommentContextMenu(e, reply, replyAuthorName);
-              };
-
-              replyActions.appendChild(replyReactBtn);
-              replyActions.appendChild(replyMenuBtn);
-
-              replyBody.appendChild(replyName);
-              replyBody.appendChild(replyContent);
-
-              // Add reactions for nested replies
-              if (reply.reactions && Object.keys(reply.reactions).length > 0) {
-                const replyReactionsEl = document.createElement('div');
-                replyReactionsEl.className = 'msg-reactions';
-                replyReactionsEl.style.cssText = 'display:flex;gap:4px;margin-top:4px;flex-wrap:wrap';
-                renderReactionChips(replyReactionsEl, reply, true);
-                replyBody.appendChild(replyReactionsEl);
-              }
-
-              replyBody.appendChild(replyActions);
-              replyRow.appendChild(replyAv);
-              replyRow.appendChild(replyBody);
-              repliesContainer.appendChild(replyRow);
-            });
-            commentsList.appendChild(repliesContainer);
+            renderCollapsibleReplies(replies, commentsList, comment);
           }
         }
       });
@@ -13499,6 +13517,27 @@
     }
 
     async function addCommentReaction(comment, emoji, remove = false) {
+      // Check reaction limit (max 3 per user)
+      const REACTION_LIMIT = 3;
+      const me = normUid(myProfile.uuid);
+      if (!comment.reactions) comment.reactions = {};
+
+      // Count user's current reactions
+      let userReactionCount = 0;
+      let alreadyReacted = false;
+      for (const [e, users] of Object.entries(comment.reactions)) {
+        if (users && users.some(u => normUid(u) === me)) {
+          userReactionCount++;
+          if (e === emoji) alreadyReacted = true;
+        }
+      }
+
+      // If adding new reaction and limit reached
+      if (!remove && !alreadyReacted && userReactionCount >= REACTION_LIMIT) {
+        showToast(`❌ Максимум ${REACTION_LIMIT} реакции`);
+        return;
+      }
+
       // Send reaction to server
       sendToServer('message-reaction', {
         to: currentCommentsGroupId,
@@ -13509,8 +13548,6 @@
       });
 
       // FIX: Update local state immediately (like regular message reactions)
-      if (!comment.reactions) comment.reactions = {};
-      const me = normUid(myProfile.uuid);
       const list = comment.reactions[emoji] || [];
 
       if (remove) {
