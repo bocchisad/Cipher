@@ -1423,7 +1423,7 @@ body.use-gradients{
         <button type="button" id="closeInfoPanelBtn" class="icon-btn close-info" title="Закрыть" style="position:absolute;top:16px;right:16px">
           <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
-        <button type="button" id="infoPanelEncryptionVerifyBtn" class="icon-btn" title="Проверить шифрование" style="position:absolute;top:16px;right:56px">
+        <button type="button" id="infoPanelEncryptionVerifyBtn" class="icon-btn" title="Проверить шифрование" style="position:absolute;top:16px;right:48px">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
         </button>
         <div class="big-av" id="infoBigAv"></div>
@@ -6033,19 +6033,43 @@ function appendAlbum(msgs, area, skipAnim = false) {
     }
 
     if (m.type === 'image') {
+      let imgSrc = m.content;
+      // Extract data if content is an object (new format with caption)
+      try {
+        if (typeof m.content === 'string') {
+          const parsed = JSON.parse(m.content);
+          if (parsed.data) imgSrc = parsed.data;
+        } else if (typeof m.content === 'object' && m.content.data) {
+          imgSrc = m.content.data;
+        }
+      } catch (e) {
+        // Keep original content if parsing fails
+      }
       const img = document.createElement('img');
       img.className = 'msg-img';
-      img.src = m.content;
+      img.src = imgSrc;
       img.onclick = () => {
-        const startIdx = albumImages.indexOf(m.content);
-        openLightbox(m.content, albumImages, Math.max(0, startIdx));
+        const startIdx = albumImages.indexOf(imgSrc);
+        openLightbox(imgSrc, albumImages, Math.max(0, startIdx));
       };
       img.alt = 'Изображение';
       mediaGroup.appendChild(img);
     } else if (m.type === 'video') {
+      let videoSrc = m.content;
+      // Extract data if content is an object (new format with caption)
+      try {
+        if (typeof m.content === 'string') {
+          const parsed = JSON.parse(m.content);
+          if (parsed.data) videoSrc = parsed.data;
+        } else if (typeof m.content === 'object' && m.content.data) {
+          videoSrc = m.content.data;
+        }
+      } catch (e) {
+        // Keep original content if parsing fails
+      }
       const video = document.createElement('video');
       video.className = 'msg-video';
-      video.src = m.content;
+      video.src = videoSrc;
       video.controls = true;
       mediaGroup.appendChild(video);
     }
@@ -6253,7 +6277,20 @@ function renderMediaAlbum() {
   // Create media group container
   const mediaGroup = document.createElement('div');
   mediaGroup.className = 'media-group';
-  const albumImages = pendingMediaGroup.filter((x) => x.type === 'image').map((x) => x.content);
+  // Extract image URLs for lightbox (handle both string and object format)
+  const albumImages = pendingMediaGroup.filter((x) => x.type === 'image').map((x) => {
+    try {
+      if (typeof x.content === 'string') {
+        const parsed = JSON.parse(x.content);
+        return parsed.data || x.content;
+      } else if (typeof x.content === 'object' && x.content.data) {
+        return x.content.data;
+      }
+    } catch (e) {
+      // Keep original content if parsing fails
+    }
+    return x.content;
+  });
   
   // Determine grid layout based on count
   const count = pendingMediaGroup.length;
@@ -6286,19 +6323,43 @@ function renderMediaAlbum() {
     }
     
     if (m.type === 'image') {
+      let imgSrc = m.content;
+      // Extract data if content is an object (new format with caption)
+      try {
+        if (typeof m.content === 'string') {
+          const parsed = JSON.parse(m.content);
+          if (parsed.data) imgSrc = parsed.data;
+        } else if (typeof m.content === 'object' && m.content.data) {
+          imgSrc = m.content.data;
+        }
+      } catch (e) {
+        // Keep original content if parsing fails
+      }
       const img = document.createElement('img');
       img.className = 'msg-img';
-      img.src = m.content;
+      img.src = imgSrc;
       img.onclick = () => {
-        const startIdx = albumImages.indexOf(m.content);
-        openLightbox(m.content, albumImages, Math.max(0, startIdx));
+        const startIdx = albumImages.indexOf(imgSrc);
+        openLightbox(imgSrc, albumImages, Math.max(0, startIdx));
       };
       img.alt = 'Изображение';
       mediaGroup.appendChild(img);
     } else if (m.type === 'video') {
+      let videoSrc = m.content;
+      // Extract data if content is an object (new format with caption)
+      try {
+        if (typeof m.content === 'string') {
+          const parsed = JSON.parse(m.content);
+          if (parsed.data) videoSrc = parsed.data;
+        } else if (typeof m.content === 'object' && m.content.data) {
+          videoSrc = m.content.data;
+        }
+      } catch (e) {
+        // Keep original content if parsing fails
+      }
       const video = document.createElement('video');
       video.className = 'msg-video';
-      video.src = m.content;
+      video.src = videoSrc;
       video.controls = true;
       mediaGroup.appendChild(video);
     }
@@ -6489,10 +6550,20 @@ function appendMessage(msg, skipAnim = false){
   } else if(msg.type==='image'){
     let imgSrc = msg.content;
     let caption = msg.caption;
-    // Extract data and caption if content is an object
-    if (typeof msg.content === 'object' && msg.content.data) {
-      imgSrc = msg.content.data;
-      caption = msg.content.caption || caption;
+    // Extract data and caption if content is an object (new format with caption)
+    try {
+      if (typeof msg.content === 'string') {
+        const parsed = JSON.parse(msg.content);
+        if (parsed.data) {
+          imgSrc = parsed.data;
+          caption = parsed.caption || caption;
+        }
+      } else if (typeof msg.content === 'object' && msg.content.data) {
+        imgSrc = msg.content.data;
+        caption = msg.content.caption || caption;
+      }
+    } catch (e) {
+      // Keep original content if parsing fails
     }
     const img=document.createElement('img');
     img.className='msg-img';
@@ -6512,10 +6583,20 @@ function appendMessage(msg, skipAnim = false){
   } else if(msg.type==='video'){
     let videoSrc = msg.content;
     let caption = msg.caption;
-    // Extract data and caption if content is an object
-    if (typeof msg.content === 'object' && msg.content.data) {
-      videoSrc = msg.content.data;
-      caption = msg.content.caption || caption;
+    // Extract data and caption if content is an object (new format with caption)
+    try {
+      if (typeof msg.content === 'string') {
+        const parsed = JSON.parse(msg.content);
+        if (parsed.data) {
+          videoSrc = parsed.data;
+          caption = parsed.caption || caption;
+        }
+      } else if (typeof msg.content === 'object' && msg.content.data) {
+        videoSrc = msg.content.data;
+        caption = msg.content.caption || caption;
+      }
+    } catch (e) {
+      // Keep original content if parsing fails
     }
     const video=document.createElement('video');
     video.className='msg-video';
@@ -6536,7 +6617,10 @@ function appendMessage(msg, skipAnim = false){
       let fd = JSON.parse(msg.content);
       let caption = msg.caption;
       // Extract caption if it's in the file data object
-      if (typeof msg.content === 'object' && msg.content.data) {
+      if (typeof msg.content === 'string') {
+        fd = JSON.parse(msg.content);
+        caption = fd.caption || caption;
+      } else if (typeof msg.content === 'object' && msg.content.data) {
         fd = JSON.parse(msg.content.data);
         caption = msg.content.caption || caption;
       } else if (fd.caption) {
