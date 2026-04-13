@@ -118,7 +118,7 @@ function generateUserToken(uuid) {
 setInterval(() => {
   for (const [uuid, oldToken] of userTokens) {
     const newToken = crypto.randomBytes(32).toString('hex');
-    tokenRegistry.delete(oldToken);
+    // PRIVACY: Keep old token for queued messages, add new token for new messages
     tokenRegistry.set(newToken, uuid);
     userTokens.set(uuid, newToken);
     // Notify user of new token
@@ -602,6 +602,9 @@ function handleRegister(ws, msg, ip, setUserId) {
     dbModule.updatePublicKeys(uuid, pub_ecdh || '', pub_ecdsa || '');
   }
 
+  // PRIVACY: Generate token for anonymous routing on registration
+  generateUserToken(uuid);
+
   console.log(`✅ Registered: ${user.nickname} (${uuid.substring(0, 8)}...)`);
   safeWsSend(ws, { type: 'register-ok', uuid, nickname: user.nickname, avatar: user.avatar });
 }
@@ -703,6 +706,9 @@ function handleLogin(ws, msg, setUserId, ip) {
   setUserId(uidCanon);
   saveUserToStore(updatedUser);
 
+  // PRIVACY: Generate token for anonymous routing on login
+  generateUserToken(uidCanon);
+
   const onlineUsers = Array.from(users.values())
     .filter(u => u.ws && u.ws.readyState === WebSocket.OPEN)
     .map(u => ({ uuid: u.uuid, nickname: u.nickname, avatar: u.avatar }));
@@ -711,7 +717,7 @@ function handleLogin(ws, msg, setUserId, ip) {
   if (pending.length > 0) {
     console.log(`📨 Delivering ${pending.length} queued messages to ${user.nickname}`);
     pending.forEach(qMsg => {
-      if (qMsg.type && ['msg', 'rtc-offer', 'rtc-answer', 'rtc-ice', 'edit-msg', 'edit-message'].includes(qMsg.type)) {
+      if (qMsg.type && ['msg', 'rtc-offer', 'rtc-answer', 'rtc-ice', 'edit-msg', 'edit-message', 'anonymous-msg'].includes(qMsg.type)) {
         safeWsSend(ws, { type: qMsg.type, data: qMsg });
       } else {
         safeWsSend(ws, { type: 'message', data: qMsg });
@@ -846,16 +852,17 @@ function handleAnonymousMessage(data) {
     expiresAt: Date.now() + (24 * 60 * 60 * 1000) // 24h expiry
   };
 
-  // Route to recipient via token lookup (tokens map to UUIDs)
-  const targetUuid = tokenRegistry.get(data.recipientToken);
-  if (targetUuid) {
-    const toUser = getUserLive(targetUuid);
-    if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
-      safeWsSend(toUser.ws, { type: 'anonymous-msg', data: anonymousMessage });
-    } else {
-      // Queue with token instead of UUID
-      enqueueAnonymousMessage(anonymousMessage, targetUuid);
-    }
+  // recipientToken is actually the recipientUuid (client sends UUID, server converts to token internally)
+  const recipientUuid = normUid(data.recipientToken);
+  const toUser = getUserLive(recipientUuid);
+  if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
+    // Get recipient's token for privacy
+    const recipientToken = userTokens.get(recipientUuid);
+    anonymousMessage.recipientToken = recipientToken || data.recipientToken;
+    safeWsSend(toUser.ws, { type: 'anonymous-msg', data: anonymousMessage });
+  } else {
+    // Queue with UUID instead of token
+    enqueueAnonymousMessage(anonymousMessage, recipientUuid);
   }
 
   console.log(`📦 Anonymous message routed (sender unknown)`);
@@ -1573,10 +1580,15 @@ function handleClearAllData(uuid, ws) {
 // Relay messages between users for history sync
 function handleRelayMessage(fromUuid, data) {
   if (!data?.to || !data?.msg) return;
-  
+
   const toUuid = normUid(data.to);
   const msg = data.msg;
-  
+
+  // PRIVACY: Add time bucket to relayed message
+  if (msg && !msg.timeBucket) {
+    msg.timeBucket = getTimeBucket();
+  }
+
   // Relay the message to the target user
   const toUser = getUserLive(toUuid);
   if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
@@ -1591,10 +1603,10 @@ function handleRelayMessage(fromUuid, data) {
 // Blind router for edit messages - server never parses encrypted content
 function handleEditMessage(fromUuid, data) {
   if (!data?.to || !data?.originalTs) return;
-  
+
   const toUuid = normUid(data.to);
   const originalMsgId = data.originalMsgId || `${fromUuid}:${Number(data.originalTs)}`;
-  
+
   // Check if this is an E2EE edit (has encrypted payload)
   if (data.payload && data.iv && data.signature) {
     // Blind router: just forward the encrypted payload
@@ -1607,7 +1619,9 @@ function handleEditMessage(fromUuid, data) {
       signature: data.signature,
       originalTs: data.originalTs,
       originalMsgId,
-      ts: data.ts || Date.now()
+      ts: data.ts || Date.now(),
+      // PRIVACY: Use coarse-grained time bucket instead of precise timestamp
+      timeBucket: getTimeBucket()
     };
     
     const toUser = getUserLive(toUuid);
