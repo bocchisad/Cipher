@@ -3817,15 +3817,22 @@ async function handleIncomingReaction(data) {
 
   // Update comment reactions if the message is a comment and comments view is open
   if (currentCommentsPost && currentCommentsGroupId === chatTarget) {
-    console.log('Reloading comments due to reaction');
-    await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+    // Check if this reaction is on a comment for the current post
+    const isCommentForCurrentPost = m.replyTo && m.replyTo.ts === currentCommentsPost.ts;
+    if (isCommentForCurrentPost) {
+      console.log('Reloading comments due to reaction on comment for current post');
+      await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+    }
   }
 
   // Also check if this is a comment in a channel's linked group
   const channel = contacts.find(ch => ch.kind === 'channel' && normUid(ch.linkedGroupId) === normUid(chatTarget));
   if (channel && currentCommentsPost && currentCommentsGroupId === chatTarget) {
-    console.log('Reloading comments due to channel reaction');
-    await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+    const isCommentForCurrentPost = m.replyTo && m.replyTo.ts === currentCommentsPost.ts;
+    if (isCommentForCurrentPost) {
+      console.log('Reloading comments due to channel reaction on comment for current post');
+      await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+    }
   }
 }
 
@@ -6683,6 +6690,8 @@ let pendingCommentMediaLastTs = 0;
 
 // ==================== COMMENT MEDIA ALBUM GROUPING ====================
 async function queueCommentMediaForAlbum(comment, commentsList) {
+  console.log('queueCommentMediaForAlbum:', comment.ts, 'reactions:', comment.reactions);
+
   const mediaGroupId = currentCommentsGroupId || '';
   const mediaFrom = normUid(comment.from || '');
   const mediaTs = Number(comment.ts || Date.now());
@@ -6847,8 +6856,8 @@ function renderCommentMediaAlbum(commentsList) {
   reactBtn.style.cssText = 'width:28px;height:28px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
   reactBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
   reactBtn.title = 'Реакции';
-  reactBtn.onclick = () => {
-    showCommentReactionPicker(pendingCommentMediaGroup[0]);
+  reactBtn.onclick = (e) => {
+    showCommentReactionPicker(pendingCommentMediaGroup[0], reactBtn);
   };
 
   // Menu button
@@ -6860,7 +6869,8 @@ function renderCommentMediaAlbum(commentsList) {
   menuBtn.title = 'Меню';
   menuBtn.onclick = (e) => {
     e.stopPropagation();
-    showCommentContextMenu(e, pendingCommentMediaGroup[0], authorName);
+    const comment = pendingCommentMediaGroup[0];
+    showCommentContextMenu(e, comment, authorName);
   };
 
   actionsEl.appendChild(replyBtn);
@@ -6869,6 +6879,7 @@ function renderCommentMediaAlbum(commentsList) {
   body.appendChild(actionsEl);
 
   // Add reactions if any
+  console.log('Rendering media album reactions:', pendingCommentMediaGroup[0].ts, pendingCommentMediaGroup[0].reactions);
   if (pendingCommentMediaGroup[0].reactions && Object.keys(pendingCommentMediaGroup[0].reactions).length > 0) {
     const reactionsEl = document.createElement('div');
     reactionsEl.className = 'msg-reactions';
@@ -7580,6 +7591,11 @@ async function sendCommentReactionToggle(comment, emoji) {
 
   // Save to database
   await dbPut('messages', dbComment);
+
+  // Update the original comment object with the new reactions
+  comment.reactions = dbComment.reactions;
+
+  console.log('Updated comment.reactions:', comment.ts, comment.reactions);
 
   // Re-render comments
   if (currentCommentsPost && currentCommentsGroupId) {
@@ -12279,7 +12295,7 @@ async function openCommentsView(postMsg, linkedGroupId) {
         await dbPut('messages', comment);
       }
       window.editingComment = null;
-      sendBtn.textContent = 'Отправить';
+      sendBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
       commentsInput.placeholder = 'Написать комментарий...';
       commentsInput.value = '';
       updateCommentsCancelButton();
@@ -12362,7 +12378,7 @@ async function openCommentsView(postMsg, linkedGroupId) {
     cancelBtn.onclick = () => {
       if (window.editingComment) {
         window.editingComment = null;
-        sendBtn.textContent = 'Отправить';
+        sendBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
         commentsInput.placeholder = 'Написать комментарий...';
         commentsInput.value = '';
       }
@@ -12372,14 +12388,6 @@ async function openCommentsView(postMsg, linkedGroupId) {
       }
       updateCommentsCancelButton();
     };
-  }
-
-  // Function to update cancel button visibility
-  function updateCommentsCancelButton() {
-    const cancelBtn = document.getElementById('commentsCancelBtn');
-    if (cancelBtn) {
-      cancelBtn.style.display = (window.editingComment || window.replyingToComment) ? 'flex' : 'none';
-    }
   }
 
   // Enter key handler
@@ -12423,8 +12431,9 @@ async function loadComments(groupId, postTs) {
   const msgs = await dbGetByIndex('messages', 'chatId', normUid(groupId));
 
   // Debug log for reactions in loaded messages
-  console.log('Loaded messages for comments:', msgs.length);
+  console.log('Loaded messages for comments:', msgs.length, 'postTs:', postTs);
   msgs.forEach(m => {
+    console.log('Message:', m.ts, 'replyTo:', m.replyTo, 'reactions:', m.reactions);
     if (m.reactions && Object.keys(m.reactions).length > 0) {
       console.log('Message with reactions:', m.ts, m.reactions);
     }
@@ -12433,7 +12442,6 @@ async function loadComments(groupId, postTs) {
   // Filter comments for this post (direct replies to post)
   const directComments = msgs.filter(m =>
     m.replyTo &&
-    normUid(m.replyTo.from) === normUid(currentCommentsPost.from) &&
     m.replyTo.ts === postTs
   ).sort((a, b) => a.ts - b.ts);
 
@@ -12586,8 +12594,8 @@ async function loadComments(groupId, postTs) {
       reactBtn.style.cssText = 'width:28px;height:28px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
       reactBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
       reactBtn.title = 'Реакции';
-      reactBtn.onclick = () => {
-        showCommentReactionPicker(comment);
+      reactBtn.onclick = (e) => {
+        showCommentReactionPicker(comment, reactBtn);
       };
 
       // Menu button
@@ -12612,6 +12620,7 @@ async function loadComments(groupId, postTs) {
       body.appendChild(actionsEl);
 
       // Display reactions if present
+      console.log('Rendering comment reactions:', comment.ts, comment.reactions);
       if (comment.reactions && Object.keys(comment.reactions).length > 0) {
         const reactionsEl = document.createElement('div');
         reactionsEl.className = 'msg-reactions';
@@ -12691,7 +12700,7 @@ async function loadComments(groupId, postTs) {
           replyReactBtn.style.cssText = 'width:24px;height:24px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
           replyReactBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
           replyReactBtn.title = 'Реакции';
-          replyReactBtn.onclick = () => showCommentReactionPicker(reply);
+          replyReactBtn.onclick = (e) => showCommentReactionPicker(reply, replyReactBtn);
 
           const replyMenuBtn = document.createElement('button');
           replyMenuBtn.type = 'button';
@@ -12736,6 +12745,14 @@ async function loadComments(groupId, postTs) {
   if (chForCache && currentCommentsPost) {
     setChannelCommentCount(chForCache.uuid, currentCommentsPost.from, postTs, comments.length);
     refreshCommentLabelsIfChannelOpen(chForCache.uuid);
+  }
+}
+
+// Function to update cancel button visibility
+function updateCommentsCancelButton() {
+  const cancelBtn = document.getElementById('commentsCancelBtn');
+  if (cancelBtn) {
+    cancelBtn.style.display = (window.editingComment || window.replyingToComment) ? 'flex' : 'none';
   }
 }
 
@@ -12819,7 +12836,9 @@ function handleCommentContextMenuAction(action, comment, authorName) {
         inp.focus();
         inp.placeholder = 'Изменить комментарий...';
         const sendBtn = document.getElementById('commentsSendBtn');
-        if (sendBtn) sendBtn.textContent = 'Сохранить';
+        if (sendBtn) {
+          sendBtn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>';
+        }
         updateCommentsCancelButton();
       }
       break;
