@@ -9745,16 +9745,19 @@ function playMiniProfileTrack(track, index, allTracks) {
   currentMiniProfileTrackIndex = index;
   miniProfileTracksQueue = allTracks;
   
-  // Use global audio player if available
-  if (window.globalAudio && window.playGlobalAudio) {
+  // Use global audio player
+  if (typeof loadAndPlayGlobalAudio === 'function') {
     const playlist = allTracks.map((t, i) => ({
       url: t.dataUrl,
       title: t.title || 'Без названия',
       artist: t.artist || '',
       from: miniProfileTargetUuid,
-      ts: t.addedAt || Date.now()
+      ts: t.addedAt || Date.now(),
+      type: 'track'
     }));
-    window.playGlobalAudio(playlist, index);
+    window.globalAudioPlaylist = playlist;
+    window.globalAudioIndex = index;
+    loadAndPlayGlobalAudio(playlist[index]);
     showToast(`▶ ${track.title || 'Трек'}`);
   } else {
     // Fallback - create temporary audio
