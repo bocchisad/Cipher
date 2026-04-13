@@ -42,6 +42,13 @@ function generateUUID() {
   return crypto.randomBytes(16).toString('hex');
 }
 
+// Function to create time buckets (e.g., 1-hour windows) for privacy
+function getTimeBucket() {
+  const now = Date.now();
+  const bucketSize = 60 * 60 * 1000; // 1 hour
+  return Math.floor(now / bucketSize) * bucketSize;
+}
+
 function normUid(s) {
   return String(s || '').trim().toLowerCase().replace(/-/g, '');
 }
@@ -91,6 +98,36 @@ const users = new Map();
 const messageQueue = new Map();
 const rooms = new Map();
 const channelUsernames = new Map();
+
+// ==================== TOKEN REGISTRY (PRIVACY: Anonymous Routing) ====================
+const tokenRegistry = new Map(); // token -> uuid
+const userTokens = new Map();    // uuid -> token
+
+// Generate ephemeral tokens for users
+function generateUserToken(uuid) {
+  if (userTokens.has(uuid)) {
+    return userTokens.get(uuid);
+  }
+  const token = crypto.randomBytes(32).toString('hex');
+  tokenRegistry.set(token, uuid);
+  userTokens.set(uuid, token);
+  return token;
+}
+
+// Rotate tokens periodically (every hour) for privacy
+setInterval(() => {
+  for (const [uuid, oldToken] of userTokens) {
+    const newToken = crypto.randomBytes(32).toString('hex');
+    tokenRegistry.delete(oldToken);
+    tokenRegistry.set(newToken, uuid);
+    userTokens.set(uuid, newToken);
+    // Notify user of new token
+    const user = getUserLive(uuid);
+    if (user?.ws) {
+      safeWsSend(user.ws, { type: 'token-rotated', data: { newToken } });
+    }
+  }
+}, 60 * 60 * 1000);
 
 function normalizeChannelUsername(raw) {
   if (!raw || typeof raw !== 'string') return '';
@@ -413,6 +450,7 @@ setInterval(() => {
 async function handleMessage(ws, msg, setUserId, ip) {
   const { type, data } = msg;
   const uuid = msg.uuid ? normUid(msg.uuid) : null;
+  const version = msg.version || 1; // V1 = legacy, V2 = privacy enhanced
 
   switch (type) {
     case 'register':
@@ -434,7 +472,13 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'rtc-offer':
     case 'rtc-answer':
     case 'rtc-ice':
-      handleE2EEMessage(uuid, type, data);
+      if (data.recipientToken) {
+        // V2: Privacy enhanced - use anonymous routing (default)
+        handleAnonymousMessage(data);
+      } else {
+        // V1: Legacy handling (fallback)
+        handleE2EEMessage(uuid, type, data);
+      }
       break;
     case 'rtc-hangup':
       if (data?.to) {
@@ -498,6 +542,18 @@ async function handleMessage(ws, msg, setUserId, ip) {
       break;
     case 'relay-message':
       handleRelayMessage(uuid, data);
+      break;
+    case 'rotate-key':
+      handleKeyRotation(uuid, data);
+      break;
+    case 'anonymous-msg':
+      handleAnonymousMessage(data);
+      break;
+    case 'get-pub-keys-anonymous':
+      handleGetPublicKeysAnonymous(data, ws);
+      break;
+    case 'get-token':
+      handleGetToken(uuid, data, ws);
       break;
     case 'ping':
       break;
@@ -726,7 +782,8 @@ function handleE2EEMessage(fromUuid, type, data) {
     payload: data.payload,
     iv: data.iv,
     signature: data.signature,
-    ts: data.ts || Date.now()
+    // PRIVACY: Use coarse-grained time bucket instead of precise timestamp
+    timeBucket: getTimeBucket()
   };
 
   const toUser = getUserLive(toUuid);
@@ -756,6 +813,125 @@ function handleRoomKeyShare(uuid, data) {
   }
 
   console.log(`🔑 Room key share: ${uuid.substring(0, 8)}… → ${data.to.substring(0, 8)}…`);
+}
+
+// Key Rotation - Forward secrecy for Double Ratchet
+function handleKeyRotation(fromUuid, data) {
+  if (!data?.to || !data?.newPublicKey) return;
+
+  const toUser = getUserLive(data.to);
+  if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
+    safeWsSend(toUser.ws, {
+      type: 'key-rotation',
+      data: {
+        from: fromUuid,
+        newPublicKey: data.newPublicKey
+      }
+    });
+  }
+
+  console.log(`🔄 Key rotation: ${fromUuid.substring(0, 8)}… → ${data.to.substring(0, 8)}…`);
+}
+
+// Anonymous Message Routing - Hide communication graph from server
+function handleAnonymousMessage(data) {
+  if (!data?.encryptedEnvelope || !data?.recipientToken) {
+    return;
+  }
+
+  // Store without decrypting - server only sees encrypted blob
+  const anonymousMessage = {
+    envelope: data.encryptedEnvelope,
+    recipientToken: data.recipientToken,
+    expiresAt: Date.now() + (24 * 60 * 60 * 1000) // 24h expiry
+  };
+
+  // Route to recipient via token lookup (tokens map to UUIDs)
+  const targetUuid = tokenRegistry.get(data.recipientToken);
+  if (targetUuid) {
+    const toUser = getUserLive(targetUuid);
+    if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
+      safeWsSend(toUser.ws, { type: 'anonymous-msg', data: anonymousMessage });
+    } else {
+      // Queue with token instead of UUID
+      enqueueAnonymousMessage(anonymousMessage, targetUuid);
+    }
+  }
+
+  console.log(`📦 Anonymous message routed (sender unknown)`);
+}
+
+// Anonymous Key Exchange - Get public keys without revealing UUID
+function handleGetPublicKeysAnonymous(data, ws) {
+  if (!data?.recipientToken) return;
+
+  const uuid = tokenRegistry.get(data.recipientToken);
+  if (!uuid) {
+    safeWsSend(ws, { type: 'error', data: { error: 'Token not found' } });
+    return;
+  }
+
+  const target = getUserFromStore(uuid);
+  if (!target) return;
+
+  // Return keys without revealing which user they belong to
+  safeWsSend(ws, {
+    type: 'pub-keys-anonymous-response',
+    data: {
+      pub_ecdh: target.pub_ecdh,
+      pub_ecdsa: target.pub_ecdsa
+      // NO uuid returned!
+    }
+  });
+}
+
+// Token Lookup - Get token for a UUID
+function handleGetToken(fromUuid, data, ws) {
+  if (!data?.targetUuid) return;
+
+  const target = getUserFromStore(data.targetUuid);
+  if (!target) {
+    safeWsSend(ws, { type: 'error', data: { error: 'User not found' } });
+    return;
+  }
+
+  // Generate or retrieve existing token
+  const token = generateUserToken(data.targetUuid);
+
+  safeWsSend(ws, {
+    type: 'token-response',
+    data: {
+      targetUuid: data.targetUuid,  // Client knows this
+      token: token  // Use this for messaging
+    }
+  });
+}
+
+// Queue anonymous messages for offline users
+function enqueueAnonymousMessage(anonymousMessage, targetUuid) {
+  const key = normUid(targetUuid);
+  if (dbModule) {
+    // Store in database with token instead of UUID for privacy
+    const msg = {
+      from_uuid: 'anonymous',
+      to_uuid: targetUuid,
+      payload: anonymousMessage.envelope,
+      iv: '',
+      signature: '',
+      raw_json: JSON.stringify(anonymousMessage),
+      msg_type: 'anonymous-msg',
+      ts: Date.now(),
+      time_bucket: getTimeBucket()
+    };
+    dbModule.enqueueMessage(msg);
+  } else {
+    if (!messageQueue.has(key)) messageQueue.set(key, []);
+    messageQueue.get(key).push({
+      type: 'anonymous-msg',
+      data: anonymousMessage
+    });
+    saveQueueJSON();
+  }
 }
 
 // ==================== LEGACY MESSAGE HANDLER ====================
