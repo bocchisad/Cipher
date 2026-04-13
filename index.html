@@ -6064,7 +6064,20 @@ function appendAlbum(msgs, area, skipAnim = false) {
   bubble.className = 'bubble';
 
   const count = msgs.length;
-  const albumImages = msgs.filter((x) => x.type === 'image').map((x) => x.content);
+  // Extract only data strings for lightbox (handle both string and object format)
+  const albumImages = msgs.filter((x) => x.type === 'image').map((x) => {
+    try {
+      if (typeof x.content === 'string') {
+        const parsed = JSON.parse(x.content);
+        return parsed.data || x.content;
+      } else if (typeof x.content === 'object' && x.content.data) {
+        return x.content.data;
+      }
+    } catch (e) {
+      // Keep original content if parsing fails
+    }
+    return x.content;
+  });
   const mediaGroup = document.createElement('div');
   mediaGroup.className = 'media-group';
   if (count === 1) mediaGroup.classList.add('count-1');
@@ -6105,6 +6118,11 @@ function appendAlbum(msgs, area, skipAnim = false) {
       img.className = 'msg-img';
       img.src = imgSrc;
       img.onclick = () => {
+        // Ensure imgSrc is a string before passing to openLightbox
+        if (typeof imgSrc !== 'string') {
+          console.error('imgSrc is not a string:', imgSrc);
+          return;
+        }
         const startIdx = albumImages.indexOf(imgSrc);
         openLightbox(imgSrc, albumImages, Math.max(0, startIdx));
       };
@@ -6395,6 +6413,11 @@ function renderMediaAlbum() {
       img.className = 'msg-img';
       img.src = imgSrc;
       img.onclick = () => {
+        // Ensure imgSrc is a string before passing to openLightbox
+        if (typeof imgSrc !== 'string') {
+          console.error('imgSrc is not a string:', imgSrc);
+          return;
+        }
         const startIdx = albumImages.indexOf(imgSrc);
         openLightbox(imgSrc, albumImages, Math.max(0, startIdx));
       };
