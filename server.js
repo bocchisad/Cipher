@@ -662,7 +662,7 @@ function handleLogin(ws, msg, setUserId, ip) {
 
   console.log(`✅ Login: ${user.nickname} (${uidCanon.substring(0, 8)}...) [${users.size} users, ${onlineUsers.length} online]`);
 
-  safeWsSend(ws, { type: 'login-ok', uuid: uidCanon, nickname: user.nickname, avatar: user.avatar, users: onlineUsers });
+  safeWsSend(ws, { type: 'login-ok', uuid: uidCanon, nickname: user.nickname, avatar: user.avatar, bio: user.bio || '', tracks: user.tracks || [], attachedChannelId: user.attachedChannelId || '', users: onlineUsers });
   broadcast({ type: 'user-online', data: { uuid: uidCanon, nickname: user.nickname, avatar: user.avatar } }, uidCanon);
 }
 
@@ -945,8 +945,9 @@ function handleRoomAddMembers(fromUuid, data) {
 }
 
 function handleChannelSubscribe(fromUuid, data) {
-  if (!data?.channel || typeof data.channel !== 'string') return;
-  const ch = normalizeChannelUsername(data.channel);
+  const username = data?.username || data?.channel; // Accept both for compatibility
+  if (!username || typeof username !== 'string') return;
+  const ch = normalizeChannelUsername(username);
   const rid = channelUsernames.get(ch);
   if (!rid) {
     const u = getUserLive(fromUuid);
