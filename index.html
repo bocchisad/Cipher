@@ -12648,7 +12648,12 @@
               if (attachPreview) attachPreview.style.display = 'block';
               if (attachName) attachName.textContent = '🎤 Голосовое (' + duration + 'с)';
               if (attachSize) attachSize.textContent = formatFileSize(blob.size);
-              showToast('🎤 Голосовое записано, нажмите отправить');
+              // If autoSend flag is set, send immediately
+              if (commentVoiceSession?.autoSend) {
+                await sendPendingVoiceComment(linkedGroupId);
+              } else {
+                showToast('🎤 Голосовое записано, нажмите отправить');
+              }
               commentVoiceSession = null;
             };
 
@@ -12684,7 +12689,11 @@
         if (voiceSendBtn) {
           voiceSendBtn.onclick = () => {
             if (commentVoiceSession) {
+              commentVoiceSession.autoSend = true;
               try { commentVoiceSession.recorder.stop(); } catch (_) {}
+            } else if (pendingVoiceBlob) {
+              // Already recorded, just send
+              sendPendingVoiceComment(linkedGroupId);
             }
           };
         }
@@ -12709,12 +12718,47 @@
         attachRemove.onclick = () => {
           pendingAttachment = null;
           pendingVoiceBlob = null;
-          if (commentMediaRecorder && commentMediaRecorder.state !== 'inactive') {
-            commentMediaRecorder.stop();
-            commentMediaRecorder.stream.getTracks().forEach(track => track.stop());
+          // Cancel active recording if any
+          if (commentVoiceSession) {
+            commentVoiceSession.cancelled = true;
+            try { commentVoiceSession.recorder.stop(); } catch (_) {}
+            commentVoiceSession = null;
           }
+          if (voiceBar) voiceBar.style.display = 'none';
+          if (recordBtn) recordBtn.classList.remove('recording');
           if (attachPreview) attachPreview.style.display = 'none';
         };
+      }
+
+      // Helper to send pending voice comment
+      async function sendPendingVoiceComment(linkedGroupId) {
+        if (!pendingVoiceBlob) return;
+        const mediaEnabled = true; // Assume enabled for comments
+        console.log('Sending voice message from voice bar...');
+        const dataUrl = await blobToBase64(pendingVoiceBlob.blob);
+        const voiceContent = JSON.stringify({ data: dataUrl, duration: pendingVoiceBlob.duration });
+        // Build replyTo from currentCommentsPost
+        let replyTo = null;
+        if (currentCommentsPost) {
+          const contentHtml = currentCommentsPost.content || '';
+          replyTo = {
+            from: currentCommentsPost.from,
+            ts: currentCommentsPost.ts,
+            type: currentCommentsPost.type,
+            preview: (currentCommentsPost.type === 'text' ? String(currentCommentsPost.content || '').slice(0, 100) : contentHtml)
+          };
+        }
+        await sendMessage('voice', voiceContent, {
+          replyTo: replyTo,
+          toGroupId: linkedGroupId
+        });
+        pendingVoiceBlob = null;
+        if (attachPreview) attachPreview.style.display = 'none';
+        showToast('Голосовое отправлено');
+        // Reload comments to show new voice message
+        if (currentCommentsGroupId && currentCommentsPost) {
+          await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+        }
       }
 
       // Send button handler
