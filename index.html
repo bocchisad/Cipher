@@ -2960,11 +2960,15 @@ function handleServerMessage(msg) {
       break;
     case 'login-ok':
       console.log('✅ Login successful');
-      // Сервер присылает nickname/avatar в корне сообщения — не только в списке online
+      // Сервер присылает nickname/avatar/bio/tracks/attachedChannelId
       if (msg.nickname) {
         myProfile.nickname = msg.nickname;
         if (msg.avatar && isAvatarSafe(msg.avatar)) myProfile.avatar = msg.avatar;
         else if (msg.avatar) myProfile.avatar = '';
+        // Preserve profile fields from server (fix: settings were lost on refresh)
+        if (msg.bio !== undefined) myProfile.bio = msg.bio;
+        if (msg.tracks !== undefined) myProfile.tracks = msg.tracks;
+        if (msg.attachedChannelId !== undefined) myProfile.attachedChannelId = msg.attachedChannelId;
         dbPut('profile', { key: 'profile', ...myProfile }).catch(() => {});
       }
       renderSidebar();
@@ -8331,9 +8335,12 @@ async function doSend(){
   const hadFocus = document.activeElement === inp;
   if(!activeChat) return;
   if(!text && !attachmentQueue.length) return;
-  // FIX PC #3: If attachment queue and text, flush attachments first, then send text
-  if(attachmentQueue.length) await flushAttachmentQueue();
-  if(text) {
+  // FIX: Attach text to media in one message
+  if(attachmentQueue.length) {
+    await flushAttachmentQueue(text); // Pass text to attach to first media item
+    inp.value='';
+    inp.style.height='auto';
+  } else if(text) {
     await sendMessage('text', text);
     inp.value='';
     inp.style.height='auto';
@@ -8443,9 +8450,10 @@ function applyGradientPreference(enabled) {
 function initGradientPreference() {
   const el = document.getElementById('gradientToggle');
   if (!el) return;
-  let saved = false;
+  let saved = true; // Default to enabled
   try {
-    saved = localStorage.getItem('cipherUseGradients') === '1';
+    const val = localStorage.getItem('cipherUseGradients');
+    if (val !== null) saved = val === '1'; // Use saved value if exists
   } catch (_) {}
   el.checked = saved;
   applyGradientPreference(saved);
@@ -8568,7 +8576,9 @@ function openSettings(){
   refreshSettingsTracksList();
   
   // Refresh attached channel
-  refreshSettingsAttachedChannel();
+  if (typeof refreshSettingsAttachedChannel === 'function') {
+    refreshSettingsAttachedChannel();
+  }
   
   const gt = document.getElementById('gradientToggle');
   if (gt) {
@@ -9019,35 +9029,40 @@ function renderAttachQueue() {
   el.classList.toggle('active', attachmentQueue.length > 0);
 }
 
-async function sendOneFileFromQueue(item) {
+async function sendOneFileFromQueue(item, textCaption = '') {
   const f = item.file;
   if (f.type.startsWith('image/')) {
     const stripped = await processAvatar(f, 800);
     const b64 = await fileToBase64(stripped);
-    await sendMessage('image', b64);
+    // Include text caption if present
+    const content = textCaption ? { data: b64, caption: textCaption } : b64;
+    await sendMessage('image', content);
   } else if (f.type.startsWith('video/')) {
     if (f.size > 50 * 1024 * 1024) {
       showToast('Видео слишком большое (макс 50МБ)');
       return;
     }
     const b64 = await fileToBase64(f);
-    await sendMessage('video', b64);
+    const content = textCaption ? { data: b64, caption: textCaption } : b64;
+    await sendMessage('video', content);
   } else {
     if (f.size > 50 * 1024 * 1024) {
       showToast('Файл слишком большой (макс 50МБ)');
       return;
     }
     const b64 = await fileToBase64(f);
-    const fd = JSON.stringify({ name: f.name, size: f.size, data: b64 });
+    const fd = JSON.stringify({ name: f.name, size: f.size, data: b64, caption: textCaption || '' });
     await sendMessage('file', fd);
   }
 }
 
-async function flushAttachmentQueue() {
+async function flushAttachmentQueue(textCaption = '') {
   const copy = attachmentQueue.slice();
   for (const item of copy) {
     if (item.previewUrl) try { URL.revokeObjectURL(item.previewUrl); } catch (_) {}
-    await sendOneFileFromQueue(item);
+    // Only attach text to the first media item
+    const captionForItem = (item === copy[0]) ? textCaption : '';
+    await sendOneFileFromQueue(item, captionForItem);
   }
   attachmentQueue = [];
   renderAttachQueue();
@@ -11092,6 +11107,48 @@ async function openCommentsView(postMsg, linkedGroupId) {
   sendBtn.onclick = async () => {
     const text = commentsInput.value.trim();
     
+    // Handle editing comment
+    if (window.editingComment) {
+      await sendToServer('edit-message', {
+        to: linkedGroupId,
+        ts: window.editingComment.ts,
+        content: text
+      });
+      // Update locally
+      const msgs = await dbGetByIndex('messages', 'chatId', normUid(linkedGroupId));
+      const comment = msgs.find(m => m.ts === window.editingComment.ts);
+      if (comment) {
+        comment.content = text;
+        await dbPut('messages', comment);
+      }
+      window.editingComment = null;
+      sendBtn.textContent = 'Отправить';
+      commentsInput.placeholder = 'Написать комментарий...';
+      commentsInput.value = '';
+      await loadComments(linkedGroupId, postMsg.ts);
+      showToast('Комментарий изменён');
+      return;
+    }
+    
+    // Handle reply to comment
+    let replyTo = {
+      from: postMsg.from,
+      ts: postMsg.ts,
+      type: postMsg.type,
+      preview: (postMsg.type === 'text' ? String(postMsg.content || '').slice(0, 100) : contentHtml)
+    };
+    
+    if (window.replyingToComment) {
+      replyTo = {
+        from: window.replyingToComment.from,
+        ts: window.replyingToComment.ts,
+        type: window.replyingToComment.type,
+        preview: (window.replyingToComment.type === 'text' ? String(window.replyingToComment.content || '').slice(0, 100) : 'Комментарий')
+      };
+      window.replyingToComment = null;
+      commentsInput.placeholder = 'Написать комментарий...';
+    }
+    
     // Send media if attached
     if (pendingAttachment && mediaEnabled) {
       const file = pendingAttachment;
@@ -11102,13 +11159,13 @@ async function openCommentsView(postMsg, linkedGroupId) {
       if (type === 'file') {
         const content = JSON.stringify({ name: file.name, data: await fileToBase64(file) });
         await sendMessage(type, content, { 
-          replyTo: { from: postMsg.from, ts: postMsg.ts, type: postMsg.type, preview: contentHtml },
+          replyTo: replyTo,
           toGroupId: linkedGroupId 
         });
       } else {
         const dataUrl = await fileToBase64(file);
         await sendMessage(type, dataUrl, { 
-          replyTo: { from: postMsg.from, ts: postMsg.ts, type: postMsg.type, preview: contentHtml },
+          replyTo: replyTo,
           toGroupId: linkedGroupId 
         });
       }
@@ -11120,12 +11177,7 @@ async function openCommentsView(postMsg, linkedGroupId) {
     // Send text if provided
     if (text) {
       await sendMessage('text', text, { 
-        replyTo: {
-          from: postMsg.from,
-          ts: postMsg.ts,
-          type: postMsg.type,
-          preview: (postMsg.type === 'text' ? String(postMsg.content || '').slice(0, 100) : contentHtml)
-        },
+        replyTo: replyTo,
         toGroupId: linkedGroupId 
       });
     }
@@ -11157,11 +11209,40 @@ async function loadComments(groupId, postTs) {
   if (!commentsList || !currentCommentsPost) return;
   
   const msgs = await dbGetByIndex('messages', 'chatId', normUid(groupId));
-  const comments = msgs.filter(m => 
+  
+  // Filter comments for this post (direct replies to post)
+  const directComments = msgs.filter(m => 
     m.replyTo && 
     normUid(m.replyTo.from) === normUid(currentCommentsPost.from) &&
     m.replyTo.ts === postTs
   ).sort((a, b) => a.ts - b.ts);
+  
+  // Get all comments for nested reply lookup
+  const allComments = msgs.filter(m => m.replyTo).sort((a, b) => a.ts - b.ts);
+  
+  // Build comment tree
+  const commentTree = new Map();
+  directComments.forEach(c => commentTree.set(c.ts, { comment: c, replies: [] }));
+  
+  // Add nested replies
+  allComments.forEach(c => {
+    if (c.replyTo && c.replyTo.ts !== postTs) {
+      // This is a reply to another comment
+      const parentTs = c.replyTo.ts;
+      const parent = commentTree.get(parentTs);
+      if (parent) {
+        parent.replies.push(c);
+      } else {
+        // Parent not in tree, might be a nested reply to nested reply
+        // For simplicity, add as direct comment for now
+        if (!commentTree.has(c.ts)) {
+          commentTree.set(c.ts, { comment: c, replies: [] });
+        }
+      }
+    }
+  });
+  
+  const comments = Array.from(commentTree.values()).sort((a, b) => a.comment.ts - b.comment.ts);
   const chForCache = contacts.find((c) => normUid(c.uuid) === normUid(activeChat) && c.kind === 'channel');
   
   commentsList.innerHTML = '';
@@ -11178,7 +11259,8 @@ async function loadComments(groupId, postTs) {
     return;
   }
   
-  comments.forEach(comment => {
+  // Render comment tree
+  comments.forEach(({ comment, replies }) => {
     const row = document.createElement('div');
     row.className = 'comment-thread-row';
     row.style.cssText = 'display:flex;gap:10px;padding:10px 10px;margin-bottom:6px;border:1px solid var(--border);background:var(--bg2);font-size:13px;align-items:flex-start';
@@ -11218,11 +11300,23 @@ async function loadComments(groupId, postTs) {
         const fd = JSON.parse(comment.content);
         // Check if audio file
         if (fd.name && (fd.name.endsWith('.mp3') || fd.name.endsWith('.ogg') || fd.name.endsWith('.wav') || fd.name.endsWith('.m4a') || fd.name.endsWith('.webm'))) {
-          const audio = document.createElement('audio');
-          audio.src = fd.data;
-          audio.controls = true;
-          audio.style.cssText = 'width:200px;height:40px';
-          contentEl.appendChild(audio);
+          // Use global audio player
+          const playBtn = document.createElement('button');
+          playBtn.type = 'button';
+          playBtn.className = 'btn-ghost';
+          playBtn.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:var(--bg3);border:1px solid var(--border)';
+          playBtn.innerHTML = `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> ${fd.name}`;
+          playBtn.onclick = () => {
+            if (typeof loadAndPlayGlobalAudio === 'function') {
+              window.globalAudioPlaylist = [{ url: fd.data, title: fd.name, from: authorName, ts: comment.ts, type: 'track' }];
+              window.globalAudioIndex = 0;
+              loadAndPlayGlobalAudio(window.globalAudioPlaylist[0]);
+            } else {
+              const audio = new Audio(fd.data);
+              audio.play();
+            }
+          };
+          contentEl.appendChild(playBtn);
         } else {
           // Regular file
           const fileLink = document.createElement('a');
@@ -11242,17 +11336,303 @@ async function loadComments(groupId, postTs) {
     const timeEl = document.createElement('div');
     timeEl.style.cssText = 'color:var(--text3);font-size:11px;margin-top:4px';
     timeEl.textContent = fmtTime(comment.ts);
+    
+    // Action buttons for comments
+    const actionsEl = document.createElement('div');
+    actionsEl.style.cssText = 'display:flex;gap:8px;margin-top:6px';
+    
+    // Reply button
+    const replyBtn = document.createElement('button');
+    replyBtn.type = 'button';
+    replyBtn.className = 'icon-btn';
+    replyBtn.style.cssText = 'width:28px;height:28px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+    replyBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 10h4a1 1 0 001-1v-3a1 1 0 011-1h9a1 1 0 011 1v3a1 1 0 001 1h4a1 1 0 001-1v-8a1 1 0 00-1-1H3a1 1 0 00-1 1v8a1 1 0 001 1z"/><path d="M9 21h6"/><path d="M12 17v4"/></svg>';
+    replyBtn.title = 'Ответить';
+    replyBtn.onclick = () => {
+      // Set reply to comment
+      window.replyingToComment = comment;
+      const inp = document.getElementById('commentsInput');
+      if (inp) {
+        inp.focus();
+        inp.placeholder = `Ответить на комментарий ${authorName}...`;
+      }
+    };
+    
+    // Reactions button
+    const reactBtn = document.createElement('button');
+    reactBtn.type = 'button';
+    reactBtn.className = 'icon-btn';
+    reactBtn.style.cssText = 'width:28px;height:28px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+    reactBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
+    reactBtn.title = 'Реакции';
+    reactBtn.onclick = () => {
+      // Show emoji picker for reactions
+      showCommentReactionPicker(comment);
+    };
+    
+    // Menu button
+    const menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'icon-btn';
+    menuBtn.style.cssText = 'width:28px;height:28px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+    menuBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>';
+    menuBtn.title = 'Меню';
+    menuBtn.onclick = (e) => {
+      e.stopPropagation();
+      showCommentContextMenu(e, comment, authorName);
+    };
+    
+    actionsEl.appendChild(replyBtn);
+    actionsEl.appendChild(reactBtn);
+    actionsEl.appendChild(menuBtn);
+    
+    // Display reactions if present
+    if (comment.reactions && Object.keys(comment.reactions).length > 0) {
+      const reactionsEl = document.createElement('div');
+      reactionsEl.style.cssText = 'display:flex;gap:4px;margin-top:6px;flex-wrap:wrap';
+      Object.entries(comment.reactions).forEach(([emoji, users]) => {
+        if (users && users.length > 0) {
+          const rBadge = document.createElement('span');
+          rBadge.style.cssText = 'font-size:12px;padding:2px 6px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);cursor:pointer';
+          rBadge.textContent = `${emoji} ${users.length}`;
+          rBadge.onclick = () => {
+            // Toggle reaction
+            addCommentReaction(comment, emoji);
+          };
+          reactionsEl.appendChild(rBadge);
+        }
+      });
+      body.appendChild(reactionsEl);
+    }
+    
     body.appendChild(nameEl);
     body.appendChild(contentEl);
     body.appendChild(timeEl);
+    body.appendChild(actionsEl);
     row.appendChild(avWrap);
     row.appendChild(body);
     commentsList.appendChild(row);
+    
+    // Render nested replies
+    if (replies && replies.length > 0) {
+      const repliesContainer = document.createElement('div');
+      repliesContainer.style.cssText = 'margin-left:46px;margin-top:4px';
+      replies.forEach(reply => {
+        const replyRow = document.createElement('div');
+        replyRow.style.cssText = 'display:flex;gap:8px;padding:8px 8px;margin-bottom:4px;border:1px solid var(--border);background:var(--bg3);border-radius:8px;font-size:12px;align-items:flex-start';
+        const replyAv = document.createElement('div');
+        replyAv.style.cssText = 'width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--bg4)';
+        const replyAuthor = contacts.find(c => normUid(c.uuid) === normUid(reply.from));
+        const replyAuthorName = replyAuthor?.nickname || reply.from.slice(0, 6);
+        const replyAuthorAv = replyAuthor?.avatar || '';
+        renderAvatar(replyAv, replyAuthorAv, replyAuthorName);
+        bindMiniProfileAvatar(replyAv, reply.from);
+        
+        const replyBody = document.createElement('div');
+        replyBody.style.cssText = 'min-width:0;flex:1';
+        const replyName = document.createElement('div');
+        replyName.style.cssText = 'color:var(--accent);font-weight:600;margin-bottom:2px;font-size:12px';
+        replyName.textContent = replyAuthorName;
+        const replyContent = document.createElement('div');
+        replyContent.style.cssText = 'color:var(--text);word-break:break-word;white-space:pre-wrap';
+        replyContent.textContent = reply.content || '';
+        
+        replyBody.appendChild(replyName);
+        replyBody.appendChild(replyContent);
+        replyRow.appendChild(replyAv);
+        replyRow.appendChild(replyBody);
+        repliesContainer.appendChild(replyRow);
+      });
+      commentsList.appendChild(repliesContainer);
+    }
   });
   if (chForCache && currentCommentsPost) {
     setChannelCommentCount(chForCache.uuid, currentCommentsPost.from, postTs, comments.length);
     refreshCommentLabelsIfChannelOpen(chForCache.uuid);
   }
+}
+
+// Comment context menu
+function showCommentContextMenu(e, comment, authorName) {
+  const menu = document.getElementById('commentCtxMenu');
+  if (!menu) {
+    // Create comment context menu if it doesn't exist
+    const overlay = document.createElement('div');
+    overlay.id = 'commentCtxMenu';
+    overlay.style.cssText = 'position:fixed;z-index:9999;display:none;background:var(--bg1);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.4);min-width:160px;padding:4px';
+    document.body.appendChild(overlay);
+  }
+  
+  const ctxMenu = document.getElementById('commentCtxMenu');
+  const isMine = normUid(comment.from) === normUid(myProfile.uuid);
+  
+  let html = '';
+  
+  // Edit option for own text comments
+  if (isMine && comment.type === 'text') {
+    html += `<div class="ctx-item" data-action="comment-edit" style="padding:8px 12px;cursor:pointer;color:var(--text);font-size:13px">✏️ Изменить</div>`;
+  }
+  
+  // Forward option
+  html += `<div class="ctx-item" data-action="comment-forward" style="padding:8px 12px;cursor:pointer;color:var(--text);font-size:13px">📤 Переслать</div>`;
+  
+  // Copy option for text comments
+  if (comment.type === 'text' && comment.content) {
+    html += `<div class="ctx-item" data-action="comment-copy" style="padding:8px 12px;cursor:pointer;color:var(--text);font-size:13px">📋 Копировать</div>`;
+  }
+  
+  html += `<div class="ctx-item" data-action="comment-delete" style="padding:8px 12px;cursor:pointer;color:var(--text);font-size:13px">🗑 Удалить у меня</div>`;
+  
+  if (isMine) {
+    html += `<div class="ctx-item danger" data-action="comment-delete-both" style="padding:8px 12px;cursor:pointer;color:var(--red);font-size:13px">Удалить у всех</div>`;
+  }
+  
+  ctxMenu.innerHTML = html;
+  ctxMenu.style.display = 'block';
+  
+  // Position menu
+  const x = Math.min(e.clientX, window.innerWidth - 170);
+  const y = Math.min(e.clientY, window.innerHeight - 200);
+  ctxMenu.style.left = x + 'px';
+  ctxMenu.style.top = y + 'px';
+  
+  // Store comment data
+  ctxMenu.dataset.commentTs = String(comment.ts);
+  ctxMenu.dataset.commentFrom = comment.from;
+  ctxMenu.dataset.commentContent = comment.type === 'text' ? String(comment.content || '') : '';
+  ctxMenu.dataset.commentType = comment.type;
+  
+  // Add click handlers
+  ctxMenu.querySelectorAll('.ctx-item').forEach(item => {
+    item.onclick = () => {
+      const action = item.dataset.action;
+      handleCommentContextMenuAction(action, comment, authorName);
+      ctxMenu.style.display = 'none';
+    };
+  });
+  
+  // Close on click outside
+  const closeMenu = (e) => {
+    if (!ctxMenu.contains(e.target)) {
+      ctxMenu.style.display = 'none';
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+}
+
+function handleCommentContextMenuAction(action, comment, authorName) {
+  switch (action) {
+    case 'comment-edit':
+      // Edit comment
+      window.editingComment = comment;
+      const inp = document.getElementById('commentsInput');
+      if (inp) {
+        inp.value = comment.content || '';
+        inp.focus();
+        inp.placeholder = 'Изменить комментарий...';
+        const sendBtn = document.getElementById('commentsSendBtn');
+        if (sendBtn) sendBtn.textContent = 'Сохранить';
+      }
+      break;
+    case 'comment-forward':
+      // Forward comment - open forward modal
+      window.forwardingComment = comment;
+      // Show forward modal
+      showToast('Выберите чат для пересылки');
+      // TODO: Implement forward modal
+      break;
+    case 'comment-copy':
+      // Copy comment text
+      copyTextSafe(comment.content).then(ok => {
+        showToast(ok ? 'Скопировано' : 'Не удалось скопировать');
+      });
+      break;
+    case 'comment-delete':
+      // Delete comment locally
+      deleteCommentLocally(comment.ts);
+      break;
+    case 'comment-delete-both':
+      // Delete comment for both
+      deleteCommentForBoth(comment.ts);
+      break;
+  }
+}
+
+function deleteCommentLocally(ts) {
+  if (!currentCommentsGroupId) return;
+  dbGetByIndex('messages', 'chatId', normUid(currentCommentsGroupId)).then(msgs => {
+    const comment = msgs.find(m => m.ts === ts);
+    if (comment) {
+      dbDelete('messages', comment.id).then(() => {
+        loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+        showToast('Комментарий удалён');
+      });
+    }
+  });
+}
+
+function deleteCommentForBoth(ts) {
+  if (!currentCommentsGroupId) return;
+  dbGetByIndex('messages', 'chatId', normUid(currentCommentsGroupId)).then(msgs => {
+    const comment = msgs.find(m => m.ts === ts);
+    if (comment) {
+      sendToServer('delete-for-both', { to: currentCommentsGroupId, ts: ts });
+      dbDelete('messages', comment.id).then(() => {
+        loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+        showToast('Комментарий удалён у всех');
+      });
+    }
+  });
+}
+
+// Reaction picker for comments
+function showCommentReactionPicker(comment) {
+  const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
+  
+  const picker = document.createElement('div');
+  picker.style.cssText = 'position:fixed;z-index:10000;background:var(--bg1);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 8px 32px rgba(0,0,0,0.4);display:flex;gap:8px;flex-wrap:wrap;max-width:200px';
+  
+  emojis.forEach(emoji => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = emoji;
+    btn.style.cssText = 'width:36px;height:36px;border:none;background:transparent;font-size:20px;cursor:pointer;border-radius:8px;padding:0';
+    btn.onmouseover = () => btn.style.background = 'var(--bg3)';
+    btn.onmouseout = () => btn.style.background = 'transparent';
+    btn.onclick = () => {
+      addCommentReaction(comment, emoji);
+      picker.remove();
+    };
+    picker.appendChild(btn);
+  });
+  
+  // Position picker
+  const rect = event.target.getBoundingClientRect();
+  picker.style.left = rect.left + 'px';
+  picker.style.top = (rect.top - 50) + 'px';
+  
+  document.body.appendChild(picker);
+  
+  // Close on click outside
+  const closePicker = (e) => {
+    if (!picker.contains(e.target)) {
+      picker.remove();
+      document.removeEventListener('click', closePicker);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', closePicker), 0);
+}
+
+function addCommentReaction(comment, emoji) {
+  // Send reaction to server
+  sendToServer('message-reaction', { 
+    to: currentCommentsGroupId, 
+    msgId: comment.msgId || buildClientMsgId(comment.from, comment.ts),
+    emoji: emoji,
+    remove: false
+  });
+  showToast(`Реакция ${emoji} добавлена`);
 }
 
 function wireCallUiOnce() {
