@@ -496,6 +496,9 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'edit-message':
       handleEditMessage(uuid, data);
       break;
+    case 'relay-message':
+      handleRelayMessage(uuid, data);
+      break;
     case 'ping':
       break;
     default:
@@ -942,6 +945,28 @@ function handleRoomAddMembers(fromUuid, data) {
     if (usr?.ws && usr.ws.readyState === WebSocket.OPEN) safeWsSend(usr.ws, inv);
   }
   broadcastRoomToMembers(room);
+  
+  // FIX: Request history sync from existing members when admin adds new members
+  if (room.members.length > newMembers.length) {
+    const syncPayload = {
+      type: 'room-member-joined',
+      data: {
+        roomId: rid,
+        newMember: newMembers[0], // Trigger sync for first new member
+        roomKind: room.kind
+      }
+    };
+    
+    // Send to all existing members except the new members
+    for (const memberId of room.members) {
+      if (newMembers.some(nm => normUid(nm) === normUid(memberId))) continue;
+      const memberUser = getUserLive(memberId);
+      if (memberUser?.ws && memberUser.ws.readyState === WebSocket.OPEN) {
+        safeWsSend(memberUser.ws, syncPayload);
+      }
+    }
+    console.log(`📢 Admin added members to ${rid.substring(0, 8)}…, requesting history sync`);
+  }
 }
 
 function handleChannelSubscribe(fromUuid, data) {
@@ -1174,12 +1199,36 @@ function handleRoomJoin(fromUuid, data) {
   }
   normalizeRoom(room);
   const joiner = normUid(fromUuid);
-  if (!room.members.some((m) => normUid(m) === joiner)) {
+  const wasMember = room.members.some((m) => normUid(m) === joiner);
+  if (!wasMember) {
     room.members.push(joiner);
     saveRoomsJSON();
   }
   const u = getUserLive(fromUuid);
   if (u?.ws) safeWsSend(u.ws, { type: 'room-joined', data: { room } });
+  
+  // FIX: Request history sync from existing members when new member joins
+  if (!wasMember && room.members.length > 1) {
+    // Notify existing members that a new member joined and should receive history
+    const syncPayload = {
+      type: 'room-member-joined',
+      data: {
+        roomId: rid,
+        newMember: joiner,
+        roomKind: room.kind
+      }
+    };
+    
+    // Send to all existing members except the joiner
+    for (const memberId of room.members) {
+      if (normUid(memberId) === joiner) continue;
+      const memberUser = getUserLive(memberId);
+      if (memberUser?.ws && memberUser.ws.readyState === WebSocket.OPEN) {
+        safeWsSend(memberUser.ws, syncPayload);
+      }
+    }
+    console.log(`📢 New member joined ${rid.substring(0, 8)}…, requesting history sync`);
+  }
 }
 
 // ==================== MESSAGE REACTION ====================
@@ -1334,6 +1383,24 @@ function handleClearAllData(uuid, ws) {
   saveRoomsJSON();
   safeWsSend(ws, { type: 'clear-all-data-ok' });
   console.log(`🧹 Cleared server chat data for ${uid.substring(0, 8)}…`);
+}
+
+// ==================== RELAY MESSAGE ====================
+// Relay messages between users for history sync
+function handleRelayMessage(fromUuid, data) {
+  if (!data?.to || !data?.msg) return;
+  
+  const toUuid = normUid(data.to);
+  const msg = data.msg;
+  
+  // Relay the message to the target user
+  const toUser = getUserLive(toUuid);
+  if (toUser?.ws && toUser.ws.readyState === WebSocket.OPEN) {
+    safeWsSend(toUser.ws, { type: 'relayed-message', data: msg });
+    console.log(`📨 Relayed message: ${fromUuid.substring(0, 8)}… → ${toUuid.substring(0, 8)}…`);
+  } else {
+    console.log(`⚠️ Target user ${toUuid.substring(0, 8)}… offline, cannot relay message`);
+  }
 }
 
 // ==================== EDIT MESSAGE ====================
