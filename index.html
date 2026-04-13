@@ -2225,6 +2225,10 @@ class DoubleRatchet {
 
   // Decrypt message with chain key
   async decryptMessage(ciphertext, iv, messageNumber) {
+    if (!iv || !ciphertext) {
+      throw new Error('Missing IV or ciphertext in decryptMessage');
+    }
+
     // Derive message key for this message number
     const messageKey = await this.kdf(this.receiveChainKey, `msg-${messageNumber}`);
 
@@ -2509,6 +2513,9 @@ class CryptoEngine {
   }
 
   async decryptPayload(sharedSecret, encryptedData) {
+    if (!encryptedData?.iv || !encryptedData?.payload) {
+      throw new Error('Missing IV or payload in encrypted data');
+    }
     const iv = new Uint8Array(
       encryptedData.iv.match(/.{1,2}/g).map(b => parseInt(b, 16))
     );
@@ -2642,7 +2649,7 @@ class CryptoEngine {
   }
 
   // ==================== ENVELOPE ENCRYPTION (PRIVACY: Anonymous Routing) ====================
-  async encryptEnvelope(recipientToken, payload, iv, signature) {
+  async encryptEnvelope(recipientUuid, payload, iv, signature) {
     const envelopeData = {
       payload,
       iv,
@@ -2650,26 +2657,30 @@ class CryptoEngine {
       timestamp: Date.now() // Encrypted inside envelope
     };
 
-    // Encrypt envelope with server's public key (or use pre-shared secret)
-    // For now, use a simple AES encryption with a fixed key (in production, use proper key exchange)
+    // Encrypt envelope with recipient's public key
+    const pubKeys = this.pubKeysCache.get(recipientUuid);
+    if (!pubKeys?.pub_ecdh) {
+      throw new Error('Recipient public keys not found');
+    }
+
     const envelopePlaintext = JSON.stringify(envelopeData);
     const envelopeEncrypted = await this.encryptPayload(
       await this.deriveSharedSecret(
         this.myKeys.ecdh,
-        await this.importPublicKey(this.pubKeysCache.get(recipientToken)?.pub_ecdh || '', 'ECDH')
+        await this.importPublicKey(pubKeys.pub_ecdh, 'ECDH')
       ),
       envelopePlaintext
     );
 
     return {
       encryptedEnvelope: envelopeEncrypted.payload,
-      recipientToken: recipientToken
+      recipientToken: recipientUuid // Will be converted to token on server side
     };
   }
 
-  async decryptEnvelope(encryptedEnvelope, senderToken) {
-    // Decrypt with private key
-    const pubKeys = this.pubKeysCache.get(senderToken);
+  async decryptEnvelope(encryptedEnvelope, senderUuid) {
+    // Decrypt with sender's public key
+    const pubKeys = this.pubKeysCache.get(senderUuid);
     if (!pubKeys) {
       throw new Error('Sender public keys not found');
     }
@@ -2739,23 +2750,24 @@ async function fetchPublicKeysAnonymous(recipientToken) {
 }
 
 // Send E2EE message anonymously (server doesn't know sender/recipient)
-async function sendE2EEMessageAnonymous(content, recipientToken) {
-  const pubKeys = crypto_engine.pubKeysCache.get(recipientToken);
+async function sendE2EEMessageAnonymous(content, recipientUuid) {
+  const pubKeys = crypto_engine.pubKeysCache.get(recipientUuid);
   if (!pubKeys) {
-    // Need to get public keys via anonymous key exchange
-    await fetchPublicKeysAnonymous(recipientToken);
+    // Need to get public keys via normal request (anonymous key exchange not implemented)
+    sendToServer('get-pub-keys', { targetUuid: recipientUuid });
+    throw new Error('Public keys not available for anonymous messaging');
   }
 
   const sharedSecret = await crypto_engine.deriveSharedSecret(
     crypto_engine.myKeys.ecdh,
-    pubKeys?.pub_ecdh ? await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH') : null
+    await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH')
   );
 
   const encPayload = await crypto_engine.encryptPayload(sharedSecret, content);
   const signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
 
   const envelope = await crypto_engine.encryptEnvelope(
-    recipientToken,
+    recipientUuid,
     encPayload.payload,
     encPayload.iv,
     signature
@@ -3506,6 +3518,27 @@ function handleServerMessage(msg) {
     case 'anonymous-msg':
       // Handle anonymous message (server doesn't know sender/recipient)
       console.log('📦 Received anonymous message');
+      if (data?.envelope) {
+        try {
+          // Decrypt envelope - need sender UUID (not available in anonymous mode)
+          // For now, treat as regular message since we don't have sender info
+          const envelopeData = JSON.parse(data.envelope);
+          if (envelopeData.payload && envelopeData.iv && envelopeData.signature) {
+            // Process as regular E2EE message
+            const msg = {
+              from: 'anonymous',
+              to: myProfile.uuid,
+              payload: envelopeData.payload,
+              iv: envelopeData.iv,
+              signature: envelopeData.signature,
+              ts: envelopeData.timestamp || Date.now()
+            };
+            handleIncomingMessage(msg);
+          }
+        } catch (err) {
+          console.error('Failed to decrypt anonymous message:', err);
+        }
+      }
       break;
     case 'key-rotation':
       // Handle key rotation notification from peer
@@ -4720,7 +4753,10 @@ async function handleIncomingMessage(msg) {
 
   // E2EE decryption for direct messages
   if (payload && iv && signature) {
-    if (!crypto_engine.myKeys) {
+    if (from === 'anonymous') {
+      content = '🔒 [Анонимное сообщение]';
+      type = 'text';
+    } else if (!crypto_engine.myKeys) {
       // Keys not available - show error message but don't crash
       content = '🔒 [Ошибка расшифровки: ключи не найдены]';
       type = 'text';
@@ -4736,11 +4772,11 @@ async function handleIncomingMessage(msg) {
         if (pubKeys) {
           // Import sender's ECDSA public key for verification
           const senderPubECDSA = await crypto_engine.importPublicKey(pubKeys.pub_ecdsa, 'ECDSA');
-          
+
           // Derive shared secret with sender
           const senderPubECDH = await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH');
           const sharedSecret = await crypto_engine.deriveSharedSecret(crypto_engine.myKeys.ecdh, senderPubECDH);
-          
+
           // Decrypt outer payload - wrapped in try/catch
           let outerPlaintext;
           try {
@@ -4752,7 +4788,7 @@ async function handleIncomingMessage(msg) {
             // Skip to saving the message
             outerPlaintext = null;
           }
-          
+        
           if (outerPlaintext) {
             const outerData = JSON.parse(outerPlaintext);
             
