@@ -1946,7 +1946,7 @@ body.use-gradients{
               Файл
             </button>
           </div>
-          <textarea id="commentsInput" rows="2" placeholder="Написать комментарий..." style="flex:1;padding:12px 14px;border-radius:16px;border:1px solid var(--border);background:var(--bg2);color:var(--text);resize:none;font-size:14px"></textarea>
+          <textarea id="commentsInput" rows="1" placeholder="Написать комментарий..." style="flex:1;padding:12px 14px;border-radius:16px;border:1px solid var(--border);background:var(--bg2);color:var(--text);resize:none;font-size:14px;min-height:44px;max-height:120px;overflow-y:auto"></textarea>
           <div style="display:flex;gap:8px">
             <button type="button" id="commentsCancelBtn" style="width:44px;height:44px;padding:0;flex-shrink:0;border-radius:14px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);cursor:pointer;display:none;align-items:center;justify-content:center">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -3777,6 +3777,8 @@ async function upsertRoomContact(room) {
 async function handleIncomingReaction(data) {
   if (!data || data.ts == null || !data.emoji) return;
 
+  console.log('handleIncomingReaction called:', data);
+
   const fromUuid = data.from;
   const targetUuid = data.to; // recipient of reaction
   const ts = data.ts;
@@ -3787,6 +3789,8 @@ async function handleIncomingReaction(data) {
   const c = contacts.find(x => normUid(x.uuid) === normUid(targetUuid));
   const isRoom = c && (c.kind === 'group' || c.kind === 'channel');
   const chatTarget = isRoom ? targetUuid : normUid(fromUuid);
+
+  console.log('chatTarget:', chatTarget, 'currentCommentsGroupId:', currentCommentsGroupId);
 
   // PLAINTEXT reaction handling - no E2EE, just metadata
   const msgs = await dbGetByIndex('messages', 'chatId', chatTarget);
@@ -3804,6 +3808,8 @@ async function handleIncomingReaction(data) {
   }
   await dbPut('messages', m);
 
+  console.log('Saved reaction to DB:', m.ts, m.reactions);
+
   // Update main chat reactions
   if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
     updateMessageReactionRow(ts);
@@ -3811,12 +3817,14 @@ async function handleIncomingReaction(data) {
 
   // Update comment reactions if the message is a comment and comments view is open
   if (currentCommentsPost && currentCommentsGroupId === chatTarget) {
+    console.log('Reloading comments due to reaction');
     await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
   }
 
   // Also check if this is a comment in a channel's linked group
   const channel = contacts.find(ch => ch.kind === 'channel' && normUid(ch.linkedGroupId) === normUid(chatTarget));
   if (channel && currentCommentsPost && currentCommentsGroupId === chatTarget) {
+    console.log('Reloading comments due to channel reaction');
     await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
   }
 }
@@ -7543,10 +7551,14 @@ async function updateMessageReactionRow(ts) {
 async function sendCommentReactionToggle(comment, emoji) {
   if (!comment) return;
 
+  console.log('sendCommentReactionToggle called:', comment.ts, emoji);
+
   // Load the comment from database to ensure we have the correct ID
   const msgs = await dbGetByIndex('messages', 'chatId', currentCommentsGroupId);
   const dbComment = msgs.find((x) => x.ts === comment.ts);
   if (!dbComment) return;
+
+  console.log('Loaded dbComment:', dbComment.ts, 'reactions before:', dbComment.reactions);
 
   if (!dbComment.reactions) dbComment.reactions = {};
   const list = dbComment.reactions[emoji] || [];
@@ -7563,6 +7575,8 @@ async function sendCommentReactionToggle(comment, emoji) {
   } else {
     dbComment.reactions[emoji] = [...list, me];
   }
+
+  console.log('reactions after update:', dbComment.reactions);
 
   // Save to database
   await dbPut('messages', dbComment);
@@ -12375,6 +12389,12 @@ async function openCommentsView(postMsg, linkedGroupId) {
       sendBtn.click();
     }
   };
+
+  // Auto-resize textarea
+  commentsInput.oninput = () => {
+    commentsInput.style.height = 'auto';
+    commentsInput.style.height = Math.min(commentsInput.scrollHeight, 120) + 'px';
+  };
   
   // Close handler
   document.getElementById('commentsViewClose').onclick = () => {
@@ -12401,6 +12421,14 @@ async function loadComments(groupId, postTs) {
   pendingCommentMediaLastTs = 0;
 
   const msgs = await dbGetByIndex('messages', 'chatId', normUid(groupId));
+
+  // Debug log for reactions in loaded messages
+  console.log('Loaded messages for comments:', msgs.length);
+  msgs.forEach(m => {
+    if (m.reactions && Object.keys(m.reactions).length > 0) {
+      console.log('Message with reactions:', m.ts, m.reactions);
+    }
+  });
 
   // Filter comments for this post (direct replies to post)
   const directComments = msgs.filter(m =>
@@ -12457,6 +12485,9 @@ async function loadComments(groupId, postTs) {
   // Render comment tree
   comments.forEach(({ comment, replies }) => {
     const isMedia = comment.type === 'image' || comment.type === 'video' || comment.type === 'voice';
+
+    // Debug log for reactions
+    console.log('Comment rendering:', comment.ts, 'reactions:', comment.reactions);
 
     // Use media grouping for media comments
     if (isMedia) {
