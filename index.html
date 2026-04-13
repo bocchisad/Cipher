@@ -1304,9 +1304,6 @@ body.use-gradients{
           <div class="hstatus" id="headerStatus">offline</div>
         </div>
         <div class="hbtns">
-          <button class="icon-btn" id="encryptionVerifyBtn" title="Проверить шифрование">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
-          </button>
           <button class="icon-btn" id="audioCallBtn" title="Аудио звонок">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 11.5 19.79 19.79 0 01.22 2.84 2 2 0 012.2 1h3a2 2 0 012 1.72c.127.96.362 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.19a16 16 0 006.9 6.9l1.56-1.55a2 2 0 012.11-.45c.907.339 1.85.574 2.81.7A2 2 0 0122 16.92z"/></svg>
           </button>
@@ -1425,6 +1422,9 @@ body.use-gradients{
       <div class="info-top">
         <button type="button" id="closeInfoPanelBtn" class="icon-btn close-info" title="Закрыть" style="position:absolute;top:16px;right:16px">
           <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+        <button type="button" id="infoPanelEncryptionVerifyBtn" class="icon-btn" title="Проверить шифрование" style="position:absolute;top:16px;right:56px">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
         </button>
         <div class="big-av" id="infoBigAv"></div>
         <div class="info-name" id="infoName"></div>
@@ -5862,12 +5862,6 @@ function renderChatHeader(){
       statusEl.style.color = contact.online ? 'var(--green)' : 'var(--text3)';
     }
   }
-  
-  // Hide encryption verification button for groups/channels (E2EE only for direct chats)
-  const encVerifyBtn = document.getElementById('encryptionVerifyBtn');
-  if (encVerifyBtn) {
-    encVerifyBtn.style.display = (contact.kind === 'channel' || contact.kind === 'saved' || contact.kind === 'group') ? 'none' : 'flex';
-  }
   const av=document.getElementById('headerAv');
   if(av) {
     renderAvatar(av, contact.avatar, displayName || contact.uuid);
@@ -6058,6 +6052,15 @@ function appendAlbum(msgs, area, skipAnim = false) {
   });
 
   bubble.appendChild(mediaGroup);
+
+  // Add text caption if present (Telegram-style: text below media)
+  if (first.caption) {
+    const caption = document.createElement('div');
+    caption.className = 'msg-caption';
+    caption.style.cssText = 'margin-top:8px;color:var(--text);word-break:break-word;white-space:pre-wrap';
+    caption.textContent = first.caption;
+    bubble.appendChild(caption);
+  }
 
   // Add timestamp
   const mt = document.createElement('div');
@@ -6303,6 +6306,15 @@ function renderMediaAlbum() {
   
   bubble.appendChild(mediaGroup);
   
+  // Add text caption if present (Telegram-style: text below media)
+  if (pendingMediaGroup[0].caption) {
+    const caption = document.createElement('div');
+    caption.className = 'msg-caption';
+    caption.style.cssText = 'margin-top:8px;color:var(--text);word-break:break-word;white-space:pre-wrap';
+    caption.textContent = pendingMediaGroup[0].caption;
+    bubble.appendChild(caption);
+  }
+  
   // Add timestamp
   const mt = document.createElement('div');
   mt.className = 'mtime';
@@ -6475,25 +6487,61 @@ function appendMessage(msg, skipAnim = false){
     p.innerHTML = escaped.replace(/(https?:\/\/[^\s<>]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:var(--accent)">$1</a>');
     bubble.appendChild(p);
   } else if(msg.type==='image'){
+    let imgSrc = msg.content;
+    let caption = msg.caption;
+    // Extract data and caption if content is an object
+    if (typeof msg.content === 'object' && msg.content.data) {
+      imgSrc = msg.content.data;
+      caption = msg.content.caption || caption;
+    }
     const img=document.createElement('img');
     img.className='msg-img';
-    img.src=msg.content;
-    img.onclick=()=>openLightbox(msg.content);
+    img.src=imgSrc;
+    img.onclick=()=>openLightbox(imgSrc);
     img.alt='Изображение';
     bubble.appendChild(img);
+    if (caption) {
+      const captionEl = document.createElement('div');
+      captionEl.className = 'msg-caption';
+      captionEl.style.cssText = 'margin-top:8px;color:var(--text);word-break:break-word;white-space:pre-wrap';
+      captionEl.textContent = caption;
+      bubble.appendChild(captionEl);
+    }
   } else if(msg.type==='voice'){
     bubble.appendChild(makeVoicePlayer(msg.content, msg));
   } else if(msg.type==='video'){
+    let videoSrc = msg.content;
+    let caption = msg.caption;
+    // Extract data and caption if content is an object
+    if (typeof msg.content === 'object' && msg.content.data) {
+      videoSrc = msg.content.data;
+      caption = msg.content.caption || caption;
+    }
     const video=document.createElement('video');
     video.className='msg-video';
-    video.src=msg.content;
+    video.src=videoSrc;
     video.controls=true;
     video.style.maxWidth='100%';
     video.style.maxHeight='300px';
     bubble.appendChild(video);
+    if (caption) {
+      const captionEl = document.createElement('div');
+      captionEl.className = 'msg-caption';
+      captionEl.style.cssText = 'margin-top:8px;color:var(--text);word-break:break-word;white-space:pre-wrap';
+      captionEl.textContent = caption;
+      bubble.appendChild(captionEl);
+    }
   } else if(msg.type==='file'){
     try{
-      const fd=JSON.parse(msg.content);
+      let fd = JSON.parse(msg.content);
+      let caption = msg.caption;
+      // Extract caption if it's in the file data object
+      if (typeof msg.content === 'object' && msg.content.data) {
+        fd = JSON.parse(msg.content.data);
+        caption = msg.content.caption || caption;
+      } else if (fd.caption) {
+        caption = fd.caption;
+      }
 
       // FIX: Check if audio file - render as track
       const isAudio = fd.name && /\.(mp3|ogg|wav|m4a|aac|flac|wma)$/i.test(fd.name);
@@ -6529,6 +6577,13 @@ function appendMessage(msg, skipAnim = false){
         row.appendChild(fi);
         row.appendChild(dl);
         bubble.appendChild(row);
+        if (caption) {
+          const captionEl = document.createElement('div');
+          captionEl.className = 'msg-caption';
+          captionEl.style.cssText = 'margin-top:8px;color:var(--text);word-break:break-word;white-space:pre-wrap';
+          captionEl.textContent = caption;
+          bubble.appendChild(captionEl);
+        }
       }
     }catch(e){
       const p=document.createElement('div');
@@ -7285,6 +7340,13 @@ async function renderInfoPanel(uuid){
     st.style.color = contact.online ? 'var(--green)' : 'var(--text3)';
   }
   document.getElementById('infoId').textContent = uid;
+  
+  // Hide encryption verify button for groups/channels (E2EE only for direct chats)
+  const encVerifyBtn = document.getElementById('infoPanelEncryptionVerifyBtn');
+  if (encVerifyBtn) {
+    encVerifyBtn.style.display = (contact.kind === 'channel' || contact.kind === 'saved' || contact.kind === 'group') ? 'none' : 'flex';
+  }
+  
   renderInfoActions(contact);
   await renderTabContent();
 }
@@ -8263,6 +8325,30 @@ function setupEvents(){
     setDeleteChatBtnState(false);
   };
 
+  // Info panel encryption verify button handler
+  const infoPanelEncryptBtn = document.getElementById('infoPanelEncryptionVerifyBtn');
+  if (infoPanelEncryptBtn) {
+    infoPanelEncryptBtn.onclick = async () => {
+      if (!activeChat) return;
+      const modal = document.getElementById('encryptionVerifyModal');
+      const codeEl = document.getElementById('encryptionVerifyCode');
+      if (!modal || !codeEl) return;
+      
+      // Check if modal is already open - if so, close it
+      if (modal.style.display === 'flex') {
+        modal.style.display = 'none';
+        return;
+      }
+      
+      // Generate and display verification code
+      codeEl.textContent = 'Генерация...';
+      modal.style.display = 'flex';
+      
+      const code = await generateEncryptionVerificationCode(activeChat);
+      codeEl.textContent = code;
+    };
+  }
+
   // UNIFIED info panel toggle — одна кнопка для мобайла и ПК
   const toggleInfoBtn = document.getElementById('toggleInfoPanelBtn');
   function doToggleInfoPanel(e) {
@@ -8404,26 +8490,6 @@ function setupEvents(){
   document.getElementById('audioCallBtn').onclick = () => startOutgoingCall(false);
   document.getElementById('videoCallBtn').onclick = () => startOutgoingCall(true);
 
-  document.getElementById('encryptionVerifyBtn').onclick = async () => {
-    if (!activeChat) return;
-    const modal = document.getElementById('encryptionVerifyModal');
-    const codeEl = document.getElementById('encryptionVerifyCode');
-    if (!modal || !codeEl) return;
-    
-    // Check if modal is already open - if so, close it
-    if (modal.style.display === 'flex') {
-      modal.style.display = 'none';
-      return;
-    }
-    
-    // Generate and display verification code
-    codeEl.textContent = 'Генерация...';
-    modal.style.display = 'flex';
-    
-    const code = await generateEncryptionVerificationCode(activeChat);
-    codeEl.textContent = code;
-  };
-  
   document.getElementById('encryptionVerifyClose').onclick = () => {
     document.getElementById('encryptionVerifyModal').style.display = 'none';
   };
