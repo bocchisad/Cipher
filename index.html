@@ -1458,7 +1458,47 @@ body.use-gradients{
       <input type="file" id="mobileSettingsAvatarFile" accept="image/*" style="display:none">
       <label class="mobile-settings-label" for="mobileSettingsNick">Имя</label>
       <input id="mobileSettingsNick" class="reg-input" type="text" maxlength="30" placeholder="Ваше имя" style="font-size:16px;padding:12px 14px">
-      <button id="mobileSettingsSaveBtn" class="btn-primary" type="button" style="margin-top:10px;min-height:46px">Сохранить профиль</button>
+      <label class="mobile-settings-label" for="mobileSettingsBio" style="margin-top:10px;display:block">О себе</label>
+      <textarea id="mobileSettingsBio" class="reg-input" rows="3" maxlength="140" placeholder="Расскажите о себе..." style="font-size:16px;padding:12px 14px;resize:none;font-family:inherit"></textarea>
+      <div style="text-align:right;font-size:11px;color:var(--text2);margin-top:4px"><span id="mobileSettingsBioCount">0</span>/140</div>
+      
+      <!-- Треки -->
+      <h3 style="font-size:12px;color:var(--text3);margin:16px 0 10px">Треки в профиле</h3>
+      <div id="mobileSettingsTracksList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+        <div style="color:var(--text2);font-size:13px;text-align:center;padding:12px">Нет добавленных треков</div>
+      </div>
+      <button type="button" id="mobileSettingsAddTrackBtn" class="btn-ghost" style="width:100%;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+        Добавить трек
+      </button>
+      <input type="file" id="mobileSettingsTrackFile" accept="audio/*" style="display:none" multiple>
+      
+      <!-- Прикрепленный канал -->
+      <h3 style="font-size:12px;color:var(--text3);margin:16px 0 10px">Прикрепленный канал</h3>
+      <div id="mobileSettingsAttachedChannel" style="display:none">
+        <div style="display:flex;align-items:center;gap:12px;padding:10px;background:var(--bg3);border-radius:var(--r);border:1px solid var(--border)">
+          <div id="mobileSettingsAttachedChannelAv" style="width:40px;height:40px;border-radius:50%;overflow:hidden;background:var(--bg4);flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div id="mobileSettingsAttachedChannelName" style="font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+            <div style="font-size:12px;color:var(--text2)">Канал</div>
+          </div>
+          <button type="button" id="mobileSettingsDetachChannelBtn" class="icon-btn" title="Открепить" style="width:32px;height:32px">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="mobileSettingsNoAttachedChannel" style="color:var(--text2);font-size:13px;text-align:center;padding:12px">
+        Нет прикрепленного канала
+      </div>
+      <select id="mobileSettingsChannelSelect" style="width:100%;margin-top:8px;padding:10px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:14px;display:none">
+        <option value="">Выберите канал...</option>
+      </select>
+      <button type="button" id="mobileSettingsAttachChannelBtn" class="btn-ghost" style="width:100%;margin-top:8px;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        Прикрепить канал
+      </button>
+      
+      <button id="mobileSettingsSaveBtn" class="btn-primary" type="button" style="margin-top:16px;min-height:46px">Сохранить профиль</button>
       <div class="settings-id" id="mobileSettingsIdBox" style="margin-top:10px;font-size:12px">...</div>
       <div class="copy-hint">Нажмите, чтобы скопировать UUID</div>
     </div>
@@ -4631,9 +4671,13 @@ async function startApp(uuid) {
       myProfile.avatar = '';
       await dbPut('profile', {key: 'profile', ...myProfile});
     }
+    // FIX: Ensure mini-profile fields are initialized
+    if (!myProfile.bio) myProfile.bio = '';
+    if (!myProfile.tracks) myProfile.tracks = [];
+    if (!myProfile.attachedChannelId) myProfile.attachedChannelId = '';
     console.log('✓ Profile loaded');
   } else {
-    myProfile = { uuid, nickname: 'User_' + uuid.slice(0, 4), avatar: '' };
+    myProfile = { uuid, nickname: 'User_' + uuid.slice(0, 4), avatar: '', bio: '', tracks: [], attachedChannelId: '' };
     await dbPut('profile', {key: 'profile', ...myProfile});
   }
   myProfile.uuid = normUid(uuid);
@@ -7822,14 +7866,31 @@ function setupEvents(){
       const inp = document.getElementById('mobileSettingsNick');
       const val = String(inp?.value || '').trim();
       if (val) myProfile.nickname = val.slice(0, 30);
+      // Bio
+      const bioInp = document.getElementById('mobileSettingsBio');
+      if (bioInp) myProfile.bio = bioInp.value.slice(0, 140);
       await dbPut('profile', { key: 'profile', ...myProfile });
       if (ws && ws.readyState === WebSocket.OPEN) {
-        sendToServer('profile-update', { nickname: myProfile.nickname, avatar: myProfile.avatar });
+        sendToServer('profile-update', { 
+          nickname: myProfile.nickname, 
+          avatar: myProfile.avatar,
+          bio: myProfile.bio,
+          tracks: myProfile.tracks,
+          attachedChannelId: myProfile.attachedChannelId
+        });
       }
       renderSidebar();
       if (activeChat) renderChatHeader();
+      // Sync with desktop settings
       const settingsNick = document.getElementById('settingsNick');
       if (settingsNick) settingsNick.value = myProfile.nickname || '';
+      const settingsBio = document.getElementById('settingsBio');
+      if (settingsBio) settingsBio.value = myProfile.bio || '';
+      const settingsBioCount = document.getElementById('settingsBioCount');
+      if (settingsBioCount) settingsBioCount.textContent = String((myProfile.bio || '').length);
+      // Refresh desktop tracks and channel lists
+      if (typeof refreshSettingsTracksList === 'function') refreshSettingsTracksList();
+      if (typeof refreshSettingsAttachedChannel === 'function') refreshSettingsAttachedChannel();
       showToast('Сохранено');
     };
   }
@@ -7848,6 +7909,86 @@ function setupEvents(){
       if (desktopAv) renderAvatar(desktopAv, b64, myProfile.nickname || myProfile.uuid);
     };
   }
+  
+  // Mobile bio counter
+  const mobileSettingsBio = document.getElementById('mobileSettingsBio');
+  const mobileSettingsBioCount = document.getElementById('mobileSettingsBioCount');
+  if (mobileSettingsBio && mobileSettingsBioCount) {
+    mobileSettingsBio.oninput = () => {
+      mobileSettingsBioCount.textContent = String(mobileSettingsBio.value.length);
+    };
+  }
+  
+  // Mobile tracks handlers
+  const mobileSettingsAddTrackBtn = document.getElementById('mobileSettingsAddTrackBtn');
+  const mobileSettingsTrackFile = document.getElementById('mobileSettingsTrackFile');
+  if (mobileSettingsAddTrackBtn && mobileSettingsTrackFile) {
+    mobileSettingsAddTrackBtn.onclick = () => mobileSettingsTrackFile.click();
+    mobileSettingsTrackFile.onchange = async () => {
+      const files = Array.from(mobileSettingsTrackFile.files || []);
+      if (files.length === 0) return;
+      for (const file of files) {
+        try {
+          const b64 = await fileToBase64(file);
+          const track = {
+            id: 'track_' + Date.now() + '_' + Math.random().toString(36).slice(2, 9),
+            title: file.name.replace(/\.[^/.]+$/, ''),
+            dataUrl: b64,
+            size: file.size,
+            addedAt: Date.now()
+          };
+          if (!myProfile.tracks) myProfile.tracks = [];
+          myProfile.tracks.push(track);
+        } catch (e) {
+          console.error('Failed to add track:', e);
+        }
+      }
+      refreshMobileSettingsTracksList();
+      mobileSettingsTrackFile.value = '';
+      showToast(`🎵 ${files.length} трек(ов) добавлено`);
+    };
+  }
+  
+  // Mobile attach channel handlers
+  const mobileSettingsAttachChannelBtn = document.getElementById('mobileSettingsAttachChannelBtn');
+  const mobileSettingsChannelSelect = document.getElementById('mobileSettingsChannelSelect');
+  const mobileSettingsDetachChannelBtn = document.getElementById('mobileSettingsDetachChannelBtn');
+  
+  if (mobileSettingsAttachChannelBtn) {
+    mobileSettingsAttachChannelBtn.onclick = () => {
+      // Populate channel select
+      const myChannels = contacts.filter(c => c.kind === 'channel' && c.isOwner);
+      mobileSettingsChannelSelect.innerHTML = '<option value="">Выберите канал...</option>' +
+        myChannels.map(c => `<option value="${c.uuid}">${c.nickname || 'Без названия'}</option>`).join('');
+      mobileSettingsChannelSelect.style.display = myChannels.length > 0 ? 'block' : 'none';
+      if (myChannels.length === 0) {
+        showToast('У вас нет своих каналов');
+      } else {
+        mobileSettingsChannelSelect.focus();
+      }
+    };
+  }
+  
+  if (mobileSettingsChannelSelect) {
+    mobileSettingsChannelSelect.onchange = () => {
+      const selectedId = mobileSettingsChannelSelect.value;
+      if (selectedId) {
+        myProfile.attachedChannelId = selectedId;
+        refreshMobileSettingsAttachedChannel();
+        mobileSettingsChannelSelect.style.display = 'none';
+        showToast('Канал прикреплен');
+      }
+    };
+  }
+  
+  if (mobileSettingsDetachChannelBtn) {
+    mobileSettingsDetachChannelBtn.onclick = () => {
+      myProfile.attachedChannelId = '';
+      refreshMobileSettingsAttachedChannel();
+      showToast('Канал откреплен');
+    };
+  }
+  
   const mobileSettingsIdBox = document.getElementById('mobileSettingsIdBox');
   if (mobileSettingsIdBox) {
     const onCopyOwnIdMobile = async (e) => {
@@ -8314,6 +8455,80 @@ function refreshMobileSettingsView(){
   if (mg) {
     try { mg.checked = localStorage.getItem('cipherUseGradients') === '1'; } catch (_) { mg.checked = false; }
   }
+  // Bio
+  const bioEl = document.getElementById('mobileSettingsBio');
+  const bioCountEl = document.getElementById('mobileSettingsBioCount');
+  if (bioEl) {
+    bioEl.value = myProfile.bio || '';
+    if (bioCountEl) bioCountEl.textContent = String(bioEl.value.length);
+  }
+  // Tracks and attached channel
+  refreshMobileSettingsTracksList();
+  refreshMobileSettingsAttachedChannel();
+}
+
+// ==================== MOBILE PROFILE TRACKS ====================
+function refreshMobileSettingsTracksList() {
+  const list = document.getElementById('mobileSettingsTracksList');
+  if (!list) return;
+  const tracks = myProfile.tracks || [];
+  if (tracks.length === 0) {
+    list.innerHTML = '<div style="color:var(--text2);font-size:13px;text-align:center;padding:12px">Нет добавленных треков</div>';
+    return;
+  }
+  list.innerHTML = tracks.map((t, idx) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:10px;border:1px solid var(--border)">
+      <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.title || 'Без названия')}</div>
+        <div style="font-size:11px;color:var(--text2)">${formatTrackDuration(t.duration)} • ${formatBytes(t.size)}</div>
+      </div>
+      <button type="button" onclick="removeMobileProfileTrack(${idx})" class="icon-btn" style="width:32px;height:32px;color:var(--red)" title="Удалить">
+        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+  `).join('');
+}
+
+function removeMobileProfileTrack(idx) {
+  if (!myProfile.tracks) return;
+  myProfile.tracks.splice(idx, 1);
+  refreshMobileSettingsTracksList();
+  refreshSettingsTracksList(); // Sync with desktop
+}
+
+function refreshMobileSettingsAttachedChannel() {
+  const attachedDiv = document.getElementById('mobileSettingsAttachedChannel');
+  const noAttachedDiv = document.getElementById('mobileSettingsNoAttachedChannel');
+  const channelSelect = document.getElementById('mobileSettingsChannelSelect');
+  const avDiv = document.getElementById('mobileSettingsAttachedChannelAv');
+  const nameDiv = document.getElementById('mobileSettingsAttachedChannelName');
+  
+  if (!attachedDiv || !noAttachedDiv) return;
+  
+  const channelId = myProfile.attachedChannelId;
+  if (!channelId) {
+    attachedDiv.style.display = 'none';
+    noAttachedDiv.style.display = 'block';
+    if (channelSelect) channelSelect.style.display = 'none';
+    return;
+  }
+  
+  const channel = contacts.find(c => c.uuid === channelId || normUid(c.uuid) === normUid(channelId));
+  if (!channel) {
+    attachedDiv.style.display = 'none';
+    noAttachedDiv.style.display = 'block';
+    return;
+  }
+  
+  attachedDiv.style.display = 'block';
+  noAttachedDiv.style.display = 'none';
+  if (channelSelect) channelSelect.style.display = 'none';
+  
+  if (avDiv) renderAvatar(avDiv, channel.avatar, channel.nickname);
+  if (nameDiv) nameDiv.textContent = channel.nickname || 'Без названия';
 }
 
 function openSettings(){
@@ -8413,6 +8628,10 @@ function removeProfileTrack(idx) {
   if (!myProfile.tracks) return;
   myProfile.tracks.splice(idx, 1);
   refreshSettingsTracksList();
+  // Sync with mobile settings
+  refreshMobileSettingsTracksList();
+  // Save to database
+  dbPut('profile', {key: 'profile', ...myProfile}).catch(() => {});
 }
 
 async function addProfileTrack(file) {
@@ -8432,6 +8651,10 @@ async function addProfileTrack(file) {
   if (!myProfile.tracks) myProfile.tracks = [];
   myProfile.tracks.push(track);
   refreshSettingsTracksList();
+  // Sync with mobile settings
+  refreshMobileSettingsTracksList();
+  // Save to database
+  dbPut('profile', {key: 'profile', ...myProfile}).catch(() => {});
 }
 
 // ==================== PROFILE ATTACHED CHANNEL ====================
@@ -8492,6 +8715,10 @@ function showChannelSelect() {
       if (val) {
         myProfile.attachedChannelId = val;
         refreshSettingsAttachedChannel();
+        // Sync with mobile
+        refreshMobileSettingsAttachedChannel();
+        // Save to DB
+        dbPut('profile', {key: 'profile', ...myProfile}).catch(() => {});
       }
     };
   }
@@ -8501,6 +8728,10 @@ function showChannelSelect() {
 function detachProfileChannel() {
   delete myProfile.attachedChannelId;
   refreshSettingsAttachedChannel();
+  // Sync with mobile
+  refreshMobileSettingsAttachedChannel();
+  // Save to DB
+  dbPut('profile', {key: 'profile', ...myProfile}).catch(() => {});
 }
 
 // ==================== EXPORT/IMPORT ====================
@@ -11014,7 +11245,7 @@ function wireCallUiOnce() {
   if (window._callUi) return;
   window._callUi = true;
   const mClear=document.getElementById('clearDataBtn');
-  if(mClear) mClear.onclick=()=>{ localStorage.clear(); indexedDB.deleteDatabase('e2ee'); location.reload(); };
+  if(mClear) mClear.onclick = clearAllData; // FIX: Use proper clearAllData function with confirmation
   const mSwitch=document.getElementById('switchAccountBtn');
   if(mSwitch) mSwitch.onclick=()=>{ disconnectWebSocket(); localStorage.removeItem('cipherAuth'); location.reload(); };
   const mProfileSettings=document.getElementById('mobileProfileSettingsBtn');
