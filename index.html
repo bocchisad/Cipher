@@ -4458,10 +4458,19 @@ async function handleIncomingMessage(msg) {
                   content = JSON.stringify({
                     name: metadata.fileName,
                     size: metadata.fileSize || 0,
-                    data: decryptedFileData
+                    data: decryptedFileData,
+                    caption: metadata.caption || ''
                   });
                 } else {
-                  content = decryptedFileData;
+                  // For image/video, include caption in content object
+                  if (metadata.caption) {
+                    content = JSON.stringify({
+                      data: decryptedFileData,
+                      caption: metadata.caption
+                    });
+                  } else {
+                    content = decryptedFileData;
+                  }
                 }
                 
                 if (metadata.replyTo) {
@@ -4470,6 +4479,11 @@ async function handleIncomingMessage(msg) {
                 
                 if (metadata.forwardFrom) {
                   msg.forwardFrom = metadata.forwardFrom;
+                }
+                
+                // Add caption to message for rendering
+                if (metadata.caption) {
+                  msg.caption = metadata.caption;
                 }
                 
                 // Mark as E2EE decrypted for UI indicator
@@ -4518,13 +4532,29 @@ async function handleIncomingMessage(msg) {
     }
   }
   // If no payload/iv/signature, it's an old plaintext message - use content and type as-is (backward compat)
+  
+  // Extract caption from content for non-E2EE media messages
+  if ((type === 'image' || type === 'video' || type === 'file') && !msg.caption) {
+    try {
+      if (typeof content === 'string') {
+        const parsed = JSON.parse(content);
+        if (parsed.caption) {
+          msg.caption = parsed.caption;
+        }
+      } else if (typeof content === 'object' && content.caption) {
+        msg.caption = content.caption;
+      }
+    } catch (e) {
+      // Keep original content if parsing fails
+    }
+  }
 
   const chatId = getIncomingChatId(msg);
   const here = activeChat ? normUid(activeChat) : '';
   const ch = normUid(chatId);
   const sameChat = !!(here && here === ch);
   const incomingMsgId = msg.msgId || buildClientMsgId(from, ts);
-  const localMsg = {chatId, from, to, type, content, ts, msgId: incomingMsgId, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom};
+  const localMsg = {chatId, from, to, type, content, ts, msgId: incomingMsgId, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom, caption: msg.caption};
   await dbPut('messages', localMsg);
   if (type === 'text' && msg.replyTo) {
     noteIncomingChannelComment(localMsg);
@@ -4972,6 +5002,17 @@ async function sendMessage(type, content, options = {}){
               const fd = JSON.parse(content);
               metadata.fileName = fd.name;
               metadata.fileSize = fd.size;
+              metadata.caption = fd.caption || '';
+            } catch (_) {}
+          } else {
+            // Extract caption for image/video
+            try {
+              if (typeof content === 'string') {
+                const parsed = JSON.parse(content);
+                metadata.caption = parsed.caption || '';
+              } else if (typeof content === 'object' && content.caption) {
+                metadata.caption = content.caption;
+              }
             } catch (_) {}
           }
           
@@ -5032,11 +5073,26 @@ async function sendMessage(type, content, options = {}){
     }
   }
 
+  // Extract caption from content for local storage
+  let caption = '';
+  if ((type === 'image' || type === 'video' || type === 'file')) {
+    try {
+      if (typeof content === 'string') {
+        const parsed = JSON.parse(content);
+        caption = parsed.caption || '';
+      } else if (typeof content === 'object' && content.caption) {
+        caption = content.caption;
+      }
+    } catch (e) {
+      // Keep original content if parsing fails
+    }
+  }
+  
   const localMsg = {...message, type, content, msgId, replyTo: replySnap, chatId: targetChat, read: true, reactions: {}, forwardFrom: forwardingFromMsg ? {
     uuid: forwardingFromMsg.from,
     name: contacts.find((c) => normUid(c.uuid) === normUid(forwardingFromMsg.from))?.nickname || 
           (normUid(forwardingFromMsg.from) === normUid(myProfile.uuid) ? 'Вы' : String(forwardingFromMsg.from).slice(0, 8))
-  } : undefined};
+  } : undefined, caption};
   const localId = await dbPut('messages', localMsg);
   localMsg.id = localId;
 
