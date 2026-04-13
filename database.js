@@ -97,6 +97,8 @@ function createTables() {
     CREATE INDEX IF NOT EXISTS idx_users_seen ON users(last_seen);
   `);
   try { db.exec('ALTER TABLE message_queue ADD COLUMN raw_json TEXT'); } catch (_) {}
+  // PRIVACY: Add time_bucket column for timestamp hiding
+  try { db.exec('ALTER TABLE message_queue ADD COLUMN time_bucket INTEGER'); } catch (_) {}
 }
 
 // ==================== USER OPERATIONS ====================
