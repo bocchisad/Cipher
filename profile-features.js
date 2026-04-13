@@ -292,15 +292,22 @@ function playMiniProfileTrack(track, index, allTracks) {
   miniProfileTracksQueue = allTracks;
   
   // Use global audio player if available
-  if (window.globalAudio && window.playGlobalAudio) {
+  if (typeof loadAndPlayGlobalAudio === 'function') {
+    // Build playlist for global audio player
     const playlist = allTracks.map((t, i) => ({
       url: t.dataUrl,
       title: t.title || 'Без названия',
-      artist: t.artist || '',
       from: miniProfileTargetUuid,
-      ts: t.addedAt || Date.now()
+      ts: t.addedAt || Date.now(),
+      type: 'track'
     }));
-    window.playGlobalAudio(playlist, index);
+    
+    // Set global playlist and index
+    window.globalAudioPlaylist = playlist;
+    window.globalAudioIndex = index;
+    
+    // Load and play the track
+    loadAndPlayGlobalAudio(playlist[index]);
     showToast(`▶ ${track.title || 'Трек'}`);
   } else if (window.audioPlayer && window.audioPlayer.show) {
     // Use existing audio player
