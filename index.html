@@ -1917,7 +1917,7 @@ body.use-gradients{
             <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
           </button>
           <textarea id="commentsInput" rows="2" placeholder="Написать комментарий..." style="flex:1;padding:12px 14px;border-radius:16px;border:1px solid var(--border);background:var(--bg2);color:var(--text);resize:none;font-size:14px"></textarea>
-          <button type="button" id="commentsSendBtn" class="send-btn" style="width:44px;height:44px;padding:0;flex-shrink:0;border-radius:14px">
+          <button type="button" id="commentsSendBtn" class="btn-primary" style="width:44px;height:44px;padding:0;flex-shrink:0;border-radius:14px;background:var(--accent);border:none;color:#fff;display:flex;align-items:center;justify-content:center">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
         </div>
@@ -3089,6 +3089,12 @@ function handleServerMessage(msg) {
     case 'room-joined':
       handleRoomInviteClient(data?.room);
       break;
+    case 'room-member-joined':
+      handleRoomMemberJoined(data);
+      break;
+    case 'relayed-message':
+      handleRelayedMessage(data);
+      break;
     case 'room-updated':
       handleRoomUpdatedClient(data?.room);
       break;
@@ -3165,6 +3171,80 @@ async function handleRoomInviteClient(room) {
   await upsertRoomContact(room);
   showToast('Вас добавили в: ' + (room.title || 'чат'));
   renderSidebar();
+}
+
+// FIX: Send message history to new member when they join
+async function handleRoomMemberJoined(data) {
+  if (!data?.roomId || !data?.newMember) return;
+  const roomId = normUid(data.roomId);
+  const newMember = normUid(data.newMember);
+  
+  // Get messages for this room from local DB
+  const msgs = await dbGetByIndex('messages', 'chatId', roomId);
+  if (msgs.length > 0) {
+    // Send messages to new member (limit to last 100 messages to avoid overwhelming)
+    const recentMsgs = msgs.sort((a, b) => b.ts - a.ts).slice(0, 100).sort((a, b) => a.ts - b.ts);
+    
+    console.log(`📤 Sending ${recentMsgs.length} messages to new member ${newMember.substring(0, 8)}…`);
+    
+    for (const msg of recentMsgs) {
+      // Send each message to the new member via server relay
+      sendToServer('relay-message', {
+        to: newMember,
+        msg: msg
+      });
+    }
+  }
+  
+  // FIX: If this is a channel, also sync comment history from linkedGroupId
+  const channel = contacts.find(c => normUid(c.uuid) === roomId && c.kind === 'channel');
+  if (channel && channel.linkedGroupId) {
+    const linkedGroupId = normUid(channel.linkedGroupId);
+    const commentMsgs = await dbGetByIndex('messages', 'chatId', linkedGroupId);
+    if (commentMsgs.length > 0) {
+      const recentComments = commentMsgs.sort((a, b) => b.ts - a.ts).slice(0, 100).sort((a, b) => a.ts - b.ts);
+      
+      console.log(`📤 Sending ${recentComments.length} comments to new member ${newMember.substring(0, 8)}…`);
+      
+      for (const msg of recentComments) {
+        sendToServer('relay-message', {
+          to: newMember,
+          msg: msg
+        });
+      }
+    }
+  }
+  
+  showToast(`История сообщений отправлена новому участнику`);
+}
+
+// FIX: Receive relayed messages and store them
+async function handleRelayedMessage(data) {
+  if (!data) return;
+  const msg = data;
+  
+  // Ensure message has required fields
+  if (!msg.chatId) return;
+  
+  // Check if message already exists to avoid duplicates
+  const existingMsgs = await dbGetByIndex('messages', 'chatId', normUid(msg.chatId));
+  const exists = existingMsgs.some(m => m.ts === msg.ts && normUid(m.from) === normUid(msg.from));
+  
+  if (!exists) {
+    await dbPut('messages', msg);
+    console.log(`📥 Received relayed message from ${msg.from.substring(0, 8)}…`);
+    
+    // If this is the active chat, refresh the view
+    if (normUid(activeChat) === normUid(msg.chatId)) {
+      const area = document.getElementById('messagesArea');
+      if (area) {
+        area.innerHTML = '';
+        const allMsgs = await dbGetByIndex('messages', 'chatId', normUid(msg.chatId));
+        allMsgs.sort((a, b) => a.ts - b.ts).forEach(m => appendMessage(m, true));
+        scrollToBottom();
+      }
+    }
+  }
 }
 
 async function handlePollVoteUpdate(data) {
@@ -3289,6 +3369,12 @@ async function handleIncomingReaction(data) {
   await dbPut('messages', m);
   if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
     updateMessageReactionRow(ts);
+  }
+  
+  // FIX: Also refresh comments if reaction is in a linkedGroupId (comments group)
+  const channel = contacts.find(c => c.kind === 'channel' && normUid(c.linkedGroupId) === normUid(chatTarget));
+  if (channel && currentCommentsPost && currentCommentsGroupId === normUid(chatTarget)) {
+    loadComments(chatTarget, currentCommentsPost.ts);
   }
 }
 
@@ -7975,7 +8061,8 @@ function setupEvents(){
   if (mobileSettingsAttachChannelBtn) {
     mobileSettingsAttachChannelBtn.onclick = () => {
       // Populate channel select
-      const myChannels = contacts.filter(c => c.kind === 'channel' && c.isOwner);
+      const meN = normUid(myProfile.uuid);
+      const myChannels = contacts.filter(c => c.kind === 'channel' && c.roomOwner && normUid(c.roomOwner) === meN);
       mobileSettingsChannelSelect.innerHTML = '<option value="">Выберите канал...</option>' +
         myChannels.map(c => `<option value="${c.uuid}">${c.nickname || 'Без названия'}</option>`).join('');
       mobileSettingsChannelSelect.style.display = myChannels.length > 0 ? 'block' : 'none';
@@ -8688,8 +8775,9 @@ function refreshSettingsAttachedChannel() {
   const select = document.getElementById('settingsChannelSelect');
   const attachBtn = document.getElementById('settingsAttachChannelBtn');
   
-  // Get owned channels
-  const ownedChannels = contacts.filter(c => c.kind === 'channel' && c.isOwner);
+  const meN = normUid(myProfile.uuid);
+  // Get owned channels - check roomOwner instead of isOwner property
+  const ownedChannels = contacts.filter(c => c.kind === 'channel' && c.roomOwner && normUid(c.roomOwner) === meN);
   
   if (select) {
     select.innerHTML = '<option value="">Выберите канал...</option>';
@@ -11434,11 +11522,87 @@ async function loadComments(groupId, postTs) {
         replyName.style.cssText = 'color:var(--accent);font-weight:600;margin-bottom:2px;font-size:12px';
         replyName.textContent = replyAuthorName;
         const replyContent = document.createElement('div');
-        replyContent.style.cssText = 'color:var(--text);word-break:break-word;white-space:pre-wrap';
-        replyContent.textContent = reply.content || '';
+        replyContent.style.cssText = 'color:var(--text);word-break:break-word';
+        
+        // Render different message types for replies
+        if (reply.type === 'text') {
+          replyContent.style.whiteSpace = 'pre-wrap';
+          replyContent.textContent = reply.content || '';
+        } else if (reply.type === 'image' && reply.content) {
+          const img = document.createElement('img');
+          img.src = reply.content;
+          img.style.cssText = 'max-width:150px;max-height:120px;border-radius:6px;cursor:pointer';
+          img.onclick = () => window.open(reply.content, '_blank');
+          replyContent.appendChild(img);
+        } else if (reply.type === 'video' && reply.content) {
+          const video = document.createElement('video');
+          video.src = reply.content;
+          video.controls = true;
+          video.style.cssText = 'max-width:150px;max-height:120px;border-radius:6px';
+          replyContent.appendChild(video);
+        } else if (reply.type === 'file' && reply.content) {
+          try {
+            const fd = JSON.parse(reply.content);
+            // Check if audio file
+            if (fd.name && (fd.name.endsWith('.mp3') || fd.name.endsWith('.ogg') || fd.name.endsWith('.wav') || fd.name.endsWith('.m4a') || fd.name.endsWith('.webm'))) {
+              const playBtn = document.createElement('button');
+              playBtn.type = 'button';
+              playBtn.className = 'btn-ghost';
+              playBtn.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:6px;background:var(--bg4);border:1px solid var(--border);font-size:11px';
+              playBtn.innerHTML = `<svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg> ${fd.name}`;
+              playBtn.onclick = () => {
+                if (typeof loadAndPlayGlobalAudio === 'function') {
+                  window.globalAudioPlaylist = [{ url: fd.data, title: fd.name, from: replyAuthorName, ts: reply.ts, type: 'track' }];
+                  window.globalAudioIndex = 0;
+                  loadAndPlayGlobalAudio(window.globalAudioPlaylist[0]);
+                } else {
+                  const audio = new Audio(fd.data);
+                  audio.play();
+                }
+              };
+              replyContent.appendChild(playBtn);
+            } else {
+              const fileLink = document.createElement('a');
+              fileLink.href = fd.data;
+              fileLink.download = fd.name;
+              fileLink.style.cssText = 'display:flex;align-items:center;gap:4px;color:var(--accent);text-decoration:none;font-size:11px';
+              fileLink.innerHTML = `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg> ${escapeHtml(fd.name)}`;
+              replyContent.appendChild(fileLink);
+            }
+          } catch {
+            replyContent.textContent = '📎 Файл';
+          }
+        } else {
+          replyContent.textContent = reply.content || '';
+        }
+        
+        // Action buttons for nested replies
+        const replyActions = document.createElement('div');
+        replyActions.style.cssText = 'display:flex;gap:6px;margin-top:4px';
+        
+        const replyReactBtn = document.createElement('button');
+        replyReactBtn.type = 'button';
+        replyReactBtn.style.cssText = 'width:24px;height:24px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+        replyReactBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
+        replyReactBtn.title = 'Реакции';
+        replyReactBtn.onclick = () => showCommentReactionPicker(reply);
+        
+        const replyMenuBtn = document.createElement('button');
+        replyMenuBtn.type = 'button';
+        replyMenuBtn.style.cssText = 'width:24px;height:24px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+        replyMenuBtn.innerHTML = '<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>';
+        replyMenuBtn.title = 'Меню';
+        replyMenuBtn.onclick = (e) => {
+          e.stopPropagation();
+          showCommentContextMenu(e, reply, replyAuthorName);
+        };
+        
+        replyActions.appendChild(replyReactBtn);
+        replyActions.appendChild(replyMenuBtn);
         
         replyBody.appendChild(replyName);
         replyBody.appendChild(replyContent);
+        replyBody.appendChild(replyActions);
         replyRow.appendChild(replyAv);
         replyRow.appendChild(replyBody);
         repliesContainer.appendChild(replyRow);
@@ -11538,9 +11702,7 @@ function handleCommentContextMenuAction(action, comment, authorName) {
     case 'comment-forward':
       // Forward comment - open forward modal
       window.forwardingComment = comment;
-      // Show forward modal
-      showToast('Выберите чат для пересылки');
-      // TODO: Implement forward modal
+      openForwardModalForComment(comment);
       break;
     case 'comment-copy':
       // Copy comment text
@@ -11633,6 +11795,58 @@ function addCommentReaction(comment, emoji) {
     remove: false
   });
   showToast(`Реакция ${emoji} добавлена`);
+}
+
+// Open forward modal for comments
+async function openForwardModalForComment(comment) {
+  const modal = document.getElementById('forwardModal');
+  const list = document.getElementById('forwardContactsList');
+  
+  if (!modal || !list) return;
+  
+  list.innerHTML = '';
+  
+  // Include all contacts except channels and current chat
+  const selectableContacts = contacts.filter(c => 
+    c.kind !== 'channel' && 
+    normUid(c.uuid) !== normUid(currentCommentsGroupId)
+  );
+  
+  if (selectableContacts.length === 0) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3)">Нет контактов для пересылки</div>';
+    modal.style.display = 'flex';
+    return;
+  }
+  
+  selectableContacts.forEach(contact => {
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex;align-items:center;padding:12px;cursor:pointer;border-radius:var(--r);transition:background .15s;border-bottom:1px solid var(--border)';
+    item.onmouseover = () => item.style.background = 'var(--bg4)';
+    item.onmouseout = () => item.style.background = 'none';
+    
+    const av = document.createElement('div');
+    av.style.cssText = 'width:40px;height:40px;border-radius:50%;background:var(--bg4);margin-right:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:15px;font-weight:600;color:var(--accent)';
+    renderAvatar(av, contact.avatar, contact.nickname || contact.uuid);
+    
+    const prefix = contact.kind === 'saved' ? '⭐ ' : (contact.kind === 'group' ? '👥 ' : '');
+    const info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0';
+    info.textContent = prefix + (contact.nickname || contact.uuid.slice(0, 8));
+    
+    item.appendChild(av);
+    item.appendChild(info);
+    
+    item.onclick = async () => {
+      // Forward comment to selected contact
+      await sendMessage(comment.type, comment.content, { toGroupId: contact.uuid });
+      modal.style.display = 'none';
+      showToast('Комментарий переслан');
+    };
+    
+    list.appendChild(item);
+  });
+  
+  modal.style.display = 'flex';
 }
 
 function wireCallUiOnce() {
