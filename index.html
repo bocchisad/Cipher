@@ -1304,6 +1304,9 @@ body.use-gradients{
           <div class="hstatus" id="headerStatus">offline</div>
         </div>
         <div class="hbtns">
+          <button class="icon-btn" id="encryptionVerifyBtn" title="Проверить шифрование">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+          </button>
           <button class="icon-btn" id="audioCallBtn" title="Аудио звонок">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 11.5 19.79 19.79 0 01.22 2.84 2 2 0 012.2 1h3a2 2 0 012 1.72c.127.96.362 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.19a16 16 0 006.9 6.9l1.56-1.55a2 2 0 012.11-.45c.907.339 1.85.574 2.81.7A2 2 0 0122 16.92z"/></svg>
           </button>
@@ -1750,6 +1753,22 @@ body.use-gradients{
   </div>
 </div>
 
+<!-- ENCRYPTION VERIFICATION MODAL -->
+<div class="modal-overlay" id="encryptionVerifyModal" style="display:none">
+  <div class="modal" style="width:min(320px,90vw)">
+    <h2>Проверка шифрования</h2>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:12px">
+      Сравните этот код с кодом собеседника. Если они совпадают, шифрование работает правильно.
+    </p>
+    <div id="encryptionVerifyCode" style="font-size:24px;font-weight:700;text-align:center;letter-spacing:4px;padding:16px;background:var(--bg3);border-radius:12px;border:1px solid var(--border);margin-bottom:12px;color:var(--accent)">
+      ---
+    </div>
+    <div class="modal-btns">
+      <button class="btn-primary" id="encryptionVerifyClose">Закрыть</button>
+    </div>
+  </div>
+</div>
+
 <!-- DELETE CHAT MODAL -->
 <div class="modal-overlay" id="deleteChatModal" style="display:none">
   <div class="modal">
@@ -2061,6 +2080,49 @@ function initAuthTabs() {
   if (tabRegister) {
     tabRegister.onclick = () => switchAuthTab('register');
     tabRegister.style.cursor = 'pointer';
+  }
+}
+
+// ==================== ENCRYPTION VERIFICATION ====================
+async function generateEncryptionVerificationCode(targetUuid) {
+  if (!targetUuid) return '---';
+  
+  try {
+    // Get my public keys from localStorage
+    const myPubECDH = localStorage.getItem('cipher_pub_ecdh');
+    const myPubECDSA = localStorage.getItem('cipher_pub_ecdsa');
+    
+    if (!myPubECDH || !myPubECDSA) return 'Нет ключей';
+    
+    const theirPubKeys = crypto_engine.pubKeysCache.get(normUid(targetUuid));
+    if (!theirPubKeys) {
+      // Request public keys if not cached
+      sendToServer('get-pub-keys', { targetUuid: targetUuid });
+      return 'Загрузка...';
+    }
+    
+    // Combine keys in deterministic order (by UUID)
+    const uuids = [normUid(myProfile.uuid), normUid(targetUuid)].sort();
+    const keys = uuids[0] === normUid(myProfile.uuid) 
+      ? [myPubECDH, myPubECDSA, theirPubKeys.pub_ecdh, theirPubKeys.pub_ecdsa]
+      : [theirPubKeys.pub_ecdh, theirPubKeys.pub_ecdsa, myPubECDH, myPubECDSA];
+    
+    const combined = keys.join('');
+    
+    // Hash with SHA-256
+    const encoder = new TextEncoder();
+    const data = encoder.encode(combined);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    
+    // Convert to hex and take first 8 characters
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // Return first 8 characters as verification code
+    return hashHex.substring(0, 8).toUpperCase();
+  } catch (err) {
+    console.error('Failed to generate verification code:', err);
+    return 'Ошибка';
   }
 }
 
@@ -5800,6 +5862,12 @@ function renderChatHeader(){
       statusEl.style.color = contact.online ? 'var(--green)' : 'var(--text3)';
     }
   }
+  
+  // Hide encryption verification button for groups/channels (E2EE only for direct chats)
+  const encVerifyBtn = document.getElementById('encryptionVerifyBtn');
+  if (encVerifyBtn) {
+    encVerifyBtn.style.display = (contact.kind === 'channel' || contact.kind === 'saved' || contact.kind === 'group') ? 'none' : 'flex';
+  }
   const av=document.getElementById('headerAv');
   if(av) {
     renderAvatar(av, contact.avatar, displayName || contact.uuid);
@@ -8335,6 +8403,30 @@ function setupEvents(){
 
   document.getElementById('audioCallBtn').onclick = () => startOutgoingCall(false);
   document.getElementById('videoCallBtn').onclick = () => startOutgoingCall(true);
+
+  document.getElementById('encryptionVerifyBtn').onclick = async () => {
+    if (!activeChat) return;
+    const modal = document.getElementById('encryptionVerifyModal');
+    const codeEl = document.getElementById('encryptionVerifyCode');
+    if (!modal || !codeEl) return;
+    
+    // Check if modal is already open - if so, close it
+    if (modal.style.display === 'flex') {
+      modal.style.display = 'none';
+      return;
+    }
+    
+    // Generate and display verification code
+    codeEl.textContent = 'Генерация...';
+    modal.style.display = 'flex';
+    
+    const code = await generateEncryptionVerificationCode(activeChat);
+    codeEl.textContent = code;
+  };
+  
+  document.getElementById('encryptionVerifyClose').onclick = () => {
+    document.getElementById('encryptionVerifyModal').style.display = 'none';
+  };
 
   document.getElementById('deleteChatBtn').onclick=()=>{
     if(!activeChat) return;
