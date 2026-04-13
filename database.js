@@ -87,6 +87,7 @@ function createTables() {
       raw_json    TEXT,
       msg_type    TEXT DEFAULT 'msg',
       ts          INTEGER NOT NULL,
+      time_bucket INTEGER NOT NULL,  -- PRIVACY: Coarse-grained time (1-hour buckets)
       created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
       FOREIGN KEY (to_uuid) REFERENCES users(uuid) ON DELETE CASCADE
     );
@@ -159,8 +160,8 @@ function loadRoomKey(roomId) {
 // ==================== MESSAGE QUEUE (E2EE FORMAT) ====================
 function enqueueMessage(message) {
   db.prepare(`
-    INSERT INTO message_queue (from_uuid, to_uuid, payload, iv, signature, raw_json, msg_type, ts)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO message_queue (from_uuid, to_uuid, payload, iv, signature, raw_json, msg_type, ts, time_bucket)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     String(message.from || ''),
     String(message.to || ''),
@@ -169,7 +170,8 @@ function enqueueMessage(message) {
     String(message.signature || ''),
     JSON.stringify(message || {}),
     message.type || 'msg',
-    message.ts || Date.now()
+    message.ts || Date.now(),
+    message.time_bucket || Math.floor(Date.now() / (60 * 60 * 1000)) * (60 * 60 * 1000)
   );
 }
 
