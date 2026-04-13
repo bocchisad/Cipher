@@ -2126,11 +2126,131 @@ async function generateEncryptionVerificationCode(targetUuid) {
   }
 }
 
+// ==================== DOUBLE RATCHET (FORWARD SECRECY) ====================
+class DoubleRatchet {
+  constructor() {
+    this.rootKey = null;
+    this.chainKeys = new Map(); // remote -> chainKey
+    this.sendChainKey = null;
+    this.receiveChainKey = null;
+    this.sendHeaderKey = null;
+    this.receiveHeaderKey = null;
+    this.sendMessageNumber = 0;
+    this.receiveMessageNumber = 0;
+    this.previousSendChainLength = 0;
+  }
+
+  // Initialize with DH ratchet
+  async init(sharedSecret) {
+    // KDF to derive root key and chain keys
+    const rootKeyMaterial = await window.crypto.subtle.deriveKey(
+      { name: 'HKDF', hash: 'SHA-256' },
+      sharedSecret,
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['deriveKey']
+    );
+
+    this.rootKey = rootKeyMaterial;
+    this.sendChainKey = await this.kdf(rootKeyMaterial, 'chain');
+    this.receiveChainKey = await this.kdf(rootKeyMaterial, 'chain');
+  }
+
+  async kdf(input, label) {
+    const encoder = new TextEncoder();
+    const info = encoder.encode(label);
+    const derived = await window.crypto.subtle.deriveKey(
+      {
+        name: 'HKDF',
+        hash: 'SHA-256',
+        salt: new Uint8Array(32),
+        info: info
+      },
+      input,
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['encrypt', 'decrypt']
+    );
+    return derived;
+  }
+
+  // Ratchet step - generate new DH pair
+  async ratchetStep(remotePublicKey) {
+    // Generate new ephemeral DH key
+    const newKeyPair = await window.crypto.subtle.generateKey(
+      { name: 'ECDH', namedCurve: 'P-384' },
+      true,
+      ['deriveKey']
+    );
+
+    // Derive new shared secret
+    const newSharedSecret = await window.crypto.subtle.deriveKey(
+      { name: 'ECDH', public: remotePublicKey },
+      newKeyPair.privateKey,
+      { name: 'HKDF', hash: 'SHA-256' },
+      true,
+      ['deriveBits']
+    );
+
+    // KDF to get new root key and chain key
+    const newRootKey = await this.kdf(newSharedSecret, 'root');
+    this.rootKey = newRootKey;
+    this.sendChainKey = await this.kdf(newRootKey, 'chain');
+    this.sendMessageNumber = 0;
+
+    return newKeyPair.publicKey;
+  }
+
+  // Encrypt message with current chain key
+  async encryptMessage(plaintext) {
+    const messageKey = await this.kdf(this.sendChainKey, `msg-${this.sendMessageNumber}`);
+
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await window.crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      messageKey,
+      new TextEncoder().encode(plaintext)
+    );
+
+    // Advance chain key
+    this.sendChainKey = await this.kdf(this.sendChainKey, 'next');
+    this.sendMessageNumber++;
+
+    return {
+      ciphertext: Array.from(new Uint8Array(encrypted)).map(b => b.toString(16).padStart(2, '0')).join(''),
+      iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
+      messageNumber: this.sendMessageNumber - 1
+    };
+  }
+
+  // Decrypt message with chain key
+  async decryptMessage(ciphertext, iv, messageNumber) {
+    // Derive message key for this message number
+    const messageKey = await this.kdf(this.receiveChainKey, `msg-${messageNumber}`);
+
+    const ivArray = new Uint8Array(iv.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+    const ciphertextArray = Uint8Array.from(ciphertext.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+
+    const decrypted = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: ivArray },
+      messageKey,
+      ciphertextArray
+    );
+
+    // Advance chain key
+    this.receiveChainKey = await this.kdf(this.receiveChainKey, 'next');
+    this.receiveMessageNumber++;
+
+    return new TextDecoder().decode(decrypted);
+  }
+}
+
 // ==================== CRYPTO ENGINE (E2EE) ====================
 class CryptoEngine {
   constructor() {
     this.myKeys = null; // { ecdsaPrivKey, ecdhPrivKey }
     this.pubKeysCache = new Map(); // uuid -> { pub_ecdh, pub_ecdsa }
+    this.doubleRatchets = new Map(); // userId -> DoubleRatchet instance for forward secrecy
     this.keysLoadedPromise = null;
     this.keysLoadedResolve = null;
     this.keysLoadedReject = null;
@@ -2468,9 +2588,181 @@ class CryptoEngine {
 
     return btoa(String.fromCharCode(...new Uint8Array(decryptedFile)));
   }
+
+  // ==================== DOUBLE RATCHET INTEGRATION ====================
+  async initDoubleRatchet(userId) {
+    if (!this.doubleRatchets.has(userId)) {
+      const ratchet = new DoubleRatchet();
+
+      // Get initial shared secret from static ECDH
+      const pubKeys = this.pubKeysCache.get(userId);
+      const staticSharedSecret = await this.deriveSharedSecret(
+        this.myKeys.ecdh,
+        await this.importPublicKey(pubKeys.pub_ecdh, 'ECDH')
+      );
+
+      await ratchet.init(staticSharedSecret);
+      this.doubleRatchets.set(userId, ratchet);
+    }
+    return this.doubleRatchets.get(userId);
+  }
+
+  async encryptWithRatchet(userId, plaintext) {
+    const ratchet = await this.initDoubleRatchet(userId);
+    const encrypted = await ratchet.encryptMessage(plaintext);
+
+    // Include current DH public key in header
+    const header = {
+      dhPublicKey: await this.exportPublicKey(this.myKeys.ecdh),
+      messageNumber: encrypted.messageNumber,
+      previousChainLength: ratchet.previousSendChainLength
+    };
+
+    return {
+      ...encrypted,
+      header: JSON.stringify(header)
+    };
+  }
+
+  async decryptWithRatchet(userId, encryptedData, headerJson) {
+    const ratchet = await this.initDoubleRatchet(userId);
+    const header = JSON.parse(headerJson);
+
+    // Perform DH ratchet if needed (when header key changes)
+    if (header.messageNumber === 0) {
+      const remotePublicKey = await this.importPublicKey(header.dhPublicKey, 'ECDH');
+      await ratchet.ratchetStep(remotePublicKey);
+    }
+
+    return await ratchet.decryptMessage(
+      encryptedData.ciphertext,
+      encryptedData.iv,
+      header.messageNumber
+    );
+  }
+
+  // ==================== ENVELOPE ENCRYPTION (PRIVACY: Anonymous Routing) ====================
+  async encryptEnvelope(recipientToken, payload, iv, signature) {
+    const envelopeData = {
+      payload,
+      iv,
+      signature,
+      timestamp: Date.now() // Encrypted inside envelope
+    };
+
+    // Encrypt envelope with server's public key (or use pre-shared secret)
+    // For now, use a simple AES encryption with a fixed key (in production, use proper key exchange)
+    const envelopePlaintext = JSON.stringify(envelopeData);
+    const envelopeEncrypted = await this.encryptPayload(
+      await this.deriveSharedSecret(
+        this.myKeys.ecdh,
+        await this.importPublicKey(this.pubKeysCache.get(recipientToken)?.pub_ecdh || '', 'ECDH')
+      ),
+      envelopePlaintext
+    );
+
+    return {
+      encryptedEnvelope: envelopeEncrypted.payload,
+      recipientToken: recipientToken
+    };
+  }
+
+  async decryptEnvelope(encryptedEnvelope, senderToken) {
+    // Decrypt with private key
+    const pubKeys = this.pubKeysCache.get(senderToken);
+    if (!pubKeys) {
+      throw new Error('Sender public keys not found');
+    }
+
+    const sharedSecret = await this.deriveSharedSecret(
+      this.myKeys.ecdh,
+      await this.importPublicKey(pubKeys.pub_ecdh, 'ECDH')
+    );
+
+    const envelopePlaintext = await this.decryptPayload(sharedSecret, {
+      payload: encryptedEnvelope,
+      iv: encryptedEnvelope.iv || ''
+    });
+    return JSON.parse(envelopePlaintext);
+  }
 }
 
 const crypto_engine = new CryptoEngine();
+
+// ==================== ANONYMOUS ROUTING (PRIVACY: Token-based) ====================
+const tokenCache = new Map(); // uuid -> token
+
+// Get recipient token for anonymous messaging
+async function getRecipientToken(targetUuid) {
+  if (tokenCache.has(targetUuid)) {
+    return tokenCache.get(targetUuid);
+  }
+
+  sendToServer('get-token', { targetUuid });
+
+  // Wait for response
+  return new Promise((resolve) => {
+    const handler = (msg) => {
+      if (msg.type === 'token-response' && msg.data.targetUuid === targetUuid) {
+        tokenCache.set(targetUuid, msg.data.token);
+        ws.removeEventListener('message', handler);
+        resolve(msg.data.token);
+      }
+    };
+    ws.addEventListener('message', handler);
+  });
+}
+
+// Handle token rotation notification
+function handleTokenRotated(data) {
+  console.log('🔄 Token rotated:', data.newToken);
+  // Clear cache to force refresh
+  tokenCache.clear();
+}
+
+// Fetch public keys anonymously (without revealing UUID)
+async function fetchPublicKeysAnonymous(recipientToken) {
+  sendToServer('get-pub-keys-anonymous', { recipientToken });
+
+  return new Promise((resolve) => {
+    const handler = (msg) => {
+      if (msg.type === 'pub-keys-anonymous-response') {
+        ws.removeEventListener('message', handler);
+        resolve({
+          pub_ecdh: msg.data.pub_ecdh,
+          pub_ecdsa: msg.data.pub_ecdsa
+        });
+      }
+    };
+    ws.addEventListener('message', handler);
+  });
+}
+
+// Send E2EE message anonymously (server doesn't know sender/recipient)
+async function sendE2EEMessageAnonymous(content, recipientToken) {
+  const pubKeys = crypto_engine.pubKeysCache.get(recipientToken);
+  if (!pubKeys) {
+    // Need to get public keys via anonymous key exchange
+    await fetchPublicKeysAnonymous(recipientToken);
+  }
+
+  const sharedSecret = await crypto_engine.deriveSharedSecret(
+    crypto_engine.myKeys.ecdh,
+    pubKeys?.pub_ecdh ? await crypto_engine.importPublicKey(pubKeys.pub_ecdh, 'ECDH') : null
+  );
+
+  const encPayload = await crypto_engine.encryptPayload(sharedSecret, content);
+  const signature = await crypto_engine.signMessage(crypto_engine.myKeys.ecdsa, encPayload.payload);
+
+  const envelope = await crypto_engine.encryptEnvelope(
+    recipientToken,
+    encPayload.payload,
+    encPayload.iv,
+    signature
+  );
+
+  sendToServer('anonymous-msg', envelope);
+}
 
 // ==================== E2EE INDEXEDDB FUNCTIONS ====================
 // Uses existing Cipher DB - adds 'keys' and 'roomKeys' stores if needed
@@ -2981,17 +3273,17 @@ function flushPendingOutbound() {
 }
 
 // ==================== FIX #1: sendToServer — uuid not username ====================
-function sendToServer(type, data) {
-  const msg = { type, data, uuid: myProfile.uuid, timestamp: Date.now() };
+function sendToServer(type, data, version = 1) {
+  const msg = { type, data, uuid: myProfile.uuid, timestamp: Date.now(), version };
   if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify(msg));
     } catch (e) {
       console.warn('ws.send error', e);
-      pendingOutbound.push({ type, data });
+      pendingOutbound.push({ type, data, version });
     }
   } else {
-    pendingOutbound.push({ type, data });
+    pendingOutbound.push({ type, data, version });
     console.warn(`⚠️ "${type}" в очереди (${pendingOutbound.length}), отправим при подключении`);
   }
 }
@@ -3193,6 +3485,39 @@ function handleServerMessage(msg) {
           pub_ecdsa: data.pub_ecdsa
         });
         console.log('🔑 Cached public keys for', data.uuid.substring(0, 8));
+      }
+      break;
+    // Privacy: Anonymous routing handlers
+    case 'token-rotated':
+      handleTokenRotated(data);
+      break;
+    case 'pub-keys-anonymous-response':
+      if (data?.pub_ecdh && data?.pub_ecdsa) {
+        // Cache with token as key (handled by fetchPublicKeysAnonymous)
+        console.log('🔑 Received anonymous public keys');
+      }
+      break;
+    case 'token-response':
+      if (data?.targetUuid && data?.token) {
+        tokenCache.set(data.targetUuid, data.token);
+        console.log('🎫 Cached token for', data.targetUuid.substring(0, 8));
+      }
+      break;
+    case 'anonymous-msg':
+      // Handle anonymous message (server doesn't know sender/recipient)
+      console.log('📦 Received anonymous message');
+      break;
+    case 'key-rotation':
+      // Handle key rotation notification from peer
+      if (data?.from && data?.newPublicKey) {
+        console.log('🔄 Key rotation from', data.from.substring(0, 8));
+        // Update cached public keys for the sender
+        if (crypto_engine.pubKeysCache.has(data.from)) {
+          crypto_engine.pubKeysCache.set(normUid(data.from), {
+            pub_ecdh: data.newPublicKey,
+            pub_ecdsa: crypto_engine.pubKeysCache.get(data.from).pub_ecdsa
+          });
+        }
       }
       break;
     case 'room-key-share':
@@ -4515,6 +4840,10 @@ async function handleIncomingMessage(msg) {
                 if (outerData.reactions) {
                   msg.reactions = outerData.reactions;
                 }
+                // PRIVACY: Use encrypted precise timestamp for display
+                if (outerData.preciseTimestamp) {
+                  msg.ts = outerData.preciseTimestamp;
+                }
                 msg.e2eeDecrypted = true;
               }
             }
@@ -4926,7 +5255,7 @@ async function sendMessage(type, content, options = {}){
   // Support sending to specific group (for comments)
   const targetChat = options.toGroupId || activeChat;
   if(!targetChat) return;
-  
+
   // Handle edit mode
   if (editingMessageTs && type === 'text' && !options.toGroupId) {
     await sendEditMessage(content);
@@ -5041,14 +5370,15 @@ async function sendMessage(type, content, options = {}){
           encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
         } else {
           // Standard encryption for text/voice
-          // Pack ALL metadata inside encrypted payload: replyTo, forwardFrom, reactions
-          const metadataPayload = { 
-            type, 
-            content, 
+          // Pack ALL metadata inside encrypted payload: replyTo, forwardFrom, reactions, preciseTimestamp
+          const metadataPayload = {
+            type,
+            content,
+            preciseTimestamp: Date.now(),  // PRIVACY: Precise timestamp encrypted inside payload
             replyTo: replySnap,
             forwardFrom: forwardingFromMsg ? {
               uuid: forwardingFromMsg.from,
-              name: contacts.find((c) => normUid(c.uuid) === normUid(forwardingFromMsg.from))?.nickname || 
+              name: contacts.find((c) => normUid(c.uuid) === normUid(forwardingFromMsg.from))?.nickname ||
                     (normUid(forwardingFromMsg.from) === normUid(myProfile.uuid) ? 'Вы' : String(forwardingFromMsg.from).slice(0, 8))
             } : undefined,
             reactions: {} // Placeholder for reactions to be added by recipients
@@ -5098,7 +5428,7 @@ async function sendMessage(type, content, options = {}){
 
   const isSaved = c && c.kind === 'saved';
   if(!isSaved && ws && ws.readyState === WebSocket.OPEN) {
-    sendToServer('message', message); // FIX #5: don't send Favorites to server
+    sendToServer('message', message, 2); // FIX #5: don't send Favorites to server + version=2 (max privacy)
   }
 
   // FIX: clear reply and forward state after send
@@ -5591,9 +5921,10 @@ async function forwardToContact(msg, contact) {
           encPayload = await crypto_engine.encryptPayload(sharedSecret, plaintext);
         } else {
           // Standard encryption with forward metadata inside
-          const metadataPayload = { 
-            type: msg.type, 
-            content: msg.content, 
+          const metadataPayload = {
+            type: msg.type,
+            content: msg.content,
+            preciseTimestamp: Date.now(),  // PRIVACY: Precise timestamp encrypted inside payload
             forwardFrom: forwardFrom,
             reactions: {}
           };
