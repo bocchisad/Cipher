@@ -326,6 +326,13 @@ function wireMiniUserProfileModalOnce() {
   if (window._miniProfWired) return;
   window._miniProfWired = true;
   
+  // Initialize player sync for mini profile
+  setTimeout(() => {
+    if (typeof initMiniProfilePlayerSync === 'function') {
+      initMiniProfilePlayerSync();
+    }
+  }, 1000); // Wait for global audio player to be initialized
+  
   const modal = document.getElementById('miniUserProfileModal');
   const closeBtn = document.getElementById('miniProfileCloseBtn');
   const writeBtn = document.getElementById('miniProfileWriteBtn');

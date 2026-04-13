@@ -4517,6 +4517,10 @@ function sanitizeContact(contact) {
   if (contact.roomOwner !== undefined) contact.roomOwner = String(contact.roomOwner || '');
   if (!Array.isArray(contact.roomAdmins)) contact.roomAdmins = [];
   if (!Array.isArray(contact.roomMembers)) contact.roomMembers = [];
+  // Save extended profile fields
+  if (contact.bio !== undefined) contact.bio = String(contact.bio || '');
+  if (contact.tracks !== undefined) contact.tracks = Array.isArray(contact.tracks) ? contact.tracks : [];
+  if (contact.attachedChannelId !== undefined) contact.attachedChannelId = String(contact.attachedChannelId || '');
   contact.uuid = normUid(contact.uuid);
   const alias = getLocalAlias(contact.uuid);
   if (alias) contact.nickname = alias;
@@ -4579,7 +4583,7 @@ function handleUserOffline(uuid) {
 
 function handleUserProfile(data) {
   if (!data || typeof data !== 'object') return;
-  const {uuid, nickname, avatar} = data;
+  const {uuid, nickname, avatar, bio, tracks, attachedChannelId} = data;
   if (!uuid) {
     console.warn('⚠️ handleUserProfile: missing uuid');
     return;
@@ -4597,6 +4601,10 @@ function handleUserProfile(data) {
         contact.avatar = ''; // Allow clearing avatar
       }
     }
+    // Save extended profile data
+    if (bio !== undefined) contact.bio = bio;
+    if (tracks !== undefined) contact.tracks = tracks;
+    if (attachedChannelId !== undefined) contact.attachedChannelId = attachedChannelId;
     
     const cleaned = sanitizeContact(contact);
     if(cleaned) {
@@ -4610,9 +4618,15 @@ function handleUserProfile(data) {
     renderChatHeader();
     renderInfoPanel(uid);
   }
+  // Refresh mini profile if open and showing this user
   const miniM = document.getElementById('miniUserProfileModal');
   if (miniM && miniM.style.display !== 'none' && miniProfileTargetUuid && normUid(miniProfileTargetUuid) === uid) {
-    openMiniUserProfile(uid);
+    // Use enhanced version if available
+    if (typeof openMiniUserProfileEnhanced === 'function') {
+      openMiniUserProfileEnhanced(uid);
+    } else {
+      openMiniUserProfile(uid);
+    }
   }
 }
 
