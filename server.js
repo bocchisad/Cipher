@@ -878,7 +878,15 @@ function handleRoomCreate(fromUuid, data) {
       }
       return;
     }
-    if (channelUsernames.has(username)) {
+    // Double-check: verify username uniqueness in actual rooms data (not just in-memory map)
+    let usernameTaken = false;
+    for (const [, room] of rooms) {
+      if (room.kind === 'channel' && normalizeChannelUsername(room.username || '') === username) {
+        usernameTaken = true;
+        break;
+      }
+    }
+    if (channelUsernames.has(username) || usernameTaken) {
       const suggested = [username + '_2', username + '_3', username + '_' + String(Math.floor(100 + Math.random() * 900))];
       if (self?.ws) {
         safeWsSend(self.ws, { type: 'error', data: { error: 'Этот юзернейм занят', channelSuggestions: suggested } });
