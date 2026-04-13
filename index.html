@@ -7846,7 +7846,7 @@
 
       console.log('sendCommentReactionToggle called:', comment.ts, emoji);
 
-      // Load the comment from database to ensure we have the correct ID
+      // Load the comment from database to ensure we have the correct state
       const msgs = await dbGetByIndex('messages', 'chatId', currentCommentsGroupId);
       const dbComment = msgs.find((x) => x.ts === comment.ts);
       if (!dbComment) return;
@@ -7858,31 +7858,8 @@
       const me = normUid(myProfile.uuid);
       const remove = list.some((u) => normUid(u) === me);
 
-      // Send reaction to server
-      addCommentReaction(dbComment, emoji, remove);
-
-      // Update local state immediately
-      if (remove) {
-        dbComment.reactions[emoji] = list.filter((u) => normUid(u) !== me);
-        if (!dbComment.reactions[emoji].length) delete dbComment.reactions[emoji];
-      } else {
-        dbComment.reactions[emoji] = [...list, me];
-      }
-
-      console.log('reactions after update:', dbComment.reactions);
-
-      // Save to database
-      await dbPut('messages', dbComment);
-
-      // Update the original comment object with the new reactions
-      comment.reactions = dbComment.reactions;
-
-      console.log('Updated comment.reactions:', comment.ts, comment.reactions);
-
-      // Re-render comments
-      if (currentCommentsPost && currentCommentsGroupId) {
-        await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
-      }
+      // FIX: Use addCommentReaction which handles server, DB, and UI updates
+      await addCommentReaction(dbComment, emoji, remove);
     }
 
     function makeVoicePlayer(dataUrl, msg){
@@ -12539,9 +12516,11 @@
 
                 commentMediaRecorder.onstop = async () => {
                   pendingVoiceBlob = new Blob(commentAudioChunks, { type: 'audio/webm' });
+                  console.log('Voice recording stopped, blob size:', pendingVoiceBlob.size);
                   if (attachPreview) attachPreview.style.display = 'block';
                   if (attachName) attachName.textContent = '🎤 Голосовое сообщение';
                   if (attachSize) attachSize.textContent = formatFileSize(pendingVoiceBlob.size);
+                  showToast('🎤 Голосовое записано, нажмите отправить');
                 };
 
                 commentMediaRecorder.start();
@@ -12644,7 +12623,9 @@
         }
 
         // Send voice if recorded
+        console.log('Send button clicked, pendingVoiceBlob:', pendingVoiceBlob?.size, 'mediaEnabled:', mediaEnabled);
         if (pendingVoiceBlob && mediaEnabled) {
+          console.log('Sending voice message...');
           const dataUrl = await blobToBase64(pendingVoiceBlob);
           await sendMessage('voice', dataUrl, {
             replyTo: replyTo,
@@ -12652,6 +12633,9 @@
           });
           pendingVoiceBlob = null;
           if (attachPreview) attachPreview.style.display = 'none';
+          showToast('Голосовое отправлено');
+        } else if (pendingVoiceBlob && !mediaEnabled) {
+          showToast('❌ Медиа отключены в этой группе');
         }
 
         // Send media if attached (with text as caption if provided)
@@ -12767,14 +12751,17 @@
         (!currentCommentsPost || normUid(m.replyTo.from) === normUid(currentCommentsPost.from))
       ).sort((a, b) => a.ts - b.ts);
 
-      // Get all comments for nested reply lookup
-      const allComments = msgs.filter(m => m.replyTo).sort((a, b) => a.ts - b.ts);
+      // FIX: Get all comments for nested reply lookup - FILTER BY CURRENT POST ONLY
+      const allComments = msgs.filter(m =>
+        m.replyTo &&
+        normUid(m.replyTo.from) === normUid(currentCommentsPost.from)
+      ).sort((a, b) => a.ts - b.ts);
 
       // Build comment tree
       const commentTree = new Map();
       directComments.forEach(c => commentTree.set(c.ts, { comment: c, replies: [] }));
 
-      // Add nested replies
+      // Add nested replies - only from current post
       allComments.forEach(c => {
         if (c.replyTo && c.replyTo.ts !== postTs) {
           // This is a reply to another comment
@@ -12782,13 +12769,8 @@
           const parent = commentTree.get(parentTs);
           if (parent) {
             parent.replies.push(c);
-          } else {
-            // Parent not in tree, might be a nested reply to nested reply
-            // For simplicity, add as direct comment for now
-            if (!commentTree.has(c.ts)) {
-              commentTree.set(c.ts, { comment: c, replies: [] });
-            }
           }
+          // Note: Don't add orphaned replies as direct comments to avoid duplication
         }
       });
 
@@ -12982,23 +12964,43 @@
                 replyContent.style.whiteSpace = 'pre-wrap';
                 replyContent.textContent = reply.content || '';
               } else if (reply.type === 'image' && reply.content) {
+                // FIX: Extract data from JSON format for nested reply images
+                let imgSrc = reply.content;
+                try {
+                  if (typeof reply.content === 'string') {
+                    const parsed = JSON.parse(reply.content);
+                    if (parsed.data) imgSrc = parsed.data;
+                  } else if (typeof reply.content === 'object' && reply.content.data) {
+                    imgSrc = reply.content.data;
+                  }
+                } catch (e) {}
                 const img = document.createElement('img');
-                img.src = reply.content;
+                img.src = imgSrc;
                 img.style.cssText = 'max-width:150px;max-height:100px;border-radius:6px;cursor:pointer';
-                img.onclick = () => window.open(reply.content, '_blank');
+                img.onclick = () => window.open(imgSrc, '_blank');
                 img.oncontextmenu = (e) => {
                   e.preventDefault();
-                  showCommentImageContextMenu(e, reply, reply.content, 'image');
+                  showCommentImageContextMenu(e, reply, imgSrc, 'image');
                 };
                 replyContent.appendChild(img);
               } else if (reply.type === 'video' && reply.content) {
+                // FIX: Extract data from JSON format for nested reply videos
+                let videoSrc = reply.content;
+                try {
+                  if (typeof reply.content === 'string') {
+                    const parsed = JSON.parse(reply.content);
+                    if (parsed.data) videoSrc = parsed.data;
+                  } else if (typeof reply.content === 'object' && reply.content.data) {
+                    videoSrc = reply.content.data;
+                  }
+                } catch (e) {}
                 const video = document.createElement('video');
-                video.src = reply.content;
+                video.src = videoSrc;
                 video.controls = true;
                 video.style.cssText = 'max-width:150px;max-height:100px;border-radius:6px';
                 video.oncontextmenu = (e) => {
                   e.preventDefault();
-                  showCommentImageContextMenu(e, reply, reply.content, 'video');
+                  showCommentImageContextMenu(e, reply, videoSrc, 'video');
                 };
                 replyContent.appendChild(video);
               } else if (reply.type === 'voice' && reply.content) {
@@ -13496,15 +13498,41 @@
       setTimeout(() => document.addEventListener('click', closePicker), 0);
     }
 
-    function addCommentReaction(comment, emoji, remove = false) {
+    async function addCommentReaction(comment, emoji, remove = false) {
       // Send reaction to server
       sendToServer('message-reaction', {
         to: currentCommentsGroupId,
-        ts: comment.ts,  // FIX: Add ts which is required by server
+        ts: comment.ts,
         msgId: comment.msgId || buildClientMsgId(comment.from, comment.ts),
         emoji: emoji,
         remove: remove
       });
+
+      // FIX: Update local state immediately (like regular message reactions)
+      if (!comment.reactions) comment.reactions = {};
+      const me = normUid(myProfile.uuid);
+      const list = comment.reactions[emoji] || [];
+
+      if (remove) {
+        comment.reactions[emoji] = list.filter((u) => normUid(u) !== me);
+        if (!comment.reactions[emoji].length) delete comment.reactions[emoji];
+      } else if (!list.includes(me)) {
+        comment.reactions[emoji] = [...list, me];
+      }
+
+      // Save to database
+      const msgs = await dbGetByIndex('messages', 'chatId', currentCommentsGroupId);
+      const dbComment = msgs.find((x) => x.ts === comment.ts);
+      if (dbComment) {
+        dbComment.reactions = comment.reactions;
+        await dbPut('messages', dbComment);
+      }
+
+      // Reload comments to show updated reactions
+      if (currentCommentsPost) {
+        await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+      }
+
       if (!remove) {
         showToast(`Реакция ${emoji} добавлена`);
       } else {
