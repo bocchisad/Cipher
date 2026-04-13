@@ -3771,18 +3771,18 @@ async function upsertRoomContact(room) {
 
 async function handleIncomingReaction(data) {
   if (!data || data.ts == null || !data.emoji) return;
-  
+
   const fromUuid = data.from;
   const targetUuid = data.to; // recipient of reaction
   const ts = data.ts;
   const emoji = data.emoji;
   const remove = data.remove;
-  
+
   // Determine correct chatId: for rooms use targetUuid, for direct messages use fromUuid
   const c = contacts.find(x => normUid(x.uuid) === normUid(targetUuid));
   const isRoom = c && (c.kind === 'group' || c.kind === 'channel');
   const chatTarget = isRoom ? targetUuid : normUid(fromUuid);
-  
+
   // PLAINTEXT reaction handling - no E2EE, just metadata
   const msgs = await dbGetByIndex('messages', 'chatId', chatTarget);
   const m = msgs.find((x) => x.ts === ts);
@@ -3798,14 +3798,15 @@ async function handleIncomingReaction(data) {
     m.reactions[em].push(uid);
   }
   await dbPut('messages', m);
+
+  // Update main chat reactions
   if (activeChat && normUid(activeChat) === normUid(chatTarget)) {
     updateMessageReactionRow(ts);
   }
-  
-  // FIX: Also refresh comments if reaction is in a linkedGroupId (comments group)
-  const channel = contacts.find(c => c.kind === 'channel' && normUid(c.linkedGroupId) === normUid(chatTarget));
-  if (channel && currentCommentsPost && currentCommentsGroupId === normUid(chatTarget)) {
-    loadComments(chatTarget, currentCommentsPost.ts);
+
+  // Update comment reactions if the message is a comment and comments view is open
+  if (currentCommentsPost && currentCommentsGroupId === chatTarget) {
+    await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
   }
 }
 
@@ -6779,15 +6780,9 @@ function renderCommentMediaAlbum(commentsList) {
   // Add reactions if any
   if (pendingCommentMediaGroup[0].reactions && Object.keys(pendingCommentMediaGroup[0].reactions).length > 0) {
     const reactionsEl = document.createElement('div');
+    reactionsEl.className = 'msg-reactions';
     reactionsEl.style.cssText = 'display:flex;gap:4px;margin-top:6px;flex-wrap:wrap';
-    Object.entries(pendingCommentMediaGroup[0].reactions).forEach(([emoji, users]) => {
-      if (users && users.length > 0) {
-        const rBadge = document.createElement('span');
-        rBadge.style.cssText = 'font-size:12px;padding:2px 6px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);cursor:pointer';
-        rBadge.textContent = `${emoji} ${users.length}`;
-        reactionsEl.appendChild(rBadge);
-      }
-    });
+    renderReactionChips(reactionsEl, pendingCommentMediaGroup[0], true);
     body.appendChild(reactionsEl);
   }
 
@@ -7407,7 +7402,7 @@ function appendMessage(msg, skipAnim = false){
   area.appendChild(wrapper);
 }
 
-function renderReactionChips(container, msg) {
+function renderReactionChips(container, msg, isComment = false) {
   container.innerHTML = '';
   const rx = msg.reactions || {};
   for (const [emoji, users] of Object.entries(rx)) {
@@ -7416,7 +7411,14 @@ function renderReactionChips(container, msg) {
     span.type = 'button';
     span.className = 'reaction-pill';
     span.textContent = emoji + ' ' + users.length;
-    span.onclick = (e) => { e.stopPropagation(); sendReactionToggle(msg.ts, emoji); };
+    span.onclick = (e) => {
+      e.stopPropagation();
+      if (isComment) {
+        sendCommentReactionToggle(msg, emoji);
+      } else {
+        sendReactionToggle(msg.ts, emoji);
+      }
+    };
     container.appendChild(span);
   }
 }
@@ -7453,6 +7455,33 @@ async function updateMessageReactionRow(ts) {
   const msgs = await dbGetByIndex('messages', 'chatId', activeChat);
   const m = msgs.find((x) => x.ts === ts);
   if (m) renderReactionChips(row, m);
+}
+
+async function sendCommentReactionToggle(comment, emoji) {
+  if (!comment) return;
+  if (!comment.reactions) comment.reactions = {};
+  const list = comment.reactions[emoji] || [];
+  const me = normUid(myProfile.uuid);
+  const remove = list.some((u) => normUid(u) === me);
+
+  // Send reaction to server
+  addCommentReaction(comment, emoji, remove);
+
+  // Update local state immediately
+  if (remove) {
+    comment.reactions[emoji] = list.filter((u) => normUid(u) !== me);
+    if (!comment.reactions[emoji].length) delete comment.reactions[emoji];
+  } else {
+    comment.reactions[emoji] = [...list, me];
+  }
+
+  // Save to database
+  await dbPut('messages', comment);
+
+  // Re-render comments
+  if (currentCommentsPost && currentCommentsGroupId) {
+    await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+  }
 }
 
 function makeVoicePlayer(dataUrl, msg){
@@ -12428,18 +12457,9 @@ async function loadComments(groupId, postTs) {
       // Display reactions if present
       if (comment.reactions && Object.keys(comment.reactions).length > 0) {
         const reactionsEl = document.createElement('div');
+        reactionsEl.className = 'msg-reactions';
         reactionsEl.style.cssText = 'display:flex;gap:4px;margin-top:6px;flex-wrap:wrap';
-        Object.entries(comment.reactions).forEach(([emoji, users]) => {
-          if (users && users.length > 0) {
-            const rBadge = document.createElement('span');
-            rBadge.style.cssText = 'font-size:12px;padding:2px 6px;background:var(--bg3);border-radius:10px;border:1px solid var(--border);cursor:pointer';
-            rBadge.textContent = `${emoji} ${users.length}`;
-            rBadge.onclick = () => {
-              addCommentReaction(comment, emoji);
-            };
-            reactionsEl.appendChild(rBadge);
-          }
-        });
+        renderReactionChips(reactionsEl, comment, true);
         body.appendChild(reactionsEl);
       }
 
@@ -12536,6 +12556,16 @@ async function loadComments(groupId, postTs) {
 
           replyBody.appendChild(replyName);
           replyBody.appendChild(replyContent);
+
+          // Add reactions for nested replies
+          if (reply.reactions && Object.keys(reply.reactions).length > 0) {
+            const replyReactionsEl = document.createElement('div');
+            replyReactionsEl.className = 'msg-reactions';
+            replyReactionsEl.style.cssText = 'display:flex;gap:4px;margin-top:4px;flex-wrap:wrap';
+            renderReactionChips(replyReactionsEl, reply, true);
+            replyBody.appendChild(replyReactionsEl);
+          }
+
           replyBody.appendChild(replyActions);
           replyRow.appendChild(replyAv);
           replyRow.appendChild(replyBody);
@@ -12727,16 +12757,20 @@ function showCommentReactionPicker(comment) {
   setTimeout(() => document.addEventListener('click', closePicker), 0);
 }
 
-function addCommentReaction(comment, emoji) {
+function addCommentReaction(comment, emoji, remove = false) {
   // Send reaction to server
   sendToServer('message-reaction', {
     to: currentCommentsGroupId,
     ts: comment.ts,  // FIX: Add ts which is required by server
     msgId: comment.msgId || buildClientMsgId(comment.from, comment.ts),
     emoji: emoji,
-    remove: false
+    remove: remove
   });
-  showToast(`Реакция ${emoji} добавлена`);
+  if (!remove) {
+    showToast(`Реакция ${emoji} добавлена`);
+  } else {
+    showToast(`Реакция ${emoji} удалена`);
+  }
 }
 
 // Open forward modal for comments
