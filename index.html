@@ -3808,6 +3808,12 @@ async function handleIncomingReaction(data) {
   if (currentCommentsPost && currentCommentsGroupId === chatTarget) {
     await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
   }
+
+  // Also check if this is a comment in a channel's linked group
+  const channel = contacts.find(ch => ch.kind === 'channel' && normUid(ch.linkedGroupId) === normUid(chatTarget));
+  if (channel && currentCommentsPost && currentCommentsGroupId === chatTarget) {
+    await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+  }
 }
 
 // ==================== INCOMING EDIT MESSAGE ====================
@@ -4929,7 +4935,21 @@ async function handleIncomingMessage(msg) {
   const ch = normUid(chatId);
   const sameChat = !!(here && here === ch);
   const incomingMsgId = msg.msgId || buildClientMsgId(from, ts);
-  const localMsg = {chatId, from, to, type, content, ts, msgId: incomingMsgId, roomId: roomId || undefined, read: sameChat, reactions: msg.reactions || {}, replyTo: msg.replyTo, forwardFrom: msg.forwardFrom, caption: msg.caption};
+
+  // Check if message already exists to preserve reactions
+  const existingMsgs = await dbGetByIndex('messages', 'chatId', ch);
+  const existingMsg = existingMsgs.find(m => m.ts === ts && normUid(m.from) === normUid(from));
+
+  const localMsg = {
+    chatId, from, to, type, content, ts,
+    msgId: incomingMsgId,
+    roomId: roomId || undefined,
+    read: sameChat,
+    reactions: existingMsg?.reactions || msg.reactions || {},
+    replyTo: msg.replyTo,
+    forwardFrom: msg.forwardFrom,
+    caption: msg.caption
+  };
   await dbPut('messages', localMsg);
   if (type === 'text' && msg.replyTo) {
     noteIncomingChannelComment(localMsg);
@@ -6704,9 +6724,19 @@ function renderCommentMediaAlbum(commentsList) {
   nameEl.style.cssText = 'color:var(--accent);font-weight:600;margin-bottom:4px;font-size:13px';
   nameEl.textContent = authorName;
 
+  // Add caption if present
+  const captionEl = document.createElement('div');
+  captionEl.style.cssText = 'color:var(--text);word-break:break-word;margin-bottom:4px';
+  captionEl.style.whiteSpace = 'pre-wrap';
+  captionEl.textContent = pendingCommentMediaGroup[0].content || '';
+  body.appendChild(nameEl);
+  if (pendingCommentMediaGroup[0].content) {
+    body.appendChild(captionEl);
+  }
+
   // Create media group container
   const mediaGroup = document.createElement('div');
-  mediaGroup.style.cssText = 'display:grid;gap:4px;margin-top:6px';
+  mediaGroup.style.cssText = 'display:grid;gap:4px;margin-top:4px';
 
   // Determine grid layout based on count
   const count = pendingCommentMediaGroup.length;
@@ -6727,7 +6757,7 @@ function renderCommentMediaAlbum(commentsList) {
     if (idx >= 4 && count > 4) {
       if (idx === 4) {
         const more = document.createElement('div');
-        more.style.cssText = 'display:flex;align-items:center;justify-content:center;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--text2)';
+        more.style.cssText = 'display:flex;align-items:center;justify-content:center;background:var(--bg3);border-radius:8px;font-size:12px;color:var(--text2);aspect-ratio:1';
         more.textContent = `+${count - 4}`;
         mediaGroup.appendChild(more);
       }
@@ -6768,7 +6798,6 @@ function renderCommentMediaAlbum(commentsList) {
     }
   });
 
-  body.appendChild(nameEl);
   body.appendChild(mediaGroup);
 
   // Add timestamp for the group
@@ -6776,6 +6805,54 @@ function renderCommentMediaAlbum(commentsList) {
   timeEl.style.cssText = 'color:var(--text3);font-size:11px;margin-top:6px';
   timeEl.textContent = fmtTime(pendingCommentMediaGroup[0].ts);
   body.appendChild(timeEl);
+
+  // Add action buttons for media album
+  const actionsEl = document.createElement('div');
+  actionsEl.style.cssText = 'display:flex;gap:8px;margin-top:6px';
+
+  // Reply button
+  const replyBtn = document.createElement('button');
+  replyBtn.type = 'button';
+  replyBtn.className = 'icon-btn';
+  replyBtn.style.cssText = 'width:28px;height:28px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+  replyBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 10h4a1 1 0 001-1v-3a1 1 0 011-1h9a1 1 0 011 1v3a1 1 0 001 1h4a1 1 0 001-1v-8a1 1 0 00-1-1H3a1 1 0 00-1 1v8a1 1 0 001 1z"/><path d="M9 21h6"/><path d="M12 17v4"/></svg>';
+  replyBtn.title = 'Ответить';
+  replyBtn.onclick = () => {
+    window.replyingToComment = pendingCommentMediaGroup[0];
+    const inp = document.getElementById('commentsInput');
+    if (inp) {
+      inp.focus();
+      inp.placeholder = `Ответить на комментарий ${authorName}...`;
+    }
+  };
+
+  // Reactions button
+  const reactBtn = document.createElement('button');
+  reactBtn.type = 'button';
+  reactBtn.className = 'icon-btn';
+  reactBtn.style.cssText = 'width:28px;height:28px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+  reactBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>';
+  reactBtn.title = 'Реакции';
+  reactBtn.onclick = () => {
+    showCommentReactionPicker(pendingCommentMediaGroup[0]);
+  };
+
+  // Menu button
+  const menuBtn = document.createElement('button');
+  menuBtn.type = 'button';
+  menuBtn.className = 'icon-btn';
+  menuBtn.style.cssText = 'width:28px;height:28px;border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center';
+  menuBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>';
+  menuBtn.title = 'Меню';
+  menuBtn.onclick = (e) => {
+    e.stopPropagation();
+    showCommentContextMenu(e, pendingCommentMediaGroup[0], authorName);
+  };
+
+  actionsEl.appendChild(replyBtn);
+  actionsEl.appendChild(reactBtn);
+  actionsEl.appendChild(menuBtn);
+  body.appendChild(actionsEl);
 
   // Add reactions if any
   if (pendingCommentMediaGroup[0].reactions && Object.keys(pendingCommentMediaGroup[0].reactions).length > 0) {
@@ -7459,24 +7536,30 @@ async function updateMessageReactionRow(ts) {
 
 async function sendCommentReactionToggle(comment, emoji) {
   if (!comment) return;
-  if (!comment.reactions) comment.reactions = {};
-  const list = comment.reactions[emoji] || [];
+
+  // Load the comment from database to ensure we have the correct ID
+  const msgs = await dbGetByIndex('messages', 'chatId', currentCommentsGroupId);
+  const dbComment = msgs.find((x) => x.ts === comment.ts);
+  if (!dbComment) return;
+
+  if (!dbComment.reactions) dbComment.reactions = {};
+  const list = dbComment.reactions[emoji] || [];
   const me = normUid(myProfile.uuid);
   const remove = list.some((u) => normUid(u) === me);
 
   // Send reaction to server
-  addCommentReaction(comment, emoji, remove);
+  addCommentReaction(dbComment, emoji, remove);
 
   // Update local state immediately
   if (remove) {
-    comment.reactions[emoji] = list.filter((u) => normUid(u) !== me);
-    if (!comment.reactions[emoji].length) delete comment.reactions[emoji];
+    dbComment.reactions[emoji] = list.filter((u) => normUid(u) !== me);
+    if (!dbComment.reactions[emoji].length) delete dbComment.reactions[emoji];
   } else {
-    comment.reactions[emoji] = [...list, me];
+    dbComment.reactions[emoji] = [...list, me];
   }
 
   // Save to database
-  await dbPut('messages', comment);
+  await dbPut('messages', dbComment);
 
   // Re-render comments
   if (currentCommentsPost && currentCommentsGroupId) {
@@ -12321,16 +12404,19 @@ async function loadComments(groupId, postTs) {
   const chForCache = contacts.find((c) => normUid(c.uuid) === normUid(activeChat) && c.kind === 'channel');
 
   commentsList.innerHTML = '';
+
+  // Update comment count even if empty
+  if (chForCache && currentCommentsPost) {
+    setChannelCommentCount(chForCache.uuid, currentCommentsPost.from, postTs, comments.length);
+    refreshCommentLabelsIfChannelOpen(chForCache.uuid);
+  }
+
   if (comments.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'comments-empty-state';
     empty.style.cssText = 'text-align:center;color:var(--text2);padding:28px 16px;font-size:14px';
     empty.textContent = 'Пока нет комментариев…';
     commentsList.appendChild(empty);
-    if (chForCache && currentCommentsPost) {
-      setChannelCommentCount(chForCache.uuid, currentCommentsPost.from, postTs, 0);
-      refreshCommentLabelsIfChannelOpen(chForCache.uuid);
-    }
     return;
   }
   
@@ -12454,6 +12540,11 @@ async function loadComments(groupId, postTs) {
       actionsEl.appendChild(reactBtn);
       actionsEl.appendChild(menuBtn);
 
+      body.appendChild(nameEl);
+      body.appendChild(contentEl);
+      body.appendChild(timeEl);
+      body.appendChild(actionsEl);
+
       // Display reactions if present
       if (comment.reactions && Object.keys(comment.reactions).length > 0) {
         const reactionsEl = document.createElement('div');
@@ -12462,11 +12553,6 @@ async function loadComments(groupId, postTs) {
         renderReactionChips(reactionsEl, comment, true);
         body.appendChild(reactionsEl);
       }
-
-      body.appendChild(nameEl);
-      body.appendChild(contentEl);
-      body.appendChild(timeEl);
-      body.appendChild(actionsEl);
       row.appendChild(avWrap);
       row.appendChild(body);
       commentsList.appendChild(row);
@@ -12720,12 +12806,12 @@ function deleteCommentForBoth(ts) {
 }
 
 // Reaction picker for comments
-function showCommentReactionPicker(comment) {
+function showCommentReactionPicker(comment, targetElement = null) {
   const emojis = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
-  
+
   const picker = document.createElement('div');
   picker.style.cssText = 'position:fixed;z-index:10000;background:var(--bg1);border:1px solid var(--border);border-radius:12px;padding:8px;box-shadow:0 8px 32px rgba(0,0,0,0.4);display:flex;gap:8px;flex-wrap:wrap;max-width:200px';
-  
+
   emojis.forEach(emoji => {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -12739,14 +12825,15 @@ function showCommentReactionPicker(comment) {
     };
     picker.appendChild(btn);
   });
-  
-  // Position picker
-  const rect = event.target.getBoundingClientRect();
-  picker.style.left = rect.left + 'px';
+
+  // Position picker near the target element or event target
+  const target = targetElement || event.target;
+  const rect = target.getBoundingClientRect();
+  picker.style.left = (rect.left - 50) + 'px';
   picker.style.top = (rect.top - 50) + 'px';
-  
+
   document.body.appendChild(picker);
-  
+
   // Close on click outside
   const closePicker = (e) => {
     if (!picker.contains(e.target)) {
