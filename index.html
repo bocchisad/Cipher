@@ -4882,19 +4882,25 @@
       };
 
       regBtn.onclick=async()=>{
+        console.log('🔧 Register button clicked');
         try { localStorage.removeItem('cipherAuth'); } catch (_) {}
         const nickname=regNick.value.trim();
         const password=regPass.value;
         const password2=regPass2.value;
+        console.log('🔧 Form values:', {nickname, passwordLen: password?.length, password2Len: password2?.length});
 
         if(!nickname || nickname.length<1){showToast('Никнейм обязателен');return;}
         // FIX #9: Enforce minimum password entropy for key encryption security
+        console.log('🔧 Checking password entropy...');
         const passwordCheck = validatePasswordEntropy(password);
+        console.log('🔧 Password check result:', passwordCheck);
         if (!passwordCheck.valid) {
           showToast(`Ошибка: ${passwordCheck.error}`);
+          console.log('🔧 Password rejected:', passwordCheck.error);
           return;
         }
         if(password !== password2){showToast('Пароли не совпадают');return;}
+        console.log('🔧 Password validation passed');
 
         regBtn.disabled=true;
         regBtn.textContent='Подключение...';
