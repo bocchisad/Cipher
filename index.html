@@ -13114,7 +13114,11 @@
 
             const tick = () => {
               if (!voiceTime || !commentVoiceSession) return;
-              const sec = Math.floor((Date.now() - started) / 1000);
+              // Calculate elapsed time excluding paused duration
+              let elapsed = Date.now() - started;
+              if (commentVoiceSession.pausedMs) elapsed -= commentVoiceSession.pausedMs;
+              if (commentVoiceSession.pauseStarted) elapsed -= (Date.now() - commentVoiceSession.pauseStarted);
+              const sec = Math.max(0, Math.floor(elapsed / 1000));
               voiceTime.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
             };
 
@@ -13127,9 +13131,15 @@
                 commentVoiceSession = null;
                 return;
               }
-              const duration = Math.max(1, Math.floor((Date.now() - started - (commentVoiceSession.pausedMs || 0)) / 1000));
+              // Calculate final duration excluding paused time
+              let totalPaused = commentVoiceSession.pausedMs || 0;
+              if (commentVoiceSession.pauseStarted) {
+                totalPaused += (Date.now() - commentVoiceSession.pauseStarted);
+              }
+              const duration = Math.max(1, Math.floor((Date.now() - started - totalPaused) / 1000));
               const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
               pendingVoiceBlob = { blob, duration };
+              console.log('[Voice Comment] Recording stopped, duration:', duration, 'blob size:', blob.size);
               // Send immediately like main chat (no attachment preview)
               await sendPendingVoiceComment(linkedGroupId);
               commentVoiceSession = null;
@@ -13139,7 +13149,7 @@
             recorder.start(400);
             tickTimer = setInterval(tick, 400);
             tick();
-            commentVoiceSession = { stream, recorder, cancelled: false, tickTimer, pausedMs: 0 };
+            commentVoiceSession = { stream, recorder, cancelled: false, tickTimer, pausedMs: 0, paused: false };
 
             // Show voice bar
             voiceBar.style.display = 'flex';
@@ -13158,7 +13168,13 @@
                   commentVoiceSession.recorder.pause();
                   commentVoiceSession.pauseStarted = Date.now();
                   commentVoiceSession.paused = true;
+                  // Pause the timer
+                  if (commentVoiceSession.tickTimer) {
+                    clearInterval(commentVoiceSession.tickTimer);
+                    commentVoiceSession.tickTimer = null;
+                  }
                   voicePauseBtn.textContent = 'Дальше';
+                  showToast('⏸️ Запись на паузе');
                 } else if (commentVoiceSession.recorder.state === 'paused') {
                   commentVoiceSession.recorder.resume();
                   if (commentVoiceSession.pauseStarted) {
@@ -13166,7 +13182,10 @@
                   }
                   commentVoiceSession.pauseStarted = 0;
                   commentVoiceSession.paused = false;
+                  // Resume the timer
+                  commentVoiceSession.tickTimer = setInterval(tick, 400);
                   voicePauseBtn.textContent = 'Пауза';
+                  showToast('▶️ Запись продолжается');
                 }
               };
             }
@@ -13194,8 +13213,14 @@
         if (voiceSendBtn) {
           voiceSendBtn.onclick = () => {
             if (commentVoiceSession) {
+              // If paused, resume first then stop to ensure data is saved
+              if (commentVoiceSession.recorder.state === 'paused') {
+                try { commentVoiceSession.recorder.resume(); } catch (_) {}
+              }
               // Stop recording and send immediately (no attachment preview)
-              try { commentVoiceSession.recorder.stop(); } catch (_) {}
+              try { commentVoiceSession.recorder.stop(); } catch (e) {
+                console.error('[Voice Comment] Error stopping recorder:', e);
+              }
             } else if (pendingVoiceBlob) {
               // Voice already recorded, send it
               sendPendingVoiceComment(linkedGroupId);
@@ -13237,33 +13262,44 @@
 
       // Helper to send pending voice comment
       async function sendPendingVoiceComment(linkedGroupId) {
-        if (!pendingVoiceBlob) return;
-        const mediaEnabled = true; // Assume enabled for comments
-        console.log('Sending voice message from voice bar...');
-        const dataUrl = await blobToBase64(pendingVoiceBlob.blob);
-        const voiceContent = JSON.stringify({ data: dataUrl, duration: pendingVoiceBlob.duration });
-        // Build replyTo from currentCommentsPost
-        let replyTo = null;
-        if (currentCommentsPost) {
-          const contentHtml = currentCommentsPost.content || '';
-          replyTo = {
-            from: currentCommentsPost.from,
-            ts: currentCommentsPost.ts,
-            type: currentCommentsPost.type,
-            preview: (currentCommentsPost.type === 'text' ? String(currentCommentsPost.content || '').slice(0, 100) : contentHtml)
-          };
+        if (!pendingVoiceBlob) {
+          console.log('[Voice Comment] No pending voice blob to send');
+          return;
         }
-        await sendMessage('voice', voiceContent, {
-          replyTo: replyTo,
-          toGroupId: linkedGroupId
-        });
-        pendingVoiceBlob = null;
-        if (attachPreview) attachPreview.style.display = 'none';
-        showToast('Голосовое отправлено');
-        // Reload comments to show new voice message (with delay to ensure DB write)
-        if (currentCommentsGroupId && currentCommentsPost) {
-          await new Promise(r => setTimeout(r, 300));
-          await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+        console.log('[Voice Comment] Sending voice message, blob size:', pendingVoiceBlob.blob.size, 'duration:', pendingVoiceBlob.duration);
+        try {
+          const dataUrl = await fileToBase64(pendingVoiceBlob.blob);
+          console.log('[Voice Comment] Converted to base64, length:', dataUrl.length);
+          const voiceContent = JSON.stringify({ data: dataUrl, duration: pendingVoiceBlob.duration });
+          // Build replyTo from currentCommentsPost
+          let replyTo = null;
+          if (currentCommentsPost) {
+            const contentHtml = currentCommentsPost.content || '';
+            replyTo = {
+              from: currentCommentsPost.from,
+              ts: currentCommentsPost.ts,
+              type: currentCommentsPost.type,
+              preview: (currentCommentsPost.type === 'text' ? String(currentCommentsPost.content || '').slice(0, 100) : contentHtml)
+            };
+          }
+          console.log('[Voice Comment] Calling sendMessage with toGroupId:', linkedGroupId);
+          await sendMessage('voice', voiceContent, {
+            replyTo: replyTo,
+            toGroupId: linkedGroupId
+          });
+          console.log('[Voice Comment] sendMessage completed');
+          pendingVoiceBlob = null;
+          if (attachPreview) attachPreview.style.display = 'none';
+          showToast('Голосовое отправлено');
+          // Reload comments to show new voice message (with delay to ensure DB write)
+          if (currentCommentsGroupId && currentCommentsPost) {
+            console.log('[Voice Comment] Reloading comments after voice send');
+            await new Promise(r => setTimeout(r, 500));
+            await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
+          }
+        } catch (err) {
+          console.error('[Voice Comment] Error sending voice message:', err);
+          showToast('❌ Ошибка отправки голосового');
         }
       }
 
