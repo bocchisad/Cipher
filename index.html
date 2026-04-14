@@ -12262,8 +12262,10 @@
 
     // Play audio from message (voice or file)
     function playAudioFromMessage(msg, allMessages) {
+      // FIX: Ensure msg is included in the list even if allMessages is empty
+      const messages = allMessages.length > 0 ? allMessages : [msg];
       // Build playlist from all audio messages in chat
-      const audioMsgs = allMessages.filter(m =>
+      const audioMsgs = messages.filter(m =>
         m.type === 'voice' ||
         (m.type === 'file' && m.content && (
           m.content.toLowerCase().includes('.mp3') ||
