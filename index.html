@@ -8433,8 +8433,9 @@
 
       const btn=document.createElement('button');
       btn.className='voice-play';
-      btn.style.cssText = 'width:32px;height:32px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;border:none;cursor:pointer';
-      btn.innerHTML=`<svg width="14" height="14" fill="white" viewBox="0 0 14 14"><polygon points="3,2 12,7 3,12"/></svg>`;
+      btn.type = 'button'; // Prevent form submission if inside form
+      btn.style.cssText = 'width:32px;height:32px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;border:none;cursor:pointer;position:relative;z-index:1';
+      btn.innerHTML=`<svg width="14" height="14" fill="white" viewBox="0 0 14 14" style="pointer-events:none"><polygon points="3,2 12,7 3,12"/></svg>`;
       const bar=document.createElement('div');
       bar.className='voice-bar';
       bar.style.cssText = 'flex:1;height:3px;background:var(--border2);border-radius:2px;overflow:hidden';
@@ -8451,7 +8452,9 @@
 
       // Helper for play/pause toggle
       const togglePlayPause = () => {
+        console.log('[Voice] togglePlayPause called for msg.ts:', msg.ts, 'globalAudioCurrentTs:', globalAudioCurrentTs);
         const isCurrentlyPlaying = globalAudioCurrentTs === msg.ts && globalAudio && !globalAudio.paused;
+        console.log('[Voice] isCurrentlyPlaying:', isCurrentlyPlaying);
         if (isCurrentlyPlaying) {
           globalAudio.pause();
         } else {
@@ -8462,12 +8465,17 @@
       // Handle click on button only
       btn.onclick = (e) => {
         e.stopPropagation();
+        console.log('[Voice] Button clicked for msg.ts:', msg.ts);
         togglePlayPause();
       };
 
       // Handle click on row (but not button)
-      row.onclick = () => {
-        togglePlayPause();
+      row.onclick = (e) => {
+        // Only handle if clicking directly on row, not on button
+        if (e.target === row || e.target === bar || e.target === fill || e.target === dur) {
+          console.log('[Voice] Row clicked for msg.ts:', msg.ts);
+          togglePlayPause();
+        }
       };
 
       row.appendChild(btn);
