@@ -8451,14 +8451,16 @@
         : '0:00';
 
       // Helper for play/pause toggle
-      const togglePlayPause = () => {
+      const togglePlayPause = async () => {
         console.log('[Voice] togglePlayPause called for msg.ts:', msg.ts, 'globalAudioCurrentTs:', globalAudioCurrentTs);
         const isCurrentlyPlaying = globalAudioCurrentTs === msg.ts && globalAudio && !globalAudio.paused;
         console.log('[Voice] isCurrentlyPlaying:', isCurrentlyPlaying);
         if (isCurrentlyPlaying) {
           globalAudio.pause();
         } else {
-          playAudioFromMessage(msg, []);
+          // FIX: Get all messages from DB to build proper playlist for prev/next navigation
+          const allMsgs = await dbGetByIndex('messages', 'chatId', activeChat);
+          playAudioFromMessage(msg, allMsgs);
         }
       };
 
