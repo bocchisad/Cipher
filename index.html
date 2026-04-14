@@ -6752,9 +6752,9 @@
         av.onclick = (e) => {
           e.stopPropagation();
           if (typeof openMiniUserProfileEnhanced === 'function') {
-            openMiniUserProfileEnhanced(contact.uuid);
+            openMiniUserProfileEnhanced(contact.uuid, contact);
           } else if (typeof openMiniUserProfile === 'function') {
-            openMiniUserProfile(contact.uuid);
+            openMiniUserProfile(contact.uuid, contact);
           }
         };
       }
@@ -6766,9 +6766,9 @@
         nameEl.onclick = (e) => {
           e.stopPropagation();
           if (typeof openMiniUserProfileEnhanced === 'function') {
-            openMiniUserProfileEnhanced(contact.uuid);
+            openMiniUserProfileEnhanced(contact.uuid, contact);
           } else if (typeof openMiniUserProfile === 'function') {
-            openMiniUserProfile(contact.uuid);
+            openMiniUserProfile(contact.uuid, contact);
           }
         };
       }
@@ -6859,7 +6859,7 @@
         const mav = document.createElement('div');
         mav.className = 'mavatar';
         renderAvatar(mav, contact.avatar, contact.nickname || contact.uuid);
-        bindMiniProfileAvatar(mav, contact.uuid);
+        bindMiniProfileAvatar(mav, contact.uuid, contact);
         wrapper.appendChild(mav);
       }
 
@@ -6882,7 +6882,7 @@
         senderEl.appendChild(senderAvEl);
         senderEl.appendChild(senderNameEl);
         stack.appendChild(senderEl);
-        bindMiniProfileAvatar(senderAvEl, first.from);
+        bindMiniProfileAvatar(senderAvEl, first.from, contact);
       }
 
       // Create bubble (same as renderMediaAlbum)
@@ -7146,7 +7146,8 @@
       const authorName = author?.nickname || pendingCommentMediaGroup[0].from.slice(0, 8);
       const authorAv = author?.avatar || '';
       renderAvatar(avWrap, authorAv, authorName);
-      bindMiniProfileAvatar(avWrap, pendingCommentMediaGroup[0].from);
+      const group = contacts.find(c => normUid(c.uuid) === normUid(currentCommentsGroupId));
+      bindMiniProfileAvatar(avWrap, pendingCommentMediaGroup[0].from, group);
 
       const body = document.createElement('div');
       body.style.cssText = 'min-width:0;flex:1';
@@ -7345,7 +7346,8 @@
         const replyAuthorName = replyAuthor?.nickname || reply.from.slice(0, 6);
         const replyAuthorAv = replyAuthor?.avatar || '';
         renderAvatar(replyAv, replyAuthorAv, replyAuthorName);
-        bindMiniProfileAvatar(replyAv, reply.from);
+        const group2 = contacts.find(c => normUid(c.uuid) === normUid(currentCommentsGroupId));
+        bindMiniProfileAvatar(replyAv, reply.from, group2);
 
         const replyBody = document.createElement('div');
         replyBody.style.cssText = 'flex:1;min-width:0';
@@ -7506,7 +7508,8 @@
       const authorName = author?.nickname || comment.from.slice(0, 8);
       const authorAv = author?.avatar || '';
       renderAvatar(avWrap, authorAv, authorName);
-      bindMiniProfileAvatar(avWrap, comment.from);
+      const group3 = contacts.find(c => normUid(c.uuid) === normUid(currentCommentsGroupId));
+      bindMiniProfileAvatar(avWrap, comment.from, group3);
 
       const body = document.createElement('div');
       body.style.cssText = 'min-width:0;flex:1';
@@ -7758,7 +7761,7 @@
         senderEl.appendChild(senderAvEl);
         senderEl.appendChild(senderNameEl);
         stack.appendChild(senderEl);
-        bindMiniProfileAvatar(senderAvEl, pendingMediaGroup[0].from);
+        bindMiniProfileAvatar(senderAvEl, pendingMediaGroup[0].from, contact);
       }
       
       // Create bubble
@@ -7959,7 +7962,7 @@
         const mav=document.createElement('div');
         mav.className='mavatar';
         renderAvatar(mav, contact.avatar, contact.nickname||contact.uuid);
-        bindMiniProfileAvatar(mav, contact.uuid);
+        bindMiniProfileAvatar(mav, contact.uuid, contact);
         wrapper.appendChild(mav);
       }
 
@@ -7982,7 +7985,7 @@
         senderEl.appendChild(senderAvEl);
         senderEl.appendChild(senderNameEl);
         stack.appendChild(senderEl);
-        bindMiniProfileAvatar(senderAvEl, msg.from);
+        bindMiniProfileAvatar(senderAvEl, msg.from, contact);
       }
 
 
@@ -9213,7 +9216,7 @@
           b.style.padding = '5px 10px';
           b.style.fontSize = '11px';
           b.style.flexShrink = '0';
-          b.textContent = isAdm ? 'Снять' : 'Админ';
+          b.textContent = isAdm ? 'Снять' : 'Назначить';
           b.onclick = () => sendToServer('room-admin', { roomId: rid, memberUuid: mid, add: !isAdm });
           row.appendChild(b);
         }
@@ -11091,13 +11094,13 @@
 
     let miniProfileTargetUuid = null;
 
-    function bindMiniProfileAvatar(el, userUuid) {
+    function bindMiniProfileAvatar(el, userUuid, roomContext = null) {
       if (!el || !userUuid) return;
       const u = normUid(userUuid);
       el.classList.add('clickable-user-av');
       el.onclick = (e) => {
         e.stopPropagation();
-        openMiniUserProfile(u);
+        openMiniUserProfile(u, roomContext);
       };
     }
 
@@ -11130,7 +11133,7 @@
       await openChat(u);
     }
 
-    function openMiniUserProfile(userUuid) {
+    function openMiniUserProfile(userUuid, roomContext = null) {
       wireMiniUserProfileModalOnce();
       const u = normUid(userUuid);
       if (!u) return;
@@ -11138,10 +11141,10 @@
       const c = contacts.find((x) => normUid(x.uuid) === u);
       const isMyProfile = u === normUid(myProfile.uuid);
       
-      // Check current chat context for channel/group restrictions
-      const currentContact = activeChat ? contacts.find((x) => normUid(x.uuid) === normUid(activeChat)) : null;
-      const isInChannel = currentContact?.kind === 'channel';
-      const isInGroup = currentContact?.kind === 'group';
+      // Check room context (passed from bindMiniProfileAvatar) or fall back to activeChat
+      const roomKind = roomContext?.kind || (activeChat ? contacts.find((x) => normUid(x.uuid) === normUid(activeChat))?.kind : null);
+      const isInChannel = roomKind === 'channel';
+      const isInGroup = roomKind === 'group';
       
       // Get data from contact or myProfile
       const profile = isMyProfile ? myProfile : (c || {});
@@ -13257,8 +13260,9 @@
         pendingVoiceBlob = null;
         if (attachPreview) attachPreview.style.display = 'none';
         showToast('Голосовое отправлено');
-        // Reload comments to show new voice message
+        // Reload comments to show new voice message (with delay to ensure DB write)
         if (currentCommentsGroupId && currentCommentsPost) {
+          await new Promise(r => setTimeout(r, 300));
           await loadComments(currentCommentsGroupId, currentCommentsPost.ts);
         }
       }
@@ -13311,9 +13315,10 @@
           updateCommentsCancelButton();
         }
 
-        // Send voice if recorded (but not if already sent via voiceSendBtn)
-        // Voice is now sent immediately when recording stops, so this block handles
-        // any edge cases where pendingVoiceBlob might still exist
+        // Send voice if recorded (fallback for edge cases)
+        if (pendingVoiceBlob) {
+          await sendPendingVoiceComment(linkedGroupId);
+        }
 
         // Send media if attached (with text as caption if provided)
         if (pendingAttachment && mediaEnabled) {
@@ -13351,6 +13356,8 @@
         }
 
         commentsInput.value = '';
+        // Small delay to ensure DB write completes before reload
+        await new Promise(r => setTimeout(r, 200));
         await loadComments(linkedGroupId, postMsg.ts);
       };
 
@@ -13492,7 +13499,8 @@
           const authorName = author?.nickname || comment.from.slice(0, 8);
           const authorAv = author?.avatar || '';
           renderAvatar(avWrap, authorAv, authorName);
-          bindMiniProfileAvatar(avWrap, comment.from);
+          const group4 = contacts.find(c => normUid(c.uuid) === normUid(currentCommentsGroupId));
+          bindMiniProfileAvatar(avWrap, comment.from, group4);
           const body = document.createElement('div');
           body.style.cssText = 'min-width:0;flex:1';
           const nameEl = document.createElement('div');
