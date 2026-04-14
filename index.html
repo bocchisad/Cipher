@@ -1283,8 +1283,8 @@
           <input type="file" id="regAvatarFile" accept="image/*" style="display:none">
           <input class="reg-input" id="regNick" type="text" placeholder="Никнейм" maxlength="30">
           <input class="reg-input" id="regPass" type="password" placeholder="Пароль (мин. 8 символов, сложный)">
-          <div id="regPassFeedback" class="password-feedback"></div>
           <input class="reg-input" id="regPass2" type="password" placeholder="Повтор пароля">
+          <div id="regPassFeedback" class="password-feedback"></div>
           <button class="btn-primary" id="regBtn">Регистрация</button>
         </div>
       </div>
@@ -4858,12 +4858,50 @@
     // ==================== REGISTRATION ====================
     let regAvatar='';
 
-    // Password strength feedback helper
-    function updatePasswordFeedback(password) {
+    // Password strength and match feedback helper
+    function updatePasswordFeedback(password, password2) {
       const feedback = document.getElementById('regPassFeedback');
       if (!feedback) return;
 
-      if (!password || password.length === 0) {
+      const hasPass = password && password.length > 0;
+      const hasPass2 = password2 && password2.length > 0;
+
+      // If both passwords entered, check match first
+      if (hasPass && hasPass2) {
+        if (password !== password2) {
+          feedback.textContent = '✗ Пароли не совпадают';
+          feedback.className = 'password-feedback invalid';
+          return;
+        }
+        // Passwords match - check strength
+        const checks = {
+          length: password.length >= 8,
+          lowercase: /[a-z]/.test(password),
+          uppercase: /[A-Z]/.test(password),
+          numbers: /[0-9]/.test(password),
+          special: /[^a-zA-Z0-9]/.test(password)
+        };
+        const passed = Object.values(checks).filter(Boolean).length;
+        const total = Object.keys(checks).length;
+
+        if (passed === total) {
+          feedback.textContent = '✓ Пароли совпадают и надежны';
+          feedback.className = 'password-feedback valid';
+        } else {
+          const missing = [];
+          if (!checks.length) missing.push('мин. 8 символов');
+          if (!checks.lowercase) missing.push('строчные');
+          if (!checks.uppercase) missing.push('заглавные');
+          if (!checks.numbers) missing.push('цифры');
+          if (!checks.special) missing.push('спецсимволы');
+          feedback.textContent = '⚠ Пароли совпадают, но нужно: ' + missing.slice(0, 2).join(', ');
+          feedback.className = 'password-feedback warning';
+        }
+        return;
+      }
+
+      // Only first password entered - show strength
+      if (!hasPass) {
         feedback.textContent = '';
         feedback.className = 'password-feedback';
         return;
@@ -4881,7 +4919,7 @@
       const total = Object.keys(checks).length;
 
       if (passed === total) {
-        feedback.textContent = '✓ Пароль надежный';
+        feedback.textContent = '✓ Пароль надежный, введите повтор';
         feedback.className = 'password-feedback valid';
       } else if (passed >= 3) {
         const missing = [];
@@ -4918,7 +4956,9 @@
       }
 
       // Real-time password feedback
-      regPass.addEventListener('input', (e) => updatePasswordFeedback(e.target.value));
+      const checkPasswords = () => updatePasswordFeedback(regPass.value, regPass2.value);
+      regPass.addEventListener('input', checkPasswords);
+      regPass2.addEventListener('input', checkPasswords);
 
       pick.onclick=()=>fileInput.click();
       fileInput.onchange=async()=>{
