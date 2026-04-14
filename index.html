@@ -7562,37 +7562,50 @@
         // Create proper voice player like main chat
         const voiceMeta = parseVoiceContent(mediaSrc);
         const row = document.createElement('div');
-        row.className = 'msg-voice';
+        row.className = 'msg-voice comment-voice';
+        row.dataset.ts = comment.ts;
         row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:4px 0;cursor:pointer';
 
         const btn = document.createElement('button');
-        btn.style.cssText = 'width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;border:none;cursor:pointer';
+        btn.className = 'voice-play';
+        btn.style.cssText = 'width:32px;height:32px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;border:none;cursor:pointer';
         btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>';
 
         const bar = document.createElement('div');
         bar.style.cssText = 'flex:1;height:3px;background:var(--border2);border-radius:2px;overflow:hidden';
         const fill = document.createElement('div');
+        fill.className = 'voice-fill';
         fill.style.cssText = 'width:0%;height:100%;background:var(--accent)';
         bar.appendChild(fill);
 
         const dur = document.createElement('div');
+        dur.className = 'voice-dur';
         dur.style.cssText = 'font-size:11px;color:var(--text2);min-width:36px';
         dur.textContent = Number.isFinite(voiceMeta.duration) && voiceMeta.duration > 0
           ? Math.floor(voiceMeta.duration / 60) + ':' + String(Math.floor(voiceMeta.duration) % 60).padStart(2,'0')
           : '0:00';
 
-        // Use global audio player when clicked
-        row.onclick = () => {
-          // Create a temporary message object for the player
-          const tempMsg = {
-            ...comment,
-            content: mediaSrc,
-            chatId: currentCommentsGroupId
-          };
-          // Get all comments for playlist
-          dbGetByIndex('messages', 'chatId', currentCommentsGroupId).then(allMsgs => {
-            playAudioFromMessage(tempMsg, allMsgs);
-          });
+        // Handle click - toggle play/pause
+        row.onclick = (e) => {
+          e.stopPropagation();
+          const isCurrentlyPlaying = globalAudioCurrentTs === comment.ts && globalAudio && !globalAudio.paused;
+
+          if (isCurrentlyPlaying) {
+            // Pause current playback
+            globalAudio.pause();
+          } else {
+            // Create a temporary message object for the player
+            const tempMsg = {
+              ...comment,
+              content: mediaSrc,
+              chatId: currentCommentsGroupId,
+              url: mediaSrc
+            };
+            // Get all comments for playlist
+            dbGetByIndex('messages', 'chatId', currentCommentsGroupId).then(allMsgs => {
+              playAudioFromMessage(tempMsg, allMsgs);
+            });
+          }
         };
 
         row.appendChild(btn);
@@ -12058,6 +12071,8 @@
       const duration = globalAudio ? (globalAudio.duration || 0) : 0;
 
       updateChatAudioButtonForTs(globalAudioCurrentTs, isPlaying, currentTime, duration);
+      // Also update comment voice buttons
+      updateCommentAudioButtonForTs(globalAudioCurrentTs, isPlaying, currentTime, duration);
     }
 
     // FIX: Update a specific audio button in chat by timestamp
@@ -12088,18 +12103,46 @@
       }
     }
 
+    // FIX: Update comment audio button by timestamp
+    function updateCommentAudioButtonForTs(ts, isPlaying, currentTime, duration) {
+      const commentVoiceEl = document.querySelector(`.comment-voice[data-ts="${ts}"]`);
+      if (!commentVoiceEl) return;
+
+      const btn = commentVoiceEl.querySelector('.voice-play');
+      const fill = commentVoiceEl.querySelector('.voice-fill');
+
+      if (btn) {
+        if (isPlaying) {
+          // Pause icon (two bars)
+          btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><rect x="1" y="0" width="4" height="14"/><rect x="7" y="0" width="4" height="14"/></svg>';
+          btn.style.background = 'var(--accent)';
+        } else {
+          // Play icon (triangle)
+          btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>';
+          btn.style.background = 'var(--accent2)';
+        }
+      }
+
+      if (fill && duration > 0) {
+        const pct = (currentTime / duration) * 100;
+        fill.style.width = pct + '%';
+      } else if (fill && !isPlaying && currentTime === 0) {
+        fill.style.width = '0%';
+      }
+    }
+
     // FIX: Update timer to also sync chat UI
     function startGlobalAudioTimer() {
       clearInterval(globalAudioTimer);
       globalAudioTimer = setInterval(() => {
         updateGlobalAudioUI();
         if (globalAudio && globalAudioCurrentTs) {
-          updateChatAudioButtonForTs(
-            globalAudioCurrentTs,
-            !globalAudio.paused,
-            globalAudio.currentTime,
-            globalAudio.duration || 0
-          );
+          const isPlaying = !globalAudio.paused;
+          const currentTime = globalAudio.currentTime;
+          const duration = globalAudio.duration || 0;
+          updateChatAudioButtonForTs(globalAudioCurrentTs, isPlaying, currentTime, duration);
+          // Also update comment voice buttons
+          updateCommentAudioButtonForTs(globalAudioCurrentTs, isPlaying, currentTime, duration);
         }
       }, 100);
     }
