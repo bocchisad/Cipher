@@ -142,7 +142,7 @@ function detachProfileChannel() {
 // ====== MINI PROFILE ENHANCED ======
 let miniProfileTargetUuid = null;
 let currentMiniProfileTrackIndex = -1;
-let miniProfileTracksQueue = [];
+// miniProfileTracksQueue is declared in index.html
 
 function bindMiniProfileAvatar(el, userUuid) {
   if (!el || !userUuid) return;
