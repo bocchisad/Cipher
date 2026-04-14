@@ -7355,7 +7355,7 @@
         replyName.style.cssText = 'color:var(--accent);font-weight:600;margin-bottom:2px;font-size:12px';
         replyName.textContent = replyAuthorName;
         const replyContent = document.createElement('div');
-        replyContent.style.cssText = 'color:var(--text);word-break:break-word';
+        replyContent.style.cssText = 'color:var(--text);word-break:break-word;font-size:13px';
 
         // Render different message types for replies
         if (reply.type === 'text') {
@@ -12123,12 +12123,12 @@
 
       if (btn) {
         if (isPlaying) {
-          // Pause icon (two bars)
-          btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><rect x="1" y="0" width="4" height="14"/><rect x="7" y="0" width="4" height="14"/></svg>';
+          // Pause icon (two bars) - centered in 14x14 viewBox
+          btn.innerHTML = '<svg width="14" height="14" fill="white" viewBox="0 0 14 14"><rect x="3" y="1" width="3" height="12" rx="1"/><rect x="8" y="1" width="3" height="12" rx="1"/></svg>';
           btn.style.background = 'var(--accent)';
         } else {
-          // Play icon (triangle)
-          btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>';
+          // Play icon (triangle) - centered in 14x14 viewBox
+          btn.innerHTML = '<svg width="14" height="14" fill="white" viewBox="0 0 14 14"><polygon points="3,2 12,7 3,12"/></svg>';
           btn.style.background = 'var(--accent2)';
         }
       }
