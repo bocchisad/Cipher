@@ -8428,6 +8428,7 @@
       const resolvedDataUrl = voiceMeta.data;
       const row=document.createElement('div');
       row.className='msg-voice';
+      row.dataset.ts = msg.ts;
       row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:4px 0';
 
       const btn=document.createElement('button');
@@ -12185,6 +12186,9 @@
         } else if (duration > 0) {
           // Show total duration when stopped
           dur.textContent = formatTime(duration);
+        } else if (duration === 0 && currentTime === 0 && !isPlaying) {
+          // Reset duration text when switching tracks (duration not yet available)
+          dur.textContent = '0:00';
         }
       }
     }
@@ -12225,6 +12229,9 @@
         } else if (duration > 0) {
           // Show total duration when stopped
           dur.textContent = formatTime(duration);
+        } else if (duration === 0 && currentTime === 0 && !isPlaying) {
+          // Reset duration text when switching tracks (duration not yet available)
+          dur.textContent = '0:00';
         }
       }
     }
