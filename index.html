@@ -7585,9 +7585,8 @@
           ? Math.floor(voiceMeta.duration / 60) + ':' + String(Math.floor(voiceMeta.duration) % 60).padStart(2,'0')
           : '0:00';
 
-        // Handle click - toggle play/pause
-        row.onclick = (e) => {
-          e.stopPropagation();
+        // Helper function for play/pause toggle
+        const togglePlayPause = () => {
           const isCurrentlyPlaying = globalAudioCurrentTs === comment.ts && globalAudio && !globalAudio.paused;
 
           if (isCurrentlyPlaying) {
@@ -7606,6 +7605,18 @@
               playAudioFromMessage(tempMsg, allMsgs);
             });
           }
+        };
+
+        // Handle click on button
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          togglePlayPause();
+        };
+
+        // Handle click on entire row
+        row.onclick = (e) => {
+          e.stopPropagation();
+          togglePlayPause();
         };
 
         row.appendChild(btn);
@@ -11785,6 +11796,7 @@
       // FIX: Reset chat button UI when closing player
       if (globalAudioCurrentTs) {
         updateChatAudioButtonForTs(globalAudioCurrentTs, false, 0, 0);
+        updateCommentAudioButtonForTs(globalAudioCurrentTs, false, 0, 0);
         globalAudioCurrentTs = null;
       }
 
@@ -12011,6 +12023,7 @@
       // FIX: Update previous message element UI before switching
       if (globalAudioCurrentTs && globalAudioCurrentTs !== track.ts) {
         updateChatAudioButtonForTs(globalAudioCurrentTs, false, 0, 0);
+        updateCommentAudioButtonForTs(globalAudioCurrentTs, false, 0, 0);
       }
 
       if (globalAudio) {
