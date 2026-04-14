@@ -2044,14 +2044,6 @@
             </div>
           </div>
 
-          <!-- Добавить канал (только для своего профиля) -->
-          <div id="miniProfileAddChannel" style="display:none;margin-top:14px">
-            <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Канал</div>
-            <button type="button" id="miniProfileAddChannelBtn" style="width:100%;padding:10px 12px;background:var(--bg3);border-radius:12px;border:1px dashed var(--border);cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--text2);font-size:14px" onmouseover="this.style.background='var(--bg4)';this.style.borderColor='var(--accent)'" onmouseout="this.style.background='var(--bg3)';this.style.borderColor='var(--border)'">
-              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-              Добавить канал
-            </button>
-          </div>
           
           <!-- Плейлист треков -->
           <div id="miniProfileTracks" style="display:none;margin-top:14px;text-align:left">
@@ -7547,7 +7539,7 @@
         const img = document.createElement('img');
         img.src = mediaSrc;
         img.style.cssText = 'max-width:200px;max-height:200px;border-radius:8px;cursor:pointer;display:block;margin-bottom:4px';
-        img.onclick = () => openImageViewer(mediaSrc, comment.from, comment.ts);
+        img.onclick = () => openLightbox(mediaSrc);
         img.oncontextmenu = (e) => {
           e.preventDefault();
           showCommentImageContextMenu(e, comment, mediaSrc, 'image');
@@ -9206,6 +9198,7 @@
         const cc = contactByUuidLoose(mid);
         const mN = normUid(mid);
         const short = String(mid).slice(0, 8) + '…';
+        // Only show admin tag for actual admins (owner + designated admins)
         const tag = admins.has(mN) ? ' · админ' : '';
         const label = document.createElement('span');
         label.style.flex = '1';
@@ -11145,6 +11138,11 @@
       const c = contacts.find((x) => normUid(x.uuid) === u);
       const isMyProfile = u === normUid(myProfile.uuid);
       
+      // Check current chat context for channel/group restrictions
+      const currentContact = activeChat ? contacts.find((x) => normUid(x.uuid) === normUid(activeChat)) : null;
+      const isInChannel = currentContact?.kind === 'channel';
+      const isInGroup = currentContact?.kind === 'group';
+      
       // Get data from contact or myProfile
       const profile = isMyProfile ? myProfile : (c || {});
       const nick = profile.nickname || u.slice(0, 12);
@@ -11164,14 +11162,19 @@
       const nickEl = document.getElementById('miniProfileNick');
       if (nickEl) nickEl.textContent = nick;
       
-      // Status (online/offline)
+      // Status (online/offline) - hide for channels and groups
       const statusEl = document.getElementById('miniProfileStatus');
       if (statusEl) {
-        if (isMyProfile) {
-          statusEl.textContent = 'online';
+        if (isInChannel || isInGroup) {
+          statusEl.style.display = 'none';
         } else {
-          const isOnline = c?.online || false;
-          statusEl.textContent = isOnline ? 'online' : 'offline';
+          statusEl.style.display = '';
+          if (isMyProfile) {
+            statusEl.textContent = 'online';
+          } else {
+            const isOnline = c?.online || false;
+            statusEl.textContent = isOnline ? 'online' : 'offline';
+          }
         }
       }
       
@@ -11246,10 +11249,10 @@
         }
       }
       
-      // Write button
+      // Write button - hide for channels and for my profile
       const writeBtn = document.getElementById('miniProfileWriteBtn');
       if (writeBtn) {
-        if (isMyProfile) {
+        if (isMyProfile || isInChannel) {
           writeBtn.style.display = 'none';
         } else {
           writeBtn.style.display = 'flex';
@@ -13190,6 +13193,9 @@
             if (commentVoiceSession) {
               // Stop recording and send immediately (no attachment preview)
               try { commentVoiceSession.recorder.stop(); } catch (_) {}
+            } else if (pendingVoiceBlob) {
+              // Voice already recorded, send it
+              sendPendingVoiceComment(linkedGroupId);
             }
           };
         }
@@ -13305,22 +13311,9 @@
           updateCommentsCancelButton();
         }
 
-        // Send voice if recorded
-        console.log('Send button clicked, pendingVoiceBlob:', pendingVoiceBlob?.blob?.size, 'mediaEnabled:', mediaEnabled);
-        if (pendingVoiceBlob && mediaEnabled) {
-          console.log('Sending voice message...');
-          const dataUrl = await blobToBase64(pendingVoiceBlob.blob);
-          const voiceContent = JSON.stringify({ data: dataUrl, duration: pendingVoiceBlob.duration });
-          await sendMessage('voice', voiceContent, {
-            replyTo: replyTo,
-            toGroupId: linkedGroupId
-          });
-          pendingVoiceBlob = null;
-          if (attachPreview) attachPreview.style.display = 'none';
-          showToast('Голосовое отправлено');
-        } else if (pendingVoiceBlob && !mediaEnabled) {
-          showToast('❌ Медиа отключены в этой группе');
-        }
+        // Send voice if recorded (but not if already sent via voiceSendBtn)
+        // Voice is now sent immediately when recording stops, so this block handles
+        // any edge cases where pendingVoiceBlob might still exist
 
         // Send media if attached (with text as caption if provided)
         if (pendingAttachment && mediaEnabled) {
