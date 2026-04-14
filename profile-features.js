@@ -222,10 +222,14 @@ function openMiniUserProfileEnhanced(userUuid) {
   const attachedChEl = document.getElementById('miniProfileAttachedChannel');
   const channelAvEl = document.getElementById('miniProfileChannelAv');
   const channelNameEl = document.getElementById('miniProfileChannelName');
+  const addChannelEl = document.getElementById('miniProfileAddChannel');
+  const addChannelBtn = document.getElementById('miniProfileAddChannelBtn');
+
   if (attachedChEl && attachedChannelId) {
     const ch = contacts.find(x => normUid(x.uuid) === normUid(attachedChannelId) && x.kind === 'channel');
     if (ch) {
       attachedChEl.style.display = 'block';
+      if (addChannelEl) addChannelEl.style.display = 'none';
       if (channelAvEl) {
         channelAvEl.innerHTML = '';
         renderAvatar(channelAvEl, ch.avatar, ch.nickname || ch.username);
@@ -237,9 +241,43 @@ function openMiniUserProfileEnhanced(userUuid) {
       };
     } else {
       attachedChEl.style.display = 'none';
+      // Show "Add Channel" button if it's my profile
+      if (isMyProfile && addChannelEl) {
+        addChannelEl.style.display = 'block';
+        if (addChannelBtn) {
+          addChannelBtn.onclick = () => {
+            closeMiniProfileModalEnhanced();
+            openSettingsModal();
+            // Switch to channel select in settings
+            setTimeout(() => {
+              const channelSelect = document.getElementById('settingsChannelSelect');
+              if (channelSelect) channelSelect.focus();
+            }, 100);
+          };
+        }
+      } else if (addChannelEl) {
+        addChannelEl.style.display = 'none';
+      }
     }
   } else if (attachedChEl) {
     attachedChEl.style.display = 'none';
+    // Show "Add Channel" button if it's my profile and no channel attached
+    if (isMyProfile && addChannelEl) {
+      addChannelEl.style.display = 'block';
+      if (addChannelBtn) {
+        addChannelBtn.onclick = () => {
+          closeMiniProfileModalEnhanced();
+          openSettingsModal();
+          // Switch to channel select in settings
+          setTimeout(() => {
+            const channelSelect = document.getElementById('settingsChannelSelect');
+            if (channelSelect) channelSelect.focus();
+          }, 100);
+        };
+      }
+    } else if (addChannelEl) {
+      addChannelEl.style.display = 'none';
+    }
   }
   
   // Tracks playlist

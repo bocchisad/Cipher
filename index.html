@@ -192,8 +192,8 @@
     .reaction-pill{animation:reactionPop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)}
     .reaction-pill.removing{animation:reactionFade 0.15s ease-out forwards}
     /* Collapsible replies */
-    .replies-container{max-height:500px;overflow:hidden;transition:max-height 0.3s ease-out}
-    .replies-container.collapsed{max-height:0}
+    .replies-container{max-height:none;overflow:visible;transition:max-height 0.3s ease-out}
+    .replies-container.collapsed{max-height:0;overflow:hidden}
     .replies-toggle{padding:8px 12px;background:var(--bg3);border-radius:6px;color:var(--accent);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;margin:4px 0;transition:background 0.2s}
     .replies-toggle:hover{background:var(--border)}
     .replies-toggle svg{transition:transform 0.2s}
@@ -2042,6 +2042,15 @@
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="color:var(--text2);flex-shrink:0"><path d="M9 18l6-6-6-6"/></svg>
             </div>
           </div>
+
+          <!-- Добавить канал (только для своего профиля) -->
+          <div id="miniProfileAddChannel" style="display:none;margin-top:14px">
+            <div style="font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Канал</div>
+            <button type="button" id="miniProfileAddChannelBtn" style="width:100%;padding:10px 12px;background:var(--bg3);border-radius:12px;border:1px dashed var(--border);cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--text2);font-size:14px" onmouseover="this.style.background='var(--bg4)';this.style.borderColor='var(--accent)'" onmouseout="this.style.background='var(--bg3)';this.style.borderColor='var(--border)'">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              Добавить канал
+            </button>
+          </div>
           
           <!-- Плейлист треков -->
           <div id="miniProfileTracks" style="display:none;margin-top:14px;text-align:left">
@@ -3860,8 +3869,8 @@
       // Get messages for this room from local DB
       const msgs = await dbGetByIndex('messages', 'chatId', roomId);
       if (msgs.length > 0) {
-        // Send messages to new member (limit to last 100 messages to avoid overwhelming)
-        const recentMsgs = msgs.sort((a, b) => b.ts - a.ts).slice(0, 100).sort((a, b) => a.ts - b.ts);
+        // Send messages to new member (limit to last 1000 messages)
+        const recentMsgs = msgs.sort((a, b) => b.ts - a.ts).slice(0, 1000).sort((a, b) => a.ts - b.ts);
         
         console.log(`📤 Sending ${recentMsgs.length} messages to new member ${newMember.substring(0, 8)}…`);
         
@@ -3869,7 +3878,8 @@
           // Send each message to the new member via server relay
           sendToServer('relay-message', {
             to: newMember,
-            msg: msg
+            msg: msg,
+            _batch: true // Mark as batch to skip lastMessage update
           });
         }
       }
@@ -3880,14 +3890,15 @@
         const linkedGroupId = normUid(channel.linkedGroupId);
         const commentMsgs = await dbGetByIndex('messages', 'chatId', linkedGroupId);
         if (commentMsgs.length > 0) {
-          const recentComments = commentMsgs.sort((a, b) => b.ts - a.ts).slice(0, 100).sort((a, b) => a.ts - b.ts);
+          const recentComments = commentMsgs.sort((a, b) => b.ts - a.ts).slice(0, 1000).sort((a, b) => a.ts - b.ts);
           
           console.log(`📤 Sending ${recentComments.length} comments to new member ${newMember.substring(0, 8)}…`);
           
           for (const msg of recentComments) {
             sendToServer('relay-message', {
               to: newMember,
-              msg: msg
+              msg: msg,
+              _batch: true
             });
           }
         }
@@ -3900,18 +3911,30 @@
     async function handleRelayedMessage(data) {
       if (!data) return;
       const msg = data;
-      
+
       // Ensure message has required fields
       if (!msg.chatId) return;
-      
+
       // Check if message already exists to avoid duplicates
       const existingMsgs = await dbGetByIndex('messages', 'chatId', normUid(msg.chatId));
       const exists = existingMsgs.some(m => m.ts === msg.ts && normUid(m.from) === normUid(msg.from));
-      
+
       if (!exists) {
         await dbPut('messages', msg);
         console.log(`📥 Received relayed message from ${msg.from.substring(0, 8)}…`);
-        
+
+        // FIX: Update last message preview in chat list
+        const contact = contacts.find(c => normUid(c.uuid) === normUid(msg.chatId));
+        if (contact) {
+          // Only update if this message is newer than current last
+          if (!contact.lastTs || msg.ts > contact.lastTs) {
+            contact.lastMsg = buildLastPreview(msg.type, msg.content);
+            contact.lastTs = msg.ts;
+            await dbPut('contacts', contact);
+            renderSidebar();
+          }
+        }
+
         // If this is the active chat, refresh the view
         if (normUid(activeChat) === normUid(msg.chatId)) {
           const area = document.getElementById('messagesArea');

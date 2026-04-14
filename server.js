@@ -1140,25 +1140,28 @@ function handleRoomAddMembers(fromUuid, data) {
   broadcastRoomToMembers(room);
   
   // FIX: Request history sync from existing members when admin adds new members
+  // Send separate sync request for EACH new member (not just the first one)
   if (room.members.length > newMembers.length) {
-    const syncPayload = {
-      type: 'room-member-joined',
-      data: {
-        roomId: rid,
-        newMember: newMembers[0], // Trigger sync for first new member
-        roomKind: room.kind
-      }
-    };
-    
-    // Send to all existing members except the new members
-    for (const memberId of room.members) {
-      if (newMembers.some(nm => normUid(nm) === normUid(memberId))) continue;
-      const memberUser = getUserLive(memberId);
-      if (memberUser?.ws && memberUser.ws.readyState === WebSocket.OPEN) {
-        safeWsSend(memberUser.ws, syncPayload);
+    for (const newMember of newMembers) {
+      const syncPayload = {
+        type: 'room-member-joined',
+        data: {
+          roomId: rid,
+          newMember: newMember, // Sync for each new member individually
+          roomKind: room.kind
+        }
+      };
+
+      // Send to all existing members except the new members
+      for (const memberId of room.members) {
+        if (newMembers.some(nm => normUid(nm) === normUid(memberId))) continue;
+        const memberUser = getUserLive(memberId);
+        if (memberUser?.ws && memberUser.ws.readyState === WebSocket.OPEN) {
+          safeWsSend(memberUser.ws, syncPayload);
+        }
       }
     }
-    console.log(`📢 Admin added members to ${rid.substring(0, 8)}…, requesting history sync`);
+    console.log(`📢 Admin added ${newMembers.length} members to ${rid.substring(0, 8)}…, requesting history sync for each`);
   }
 }
 
@@ -1176,12 +1179,35 @@ function handleChannelSubscribe(fromUuid, data) {
   if (!room) return;
   normalizeRoom(room);
   const uid = normUid(fromUuid);
-  if (!room.members.some(m => normUid(m) === uid)) {
+  const wasMember = room.members.some(m => normUid(m) === uid);
+  if (!wasMember) {
     room.members.push(uid);
     saveRoomsJSON();
   }
   const u = getUserLive(uid);
   if (u?.ws) safeWsSend(u.ws, { type: 'room-joined', data: { room } });
+
+  // FIX: Request history sync from existing members when new member subscribes
+  if (!wasMember && room.members.length > 1) {
+    const syncPayload = {
+      type: 'room-member-joined',
+      data: {
+        roomId: rid,
+        newMember: uid,
+        roomKind: room.kind
+      }
+    };
+
+    // Send to all existing members except the new subscriber
+    for (const memberId of room.members) {
+      if (normUid(memberId) === uid) continue;
+      const memberUser = getUserLive(memberId);
+      if (memberUser?.ws && memberUser.ws.readyState === WebSocket.OPEN) {
+        safeWsSend(memberUser.ws, syncPayload);
+      }
+    }
+    console.log(`📢 New subscriber joined channel ${rid.substring(0, 8)}…, requesting history sync`);
+  }
 }
 
 function handleRoomUpdate(fromUuid, data) {
@@ -1699,15 +1725,15 @@ loadRoomsJSON();
 app.listen(PORT, HOST, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════╗
-║  Cipher Server v5.0 — E2EE + Blind Router            ║
+║  Cipher Server v5.0 — E2EE + Blind Router             ║
 ║═══════════════════════════════════════════════════════║
 ║ 🚀 Running on: 0.0.0.0:${PORT}${' '.repeat(18 - String(PORT).length)}║
-║ 🔐 Passwords: PBKDF2-SHA512 (100k rounds)            ║
-║ 🔑 E2EE: ECDSA (P-384) + ECDH (P-384) + AES-GCM     ║
+║ 🔐 Passwords: PBKDF2-SHA512 (100k rounds)             ║
+║ 🔑 E2EE: ECDSA (P-384) + ECDH (P-384) + AES-GCM       ║
 ║ 💾 Persistence: ${(dbModule ? 'SQLite AES-256' : 'JSON atomic  ').padEnd(22)}║
-║ 🛡️  Rate limiting: register + login per IP           ║
-║ 📦 Max payload: 25MB                                 ║
-║ 📞 WebRTC signaling: encrypted                       ║
+║ 🛡️  Rate limiting: register + login per IP            ║
+║ 📦 Max payload: 25MB                                  ║
+║ 📞 WebRTC signaling: encrypted                        ║
 ╚═══════════════════════════════════════════════════════╝
   `);
   console.log(`✓ WebSocket server listening on port ${PORT}\n`);
