@@ -236,8 +236,9 @@
     .msg-img{max-width:240px;border-radius:8px;cursor:pointer;display:block;margin-bottom:4px}
     .msg-video{max-width:240px;border-radius:8px;display:block;margin-bottom:4px;background:var(--bg4)}
     .msg-voice{display:flex;align-items:center;gap:10px;padding:4px 0;}
-    .voice-play{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;}
+    .voice-play{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;border:none;cursor:pointer;}
     .voice-play:hover{background:var(--accent2)}
+    .voice-play svg{pointer-events:none}
     .voice-bar{flex:1;height:3px;background:var(--border2);border-radius:2px;overflow:hidden}
     .voice-fill{height:100%;background:var(--accent);width:0%;transition:width .1s}
     .voice-dur{font-size:11px;color:var(--text2);min-width:32px}
