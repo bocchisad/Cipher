@@ -12020,6 +12020,14 @@
     function loadAndPlayGlobalAudio(track) {
       if (!track) return;
 
+      // FIX: If clicking the same track that's paused, just resume it
+      if (globalAudioCurrentTs === track.ts && globalAudio) {
+        if (globalAudio.paused) {
+          globalAudio.play().catch(() => {});
+        }
+        return;
+      }
+
       // FIX: Update previous message element UI before switching
       if (globalAudioCurrentTs && globalAudioCurrentTs !== track.ts) {
         updateChatAudioButtonForTs(globalAudioCurrentTs, false, 0, 0);
