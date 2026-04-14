@@ -4701,10 +4701,13 @@
 
     // ==================== INIT ====================
     async function init(){
+      console.log('🔧 init() started');
       await openDB();
+      console.log('🔧 openDB() completed');
       initPanelWidths();
 
       const saved = localStorage.getItem('cipherAuth');
+      console.log('🔧 cipherAuth exists:', !!saved);
       if(saved){
         try{
           const parsed = JSON.parse(saved);
@@ -4735,11 +4738,11 @@
               const loginOkP  = waitForMessage('login-ok', 4000);
               const loginErrP = waitForMessage('error', 4000);
 
-              ws.send(JSON.stringify({ 
-                type: 'login', 
-                uuid, 
-                password: passwordHash, 
-                timestamp: Date.now() 
+              ws.send(JSON.stringify({
+                type: 'login',
+                uuid,
+                password: passwordHash,
+                timestamp: Date.now()
               }));
 
               const loginResp = await Promise.race([loginOkP, loginErrP]);
@@ -4768,6 +4771,7 @@
           setupReg();
         }
       } else {
+        console.log('🔧 No saved session, calling setupReg()');
         setupReg();
       }
     }
@@ -4850,15 +4854,18 @@
     let regAvatar='';
 
     function setupReg(){
+      console.log('🔧 setupReg() called');
       // Инициализируем вкладки регистрации
       initAuthTabs();
-      
+
       const pick=document.getElementById('regAvatarPick');
       const fileInput=document.getElementById('regAvatarFile');
       const regBtn=document.getElementById('regBtn');
       const regNick=document.getElementById('regNick');
       const regPass=document.getElementById('regPass');
       const regPass2=document.getElementById('regPass2');
+
+      console.log('🔧 Registration elements:', {pick:!!pick, fileInput:!!fileInput, regBtn:!!regBtn, regNick:!!regNick, regPass:!!regPass, regPass2:!!regPass2});
 
       if(!pick || !fileInput || !regBtn || !regNick || !regPass || !regPass2){
         console.error('❌ Registration elements not found');
