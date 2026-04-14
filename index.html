@@ -7397,35 +7397,51 @@
           } catch(e) {}
 
           const row = document.createElement('div');
+          row.className = 'comment-voice';
+          row.dataset.ts = reply.ts;
           row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px;background:var(--bg2);border-radius:6px;border:1px solid var(--border);cursor:pointer';
 
           const btn = document.createElement('button');
+          btn.className = 'voice-play';
           btn.style.cssText = 'width:24px;height:24px;border-radius:50%;background:var(--accent);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0';
           btn.innerHTML = '<svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
 
           const bar = document.createElement('div');
           bar.style.cssText = 'flex:1;height:2px;background:var(--border2);border-radius:1px;overflow:hidden';
           const fill = document.createElement('div');
+          fill.className = 'voice-fill';
           fill.style.cssText = 'width:0%;height:100%;background:var(--accent)';
           bar.appendChild(fill);
 
           const dur = document.createElement('span');
+          dur.className = 'voice-dur';
           dur.style.cssText = 'font-size:10px;color:var(--text2);min-width:30px';
           dur.textContent = voiceDuration > 0
             ? Math.floor(voiceDuration / 60) + ':' + String(Math.floor(voiceDuration) % 60).padStart(2,'0')
             : '0:00';
 
-          // Use global audio player when clicked
-          row.onclick = () => {
-            const tempMsg = {
-              ...reply,
-              content: typeof reply.content === 'object' ? JSON.stringify(reply.content) : reply.content,
-              chatId: currentCommentsGroupId
-            };
-            dbGetByIndex('messages', 'chatId', currentCommentsGroupId).then(allMsgs => {
-              playAudioFromMessage(tempMsg, allMsgs);
-            });
+          // FIX: Use global audio player when clicked with proper play/pause toggle
+          const togglePlayPause = () => {
+            const isCurrentlyPlaying = globalAudioCurrentTs === reply.ts && globalAudio && !globalAudio.paused;
+            if (isCurrentlyPlaying) {
+              globalAudio.pause();
+            } else {
+              const tempMsg = {
+                ...reply,
+                content: typeof reply.content === 'object' ? JSON.stringify(reply.content) : reply.content,
+                chatId: currentCommentsGroupId
+              };
+              dbGetByIndex('messages', 'chatId', currentCommentsGroupId).then(allMsgs => {
+                playAudioFromMessage(tempMsg, allMsgs);
+              });
+            }
           };
+
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            togglePlayPause();
+          };
+          row.onclick = togglePlayPause;
 
           row.appendChild(btn);
           row.appendChild(bar);
@@ -7585,28 +7601,32 @@
           ? Math.floor(voiceMeta.duration / 60) + ':' + String(Math.floor(voiceMeta.duration) % 60).padStart(2,'0')
           : '0:00';
 
-        // Handle click on button only - not on the bar
-        btn.onclick = (e) => {
-          e.stopPropagation();
+        // FIX: Helper for play/pause toggle
+        const togglePlayPause = () => {
           const isCurrentlyPlaying = globalAudioCurrentTs === comment.ts && globalAudio && !globalAudio.paused;
-
           if (isCurrentlyPlaying) {
-            // Pause current playback
             globalAudio.pause();
           } else {
-            // Create a temporary message object for the player
             const tempMsg = {
               ...comment,
               content: mediaSrc,
               chatId: currentCommentsGroupId,
               url: mediaSrc
             };
-            // Get all comments for playlist
             dbGetByIndex('messages', 'chatId', currentCommentsGroupId).then(allMsgs => {
               playAudioFromMessage(tempMsg, allMsgs);
             });
           }
         };
+
+        // Handle click on button
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          togglePlayPause();
+        };
+
+        // Handle click on row
+        row.onclick = togglePlayPause;
 
         row.appendChild(btn);
         row.appendChild(bar);
@@ -8458,13 +8478,14 @@
     function makeAudioTrackPlayer(fd, msg){
       const row=document.createElement('div');
       row.className='msg-voice msg-audio-track';
+      row.dataset.ts = msg.ts;
       row.style.cursor='pointer';
       row.style.background='linear-gradient(135deg, rgba(79,142,247,0.15), rgba(79,142,247,0.05))';
 
       const btn=document.createElement('button');
       btn.className='voice-play';
-      btn.style.background='var(--accent)';
-      btn.innerHTML=`<svg width="14" height="14" fill="white" viewBox="0 0 24 24"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><polygon points="9,18 9,5 21,3 21,16"/></svg>`;
+      btn.style.background='var(--accent2)';
+      btn.innerHTML=`<svg width="14" height="14" fill="white" viewBox="0 0 14 14"><polygon points="3,2 12,7 3,12"/></svg>`;
 
       const bar=document.createElement('div');
       bar.className='voice-bar';
@@ -8491,15 +8512,36 @@
       info.appendChild(title);
       info.appendChild(size);
 
-      // FIX: Use global audio player
-      row.onclick = async () => {
-        const allMsgs = await dbGetByIndex('messages', 'chatId', activeChat);
-        playAudioFromMessage(msg, allMsgs);
+      // FIX: Add duration element for audio track player
+      const dur = document.createElement('div');
+      dur.className = 'voice-dur';
+      dur.style.cssText = 'font-size:11px;color:var(--text2);min-width:36px;text-align:right';
+      dur.textContent = '0:00';
+
+      // FIX: Helper for play/pause toggle
+      const togglePlayPause = async () => {
+        const isCurrentlyPlaying = globalAudioCurrentTs === msg.ts && globalAudio && !globalAudio.paused;
+        if (isCurrentlyPlaying) {
+          globalAudio.pause();
+        } else {
+          const allMsgs = await dbGetByIndex('messages', 'chatId', activeChat);
+          playAudioFromMessage(msg, allMsgs);
+        }
       };
+
+      // Handle click on button
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        togglePlayPause();
+      };
+
+      // Handle click on row
+      row.onclick = togglePlayPause;
 
       row.appendChild(btn);
       row.appendChild(info);
       row.appendChild(bar);
+      row.appendChild(dur);
       return row;
     }
 
@@ -12061,6 +12103,8 @@
 
       globalAudio.onloadedmetadata = () => {
         updateGlobalAudioUI();
+        // FIX: Update chat UI with loaded metadata (duration)
+        updateChatAudioButtons();
         globalAudio.play().catch(() => {});
       };
 
@@ -12111,6 +12155,7 @@
 
       const btn = msgEl.querySelector('.voice-play');
       const fill = msgEl.querySelector('.voice-fill');
+      const dur = msgEl.querySelector('.voice-dur');
 
       if (btn) {
         if (isPlaying) {
@@ -12129,6 +12174,17 @@
         fill.style.width = pct + '%';
       } else if (fill && !isPlaying && currentTime === 0) {
         fill.style.width = '0%';
+      }
+
+      // Update duration text - show current time when playing, total duration when stopped
+      if (dur) {
+        if (isPlaying && duration > 0) {
+          // Show current time / total duration when playing
+          dur.textContent = formatTime(currentTime) + ' / ' + formatTime(duration);
+        } else if (duration > 0) {
+          // Show total duration when stopped
+          dur.textContent = formatTime(duration);
+        }
       }
     }
 
@@ -12139,6 +12195,7 @@
 
       const btn = commentVoiceEl.querySelector('.voice-play');
       const fill = commentVoiceEl.querySelector('.voice-fill');
+      const dur = commentVoiceEl.querySelector('.voice-dur');
 
       if (btn) {
         if (isPlaying) {
@@ -12157,6 +12214,17 @@
         fill.style.width = pct + '%';
       } else if (fill && !isPlaying && currentTime === 0) {
         fill.style.width = '0%';
+      }
+
+      // Update duration text - show current time when playing, total duration when stopped
+      if (dur) {
+        if (isPlaying && duration > 0) {
+          // Show current time / total duration when playing
+          dur.textContent = formatTime(currentTime) + ' / ' + formatTime(duration);
+        } else if (duration > 0) {
+          // Show total duration when stopped
+          dur.textContent = formatTime(duration);
+        }
       }
     }
 
