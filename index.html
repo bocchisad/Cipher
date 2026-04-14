@@ -88,6 +88,10 @@
     .avatar-pick .plus{color:var(--text3)}
     .reg-input{width:100%;background:var(--bg4);border:1px solid var(--border);border-radius:var(--r);padding:12px 16px;font-size:14px;margin-bottom:14px;transition:all .2s;color:var(--text)}
     .reg-input:focus{border-color:var(--accent);background:var(--bg3);box-shadow:0 0 0 3px rgba(79,142,247,0.1)}
+    .password-feedback{width:100%;font-size:12px;margin-top:-10px;margin-bottom:10px;padding:0 4px;min-height:18px;transition:all .2s}
+    .password-feedback.valid{color:#4ade80}
+    .password-feedback.invalid{color:#f87171}
+    .password-feedback.warning{color:#fbbf24}
     .btn-primary{width:100%;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:var(--r);padding:14px;font-size:14px;font-weight:600;color:#fff;transition:all .2s;letter-spacing:.3px;box-shadow:0 8px 20px rgba(79,142,247,0.25)}
     .btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(79,142,247,0.35)}
     .btn-primary:active{transform:scale(.98)}
@@ -1278,7 +1282,8 @@
           </div>
           <input type="file" id="regAvatarFile" accept="image/*" style="display:none">
           <input class="reg-input" id="regNick" type="text" placeholder="Никнейм" maxlength="30">
-          <input class="reg-input" id="regPass" type="password" placeholder="Пароль (мин. 6 символов)">
+          <input class="reg-input" id="regPass" type="password" placeholder="Пароль (мин. 8 символов, сложный)">
+          <div id="regPassFeedback" class="password-feedback"></div>
           <input class="reg-input" id="regPass2" type="password" placeholder="Повтор пароля">
           <button class="btn-primary" id="regBtn">Регистрация</button>
         </div>
@@ -4853,6 +4858,46 @@
     // ==================== REGISTRATION ====================
     let regAvatar='';
 
+    // Password strength feedback helper
+    function updatePasswordFeedback(password) {
+      const feedback = document.getElementById('regPassFeedback');
+      if (!feedback) return;
+
+      if (!password || password.length === 0) {
+        feedback.textContent = '';
+        feedback.className = 'password-feedback';
+        return;
+      }
+
+      const checks = {
+        length: password.length >= 8,
+        lowercase: /[a-z]/.test(password),
+        uppercase: /[A-Z]/.test(password),
+        numbers: /[0-9]/.test(password),
+        special: /[^a-zA-Z0-9]/.test(password)
+      };
+
+      const passed = Object.values(checks).filter(Boolean).length;
+      const total = Object.keys(checks).length;
+
+      if (passed === total) {
+        feedback.textContent = '✓ Пароль надежный';
+        feedback.className = 'password-feedback valid';
+      } else if (passed >= 3) {
+        const missing = [];
+        if (!checks.length) missing.push('мин. 8 символов');
+        if (!checks.lowercase) missing.push('строчные буквы');
+        if (!checks.uppercase) missing.push('заглавные буквы');
+        if (!checks.numbers) missing.push('цифры');
+        if (!checks.special) missing.push('спецсимволы');
+        feedback.textContent = '⚠ Добавьте: ' + missing.slice(0, 2).join(', ');
+        feedback.className = 'password-feedback warning';
+      } else {
+        feedback.textContent = '✗ Слишком простой пароль';
+        feedback.className = 'password-feedback invalid';
+      }
+    }
+
     function setupReg(){
       console.log('🔧 setupReg() called');
       // Инициализируем вкладки регистрации
@@ -4871,6 +4916,9 @@
         console.error('❌ Registration elements not found');
         return;
       }
+
+      // Real-time password feedback
+      regPass.addEventListener('input', (e) => updatePasswordFeedback(e.target.value));
 
       pick.onclick=()=>fileInput.click();
       fileInput.onchange=async()=>{
