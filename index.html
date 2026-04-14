@@ -13123,7 +13123,11 @@
             };
 
             recorder.onstop = async () => {
-              if (tickTimer) clearInterval(tickTimer);
+              // Clear timer from session object
+              if (commentVoiceSession?.tickTimer) {
+                clearInterval(commentVoiceSession.tickTimer);
+                commentVoiceSession.tickTimer = null;
+              }
               stream.getTracks().forEach(t => t.stop());
               voiceBar.style.display = 'none';
               recordBtn.classList.remove('recording');
@@ -13142,7 +13146,7 @@
               console.log('[Voice Comment] Recording stopped, duration:', duration, 'blob size:', blob.size);
               // Send immediately like main chat (no attachment preview)
               await sendPendingVoiceComment(linkedGroupId);
-              commentVoiceSession = null;
+              // Session cleanup is done after sendPendingVoiceComment
             };
 
             // Start recording
@@ -13289,6 +13293,13 @@
           });
           console.log('[Voice Comment] sendMessage completed');
           pendingVoiceBlob = null;
+          // Clear session completely to prevent timer duplication
+          if (commentVoiceSession) {
+            if (commentVoiceSession.tickTimer) {
+              clearInterval(commentVoiceSession.tickTimer);
+            }
+            commentVoiceSession = null;
+          }
           if (attachPreview) attachPreview.style.display = 'none';
           showToast('Голосовое отправлено');
           // Reload comments to show new voice message (with delay to ensure DB write)
