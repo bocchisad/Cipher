@@ -8407,26 +8407,45 @@
       const resolvedDataUrl = voiceMeta.data;
       const row=document.createElement('div');
       row.className='msg-voice';
-      row.style.cursor='pointer';
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:4px 0';
 
       const btn=document.createElement('button');
       btn.className='voice-play';
-      btn.innerHTML=`<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>`;
+      btn.style.cssText = 'width:32px;height:32px;border-radius:50%;background:var(--accent2);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;border:none;cursor:pointer';
+      btn.innerHTML=`<svg width="14" height="14" fill="white" viewBox="0 0 14 14"><polygon points="3,2 12,7 3,12"/></svg>`;
       const bar=document.createElement('div');
       bar.className='voice-bar';
+      bar.style.cssText = 'flex:1;height:3px;background:var(--border2);border-radius:2px;overflow:hidden';
       const fill=document.createElement('div');
       fill.className='voice-fill';
+      fill.style.cssText = 'width:0%;height:100%;background:var(--accent)';
       bar.appendChild(fill);
       const dur=document.createElement('div');
       dur.className='voice-dur';
+      dur.style.cssText = 'font-size:11px;color:var(--text2);min-width:36px';
       dur.textContent = Number.isFinite(voiceMeta.duration) && voiceMeta.duration > 0
         ? Math.floor(voiceMeta.duration / 60) + ':' + String(Math.floor(voiceMeta.duration) % 60).padStart(2,'0')
         : '0:00';
 
-      // FIX: Use global audio player
-      row.onclick = async () => {
-        const allMsgs = await dbGetByIndex('messages', 'chatId', activeChat);
-        playAudioFromMessage(msg, allMsgs);
+      // Helper for play/pause toggle
+      const togglePlayPause = () => {
+        const isCurrentlyPlaying = globalAudioCurrentTs === msg.ts && globalAudio && !globalAudio.paused;
+        if (isCurrentlyPlaying) {
+          globalAudio.pause();
+        } else {
+          playAudioFromMessage(msg, []);
+        }
+      };
+
+      // Handle click on button only
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        togglePlayPause();
+      };
+
+      // Handle click on row (but not button)
+      row.onclick = () => {
+        togglePlayPause();
       };
 
       row.appendChild(btn);
@@ -12095,12 +12114,12 @@
 
       if (btn) {
         if (isPlaying) {
-          // Pause icon (two bars)
-          btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><rect x="1" y="0" width="4" height="14"/><rect x="7" y="0" width="4" height="14"/></svg>';
+          // Pause icon (two bars) - centered in 14x14 viewBox
+          btn.innerHTML = '<svg width="14" height="14" fill="white" viewBox="0 0 14 14"><rect x="3" y="1" width="3" height="12" rx="1"/><rect x="8" y="1" width="3" height="12" rx="1"/></svg>';
           btn.style.background = 'var(--accent)';
         } else {
-          // Play icon (triangle)
-          btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>';
+          // Play icon (triangle) - centered in 14x14 viewBox
+          btn.innerHTML = '<svg width="14" height="14" fill="white" viewBox="0 0 14 14"><polygon points="3,2 12,7 3,12"/></svg>';
           btn.style.background = 'var(--accent2)';
         }
       }
