@@ -1957,6 +1957,7 @@
               <div class="voice-rec-pulse" style="width:10px;height:10px;border-radius:50%;background:var(--red);animation:pulse 1s infinite"></div>
               <span id="commentsVoiceTime" style="font-variant-numeric:tabular-nums;font-size:13px;color:var(--text2);min-width:48px">0:00</span>
               <span style="flex:1;font-size:13px;color:var(--text2)">Запись…</span>
+              <button type="button" id="commentsVoicePauseBtn" style="padding:6px 12px;border:none;background:var(--bg3);color:var(--text);border-radius:6px;font-size:12px;cursor:pointer">Пауза</button>
               <button type="button" id="commentsVoiceCancelBtn" style="padding:6px 12px;border:none;background:var(--bg3);color:var(--text);border-radius:6px;font-size:12px;cursor:pointer">Отмена</button>
               <button type="button" id="commentsVoiceSendBtn" style="padding:6px 12px;border:none;background:var(--accent);color:#fff;border-radius:6px;font-size:12px;cursor:pointer">Отправить</button>
             </div>
@@ -7385,10 +7386,57 @@
           video.oncontextmenu = (e) => { e.preventDefault(); showCommentImageContextMenu(e, reply, videoSrc, 'video'); };
           replyContent.appendChild(video);
         } else if (reply.type === 'voice' && reply.content) {
-          const audioContainer = document.createElement('div');
-          audioContainer.style.cssText = 'display:flex;align-items:center;gap:6px;padding:6px;background:var(--bg2);border-radius:6px;border:1px solid var(--border)';
-          audioContainer.innerHTML = `<button type="button" style="width:24px;height:24px;border-radius:50%;background:var(--accent);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button><div style="flex:1;height:2px;background:var(--border2);border-radius:1px;overflow:hidden"><div style="width:0%;height:100%;background:var(--accent)"></div></div><span style="font-size:10px;color:var(--text2)">0:00</span>`;
-          replyContent.appendChild(audioContainer);
+          // Create proper voice player like main chat
+          let voiceSrc = reply.content;
+          let voiceDuration = 0;
+          try {
+            if (typeof reply.content === 'string') {
+              const p = JSON.parse(reply.content);
+              if (p.data) {
+                voiceSrc = p.data;
+                voiceDuration = p.duration || 0;
+              }
+            } else if (reply.content?.data) {
+              voiceSrc = reply.content.data;
+              voiceDuration = reply.content.duration || 0;
+            }
+          } catch(e) {}
+
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px;background:var(--bg2);border-radius:6px;border:1px solid var(--border);cursor:pointer';
+
+          const btn = document.createElement('button');
+          btn.style.cssText = 'width:24px;height:24px;border-radius:50%;background:var(--accent);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0';
+          btn.innerHTML = '<svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+
+          const bar = document.createElement('div');
+          bar.style.cssText = 'flex:1;height:2px;background:var(--border2);border-radius:1px;overflow:hidden';
+          const fill = document.createElement('div');
+          fill.style.cssText = 'width:0%;height:100%;background:var(--accent)';
+          bar.appendChild(fill);
+
+          const dur = document.createElement('span');
+          dur.style.cssText = 'font-size:10px;color:var(--text2);min-width:30px';
+          dur.textContent = voiceDuration > 0
+            ? Math.floor(voiceDuration / 60) + ':' + String(Math.floor(voiceDuration) % 60).padStart(2,'0')
+            : '0:00';
+
+          // Use global audio player when clicked
+          row.onclick = () => {
+            const tempMsg = {
+              ...reply,
+              content: typeof reply.content === 'object' ? JSON.stringify(reply.content) : reply.content,
+              chatId: currentCommentsGroupId
+            };
+            dbGetByIndex('messages', 'chatId', currentCommentsGroupId).then(allMsgs => {
+              playAudioFromMessage(tempMsg, allMsgs);
+            });
+          };
+
+          row.appendChild(btn);
+          row.appendChild(bar);
+          row.appendChild(dur);
+          replyContent.appendChild(row);
         } else {
           replyContent.textContent = reply.content || '';
         }
@@ -7499,7 +7547,7 @@
         const img = document.createElement('img');
         img.src = mediaSrc;
         img.style.cssText = 'max-width:200px;max-height:200px;border-radius:8px;cursor:pointer;display:block;margin-bottom:4px';
-        img.onclick = () => window.open(mediaSrc, '_blank');
+        img.onclick = () => openImageViewer(mediaSrc, comment.from, comment.ts);
         img.oncontextmenu = (e) => {
           e.preventDefault();
           showCommentImageContextMenu(e, comment, mediaSrc, 'image');
@@ -7516,22 +7564,46 @@
         };
         body.appendChild(video);
       } else if (comment.type === 'voice' && mediaSrc) {
-        const audioContainer = document.createElement('div');
-        audioContainer.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg3);border-radius:8px;border:1px solid var(--border);margin-bottom:4px';
-        audioContainer.innerHTML = `
-          <button type="button" style="width:28px;height:28px;border-radius:50%;background:var(--accent);border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center">
-            <svg width="12" height="12" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          </button>
-          <div style="flex:1;height:3px;background:var(--border2);border-radius:2px;overflow:hidden">
-            <div style="width:0%;height:100%;background:var(--accent)"></div>
-          </div>
-          <span style="font-size:11px;color:var(--text2)">0:00</span>
-        `;
-        audioContainer.onclick = () => {
-          const audio = new Audio(mediaSrc);
-          audio.play();
+        // Create proper voice player like main chat
+        const voiceMeta = parseVoiceContent(mediaSrc);
+        const row = document.createElement('div');
+        row.className = 'msg-voice';
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:4px 0;cursor:pointer';
+
+        const btn = document.createElement('button');
+        btn.style.cssText = 'width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;border:none;cursor:pointer';
+        btn.innerHTML = '<svg width="12" height="14" fill="white" viewBox="0 0 12 14"><polygon points="0,0 12,7 0,14"/></svg>';
+
+        const bar = document.createElement('div');
+        bar.style.cssText = 'flex:1;height:3px;background:var(--border2);border-radius:2px;overflow:hidden';
+        const fill = document.createElement('div');
+        fill.style.cssText = 'width:0%;height:100%;background:var(--accent)';
+        bar.appendChild(fill);
+
+        const dur = document.createElement('div');
+        dur.style.cssText = 'font-size:11px;color:var(--text2);min-width:36px';
+        dur.textContent = Number.isFinite(voiceMeta.duration) && voiceMeta.duration > 0
+          ? Math.floor(voiceMeta.duration / 60) + ':' + String(Math.floor(voiceMeta.duration) % 60).padStart(2,'0')
+          : '0:00';
+
+        // Use global audio player when clicked
+        row.onclick = () => {
+          // Create a temporary message object for the player
+          const tempMsg = {
+            ...comment,
+            content: mediaSrc,
+            chatId: currentCommentsGroupId
+          };
+          // Get all comments for playlist
+          dbGetByIndex('messages', 'chatId', currentCommentsGroupId).then(allMsgs => {
+            playAudioFromMessage(tempMsg, allMsgs);
+          });
         };
-        body.appendChild(audioContainer);
+
+        row.appendChild(btn);
+        row.appendChild(bar);
+        row.appendChild(dur);
+        body.appendChild(row);
       }
 
       // Add caption if present (Telegram-style: below media)
@@ -9014,9 +9086,23 @@
           tc.innerHTML='<div class="empty-tab"><svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span>Нет медиа</span></div>';
           return;
         }
+        // Build album array for navigation
+        const albumImages = imgs.map(m => {
+          let imgSrc = m.content;
+          try {
+            if (typeof m.content === 'string') {
+              const parsed = JSON.parse(m.content);
+              if (parsed.data) imgSrc = parsed.data;
+            } else if (typeof m.content === 'object' && m.content.data) {
+              imgSrc = m.content.data;
+            }
+          } catch (e) {}
+          return imgSrc;
+        });
+
         const grid=document.createElement('div');
         grid.className='media-grid';
-        imgs.forEach(m=>{
+        imgs.forEach((m, idx)=>{
           const t=document.createElement('div');
           t.className='media-thumb';
           const img=document.createElement('img');
@@ -9035,7 +9121,8 @@
             // Keep original content if parsing fails
           }
           img.src=imgSrc;
-          img.onclick=()=>openLightbox(imgSrc);
+          // Open lightbox with album navigation
+          img.onclick=()=>openLightbox(imgSrc, albumImages, idx);
           t.appendChild(img);
           grid.appendChild(t);
         });
@@ -10586,8 +10673,14 @@
     function showChannelSelect() {
       const select = document.getElementById('settingsChannelSelect');
       const btn = document.getElementById('settingsAttachChannelBtn');
+      const meN = normUid(myProfile.uuid);
+      const myChannels = contacts.filter(c => c.kind === 'channel' && c.roomOwner && normUid(c.roomOwner) === meN);
+
       if (select) {
-        select.style.display = 'block';
+        // Populate channel select like mobile does
+        select.innerHTML = '<option value="">Выберите канал...</option>' +
+          myChannels.map(c => `<option value="${c.uuid}">${c.nickname || c.username || 'Без названия'}</option>`).join('');
+        select.style.display = myChannels.length > 0 ? 'block' : 'none';
         select.onchange = () => {
           const val = select.value;
           if (val) {
@@ -10597,8 +10690,14 @@
             refreshMobileSettingsAttachedChannel();
             // Save to DB
             dbPut('profile', {key: 'profile', ...myProfile}).catch(() => {});
+            showToast('Канал прикреплен');
           }
         };
+        if (myChannels.length > 0) {
+          select.focus();
+        } else {
+          showToast('У вас нет своих каналов');
+        }
       }
       if (btn) btn.style.display = 'none';
     }
@@ -12944,6 +13043,7 @@
       const recordBtn = document.getElementById('commentsRecordBtn');
       const voiceBar = document.getElementById('commentsVoiceBar');
       const voiceTime = document.getElementById('commentsVoiceTime');
+      const voicePauseBtn = document.getElementById('commentsVoicePauseBtn');
       const voiceCancelBtn = document.getElementById('commentsVoiceCancelBtn');
       const voiceSendBtn = document.getElementById('commentsVoiceSendBtn');
       let pendingAttachment = null;
@@ -13021,18 +13121,11 @@
                 commentVoiceSession = null;
                 return;
               }
-              const duration = Math.max(1, Math.floor((Date.now() - started) / 1000));
+              const duration = Math.max(1, Math.floor((Date.now() - started - (commentVoiceSession.pausedMs || 0)) / 1000));
               const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
               pendingVoiceBlob = { blob, duration };
-              if (attachPreview) attachPreview.style.display = 'block';
-              if (attachName) attachName.textContent = '🎤 Голосовое (' + duration + 'с)';
-              if (attachSize) attachSize.textContent = formatFileSize(blob.size);
-              // If autoSend flag is set, send immediately
-              if (commentVoiceSession?.autoSend) {
-                await sendPendingVoiceComment(linkedGroupId);
-              } else {
-                showToast('🎤 Голосовое записано, нажмите отправить');
-              }
+              // Send immediately like main chat (no attachment preview)
+              await sendPendingVoiceComment(linkedGroupId);
               commentVoiceSession = null;
             };
 
@@ -13040,11 +13133,38 @@
             recorder.start(400);
             tickTimer = setInterval(tick, 400);
             tick();
-            commentVoiceSession = { stream, recorder, cancelled: false, tickTimer };
+            commentVoiceSession = { stream, recorder, cancelled: false, tickTimer, pausedMs: 0 };
 
             // Show voice bar
             voiceBar.style.display = 'flex';
             recordBtn.classList.add('recording');
+
+            // Pause/Resume button handler
+            if (voicePauseBtn) {
+              voicePauseBtn.textContent = 'Пауза';
+              voicePauseBtn.onclick = () => {
+                if (!commentVoiceSession?.recorder) return;
+                if (commentVoiceSession.recorder.state === 'recording') {
+                  if (typeof commentVoiceSession.recorder.pause !== 'function') {
+                    showToast('Пауза не поддерживается в этом браузере');
+                    return;
+                  }
+                  commentVoiceSession.recorder.pause();
+                  commentVoiceSession.pauseStarted = Date.now();
+                  commentVoiceSession.paused = true;
+                  voicePauseBtn.textContent = 'Дальше';
+                } else if (commentVoiceSession.recorder.state === 'paused') {
+                  commentVoiceSession.recorder.resume();
+                  if (commentVoiceSession.pauseStarted) {
+                    commentVoiceSession.pausedMs = (commentVoiceSession.pausedMs || 0) + (Date.now() - commentVoiceSession.pauseStarted);
+                  }
+                  commentVoiceSession.pauseStarted = 0;
+                  commentVoiceSession.paused = false;
+                  voicePauseBtn.textContent = 'Пауза';
+                }
+              };
+            }
+
             showToast('🎤 Запись началась...');
           } catch (err) {
             console.error('Microphone access denied:', err);
@@ -13068,11 +13188,8 @@
         if (voiceSendBtn) {
           voiceSendBtn.onclick = () => {
             if (commentVoiceSession) {
-              commentVoiceSession.autoSend = true;
+              // Stop recording and send immediately (no attachment preview)
               try { commentVoiceSession.recorder.stop(); } catch (_) {}
-            } else if (pendingVoiceBlob) {
-              // Already recorded, just send
-              sendPendingVoiceComment(linkedGroupId);
             }
           };
         }
@@ -13417,6 +13534,13 @@
                   }
                 };
                 contentEl.appendChild(playBtn);
+                // Show caption if present
+                if (fd.caption) {
+                  const captionEl = document.createElement('div');
+                  captionEl.style.cssText = 'margin-top:4px;color:var(--text);word-break:break-word;white-space:pre-wrap;font-size:13px';
+                  captionEl.textContent = fd.caption;
+                  contentEl.appendChild(captionEl);
+                }
               } else {
                 // Regular file
                 const fileLink = document.createElement('a');
@@ -13425,6 +13549,13 @@
                 fileLink.style.cssText = 'display:flex;align-items:center;gap:6px;color:var(--accent);text-decoration:none';
                 fileLink.innerHTML = `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg> ${escapeHtml(fd.name)}`;
                 contentEl.appendChild(fileLink);
+                // Show caption if present
+                if (fd.caption) {
+                  const captionEl = document.createElement('div');
+                  captionEl.style.cssText = 'margin-top:4px;color:var(--text);word-break:break-word;white-space:pre-wrap;font-size:13px';
+                  captionEl.textContent = fd.caption;
+                  contentEl.appendChild(captionEl);
+                }
               }
             } catch {
               contentEl.textContent = '📎 Файл';
