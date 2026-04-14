@@ -1070,7 +1070,9 @@ function handleRoomCreate(fromUuid, data) {
       }
     }
     if (channelUsernames.has(username) || usernameTaken) {
-      const suggested = [username + '_2', username + '_3', username + '_' + String(Math.floor(100 + Math.random() * 900))];
+      // FIX #2: Use crypto.randomBytes instead of Math.random() for secure random generation
+      const randomSuffix = 100 + (crypto.randomBytes(2).readUInt16LE(0) % 900);
+      const suggested = [username + '_2', username + '_3', username + '_' + String(randomSuffix)];
       if (self?.ws) {
         safeWsSend(self.ws, { type: 'error', data: { error: 'Этот юзернейм занят', channelSuggestions: suggested } });
       }

@@ -46,12 +46,19 @@ function removeProfileTrack(idx) {
   refreshSettingsTracksList();
 }
 
+// FIX #2: Use crypto.getRandomValues for ALL security-sensitive random generation
+function generateSecureId(length = 16) {
+  const array = new Uint8Array(length);
+  window.crypto.getRandomValues(array);
+  return Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function addProfileTrack(file) {
   if (!file || !file.type.startsWith('audio/')) return;
   
   const dataUrl = await fileToBase64(file);
   const track = {
-    id: Date.now() + Math.random().toString(36).slice(2),
+    id: Date.now() + '_' + generateSecureId(8),  // ✅ SECURE RANDOM ID
     title: file.name.replace(/\.[^/.]+$/, ''),
     artist: '',
     dataUrl: dataUrl,
