@@ -3864,16 +3864,26 @@
       const roomId = normUid(data.roomId);
       const newMember = normUid(data.newMember);
       
+      // Update local contact roomMembers
+      const contact = contacts.find(c => normUid(c.uuid) === roomId);
+      if (contact) {
+        if (!contact.roomMembers) contact.roomMembers = [];
+        if (!contact.roomMembers.includes(data.newMember)) {
+          contact.roomMembers.push(data.newMember);
+        }
+      }
+      
+      // Refresh info panel if this room is currently open
+      if (activeChat === roomId) {
+        await renderInfoPanel(roomId);
+      }
+      
       // Get messages for this room from local DB
       const msgs = await dbGetByIndex('messages', 'chatId', roomId);
-      if (msgs.length > 0) {
-        // Send messages to new member (limit to last 1000 messages)
-        const recentMsgs = msgs.sort((a, b) => b.ts - a.ts).slice(0, 1000).sort((a, b) => a.ts - b.ts);
-        
-        console.log(`📤 Sending ${recentMsgs.length} messages to new member ${newMember.substring(0, 8)}…`);
-        
-        for (const msg of recentMsgs) {
-          // Send each message to the new member via server relay
+      
+      // Send room-history to new member
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        for (const msg of msgs.slice(-50)) {
           sendToServer('relay-message', {
             to: newMember,
             msg: msg,
@@ -3902,6 +3912,7 @@
         }
       }
       
+      // Fallback toast for other join scenarios
       showToast(`История сообщений отправлена новому участнику`);
     }
 
@@ -9009,6 +9020,11 @@
       const isGroupMod = isGroup && (ownerN === meN || (contact.roomAdmins || []).some((a) => normUid(a) === meN));
       const isChannelMod = isChannel && admins.has(meN);
       const canOpenSettings = isOwner || isGroupMod || isChannelMod;
+      
+      // DEBUG: Log channel info
+      if (isChannel) {
+        console.log('[DEBUG] renderInfoActions channel:', contact.uuid, 'isMember:', isMember, 'members:', members, 'isChannelMod:', isChannelMod);
+      }
 
       if ((isGroup || isChannel) && canOpenSettings) {
         const st = document.createElement('button');
