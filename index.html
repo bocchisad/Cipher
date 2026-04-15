@@ -4426,6 +4426,17 @@
       return parseFloat((bytes/Math.pow(k,i)).toFixed(1))+' '+sizes[i];
     }
 
+    function formatBytes(bytes){
+      return formatFileSize(bytes);
+    }
+
+    function formatTrackDuration(seconds){
+      if(!seconds || isNaN(seconds)) return '0:00';
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
     function escapeHtml(text){
       const div=document.createElement('div');
       div.textContent=text;
