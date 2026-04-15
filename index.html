@@ -340,7 +340,7 @@
     .modal input{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;font-size:13px;color:var(--text);transition:border-color .2s;}
     .modal input:focus{border-color:var(--accent);outline:none}
     .modal-btns{display:flex;gap:8px;margin-top:20px;justify-content:flex-end}
-    .btn-ghost{background:var(--bg4);color:var(--text2);border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;transition:background .15s;}
+    .btn-ghost{background:var(--bg4);color:var(--text2);border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;transition:background .15s;border:none;cursor:pointer;}
     .btn-ghost:hover{background:var(--bg3);color:var(--text)}
     .btn-danger{background:rgba(247,86,79,.15);color:var(--red);border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;border:1px solid rgba(247,86,79,.25);transition:background .15s;}
     .btn-danger:hover{background:rgba(247,86,79,.25)}
@@ -10714,6 +10714,8 @@
       // Get owned channels - check roomOwner instead of isOwner property
       const ownedChannels = contacts.filter(c => c.kind === 'channel' && c.roomOwner && normUid(c.roomOwner) === meN);
       
+      console.log('[Settings] refreshSettingsAttachedChannel called, ownedChannels:', ownedChannels.length, 'contacts:', contacts.length);
+      
       if (select) {
         select.innerHTML = '<option value="">Выберите канал...</option>';
         ownedChannels.forEach(ch => {
@@ -10745,8 +10747,11 @@
       } else {
         if (attachedDiv) attachedDiv.style.display = 'none';
         if (noAttachedDiv) noAttachedDiv.style.display = 'block';
+        console.log('[Settings] No attached channel, attachBtn exists:', !!attachBtn, 'ownedChannels.length:', ownedChannels.length);
         if (attachBtn) {
-          attachBtn.style.display = ownedChannels.length > 0 ? 'flex' : 'none';
+          const shouldShow = ownedChannels.length > 0;
+          attachBtn.style.display = shouldShow ? 'flex' : 'none';
+          console.log('[Settings] Setting attachBtn display to:', shouldShow ? 'flex' : 'none');
           if (select) select.style.display = 'none';
         }
       }
