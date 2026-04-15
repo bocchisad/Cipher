@@ -9045,11 +9045,13 @@
           ia.appendChild(t);
         }
         if (!isMember) {
+          console.log('[DEBUG] Creating subscribe button for channel:', contact.uuid);
           const sub = document.createElement('button');
           sub.type = 'button';
           sub.className = 'btn-primary';
           sub.style.width = '100%';
           sub.textContent = 'Подписаться';
+          sub.id = 'channel-subscribe-btn'; // for debugging
           sub.onclick = () => {
             const username = (contact.channelUsername || '').replace(/^@/, '');
             if (username) {
@@ -9062,6 +9064,7 @@
             setTimeout(() => renderInfoPanel(contact.uuid), 500);
           };
           ia.appendChild(sub);
+          console.log('[DEBUG] Button added, ia.children count:', ia.children.length);
         }
         // Only show members list for channel admins
         if (!isChannelMod) return;
