@@ -99,32 +99,57 @@ function createTables() {
   try { db.exec('ALTER TABLE message_queue ADD COLUMN raw_json TEXT'); } catch (_) {}
   // PRIVACY: Add time_bucket column for timestamp hiding
   try { db.exec('ALTER TABLE message_queue ADD COLUMN time_bucket INTEGER'); } catch (_) {}
+  // Profile extended fields
+  try { db.exec('ALTER TABLE users ADD COLUMN bio TEXT DEFAULT \'\''); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN tracks TEXT DEFAULT \'[]\''); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN attached_channel_id TEXT DEFAULT \'\''); } catch (_) {}
 }
 
 // ==================== USER OPERATIONS ====================
 function saveUser(userData) {
   db.prepare(`
-    INSERT INTO users (uuid, nickname, avatar, password, pub_ecdh, pub_ecdsa, last_seen)
-    VALUES (@uuid, @nickname, @avatar, @password, @pub_ecdh, @pub_ecdsa, @last_seen)
+    INSERT INTO users (uuid, nickname, avatar, password, pub_ecdh, pub_ecdsa, last_seen, bio, tracks, attached_channel_id)
+    VALUES (@uuid, @nickname, @avatar, @password, @pub_ecdh, @pub_ecdsa, @last_seen, @bio, @tracks, @attached_channel_id)
     ON CONFLICT(uuid) DO UPDATE SET
-      nickname  = excluded.nickname,
-      avatar    = excluded.avatar,
-      pub_ecdh  = excluded.pub_ecdh,
-      pub_ecdsa = excluded.pub_ecdsa,
-      last_seen = excluded.last_seen
+      nickname           = excluded.nickname,
+      avatar             = excluded.avatar,
+      pub_ecdh           = excluded.pub_ecdh,
+      pub_ecdsa          = excluded.pub_ecdsa,
+      last_seen          = excluded.last_seen,
+      bio                = excluded.bio,
+      tracks             = excluded.tracks,
+      attached_channel_id = excluded.attached_channel_id
   `).run({
-    uuid:      userData.uuid,
-    nickname:  userData.nickname,
-    avatar:    userData.avatar || '',
-    password:  userData.password,
-    pub_ecdh:  userData.pub_ecdh || '',
-    pub_ecdsa: userData.pub_ecdsa || '',
-    last_seen: userData.lastSeen || Date.now()
+    uuid:               userData.uuid,
+    nickname:           userData.nickname,
+    avatar:             userData.avatar || '',
+    password:           userData.password,
+    pub_ecdh:           userData.pub_ecdh || '',
+    pub_ecdsa:          userData.pub_ecdsa || '',
+    last_seen:          userData.lastSeen || Date.now(),
+    bio:                userData.bio || '',
+    tracks:             typeof userData.tracks === 'string' ? userData.tracks : JSON.stringify(userData.tracks || []),
+    attached_channel_id: userData.attachedChannelId || ''
   });
 }
 
 function getUser(uuid) {
-  return db.prepare('SELECT * FROM users WHERE uuid = ?').get(uuid);
+  const row = db.prepare('SELECT * FROM users WHERE uuid = ?').get(uuid);
+  if (!row) return null;
+  // Parse tracks JSON and convert snake_case to camelCase
+  let tracks = [];
+  if (row.tracks) {
+    try {
+      tracks = JSON.parse(row.tracks);
+    } catch (_) {}
+  }
+  return {
+    ...row,
+    bio: row.bio || '',
+    tracks: tracks,
+    attachedChannelId: row.attached_channel_id || '',
+    lastSeen: row.last_seen || 0
+  };
 }
 
 function updatePublicKeys(uuid, ecdh, ecdsa) {

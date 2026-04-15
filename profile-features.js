@@ -212,39 +212,38 @@ function openMiniUserProfileEnhanced(userUuid) {
   const addChannelBtn = document.getElementById('miniProfileAddChannelBtn');
 
   if (attachedChEl && attachedChannelId) {
-    const ch = contacts.find(x => normUid(x.uuid) === normUid(attachedChannelId) && x.kind === 'channel');
-    if (ch) {
-      attachedChEl.style.display = 'block';
-      if (addChannelEl) addChannelEl.style.display = 'none';
-      if (channelAvEl) {
-        channelAvEl.innerHTML = '';
-        renderAvatar(channelAvEl, ch.avatar, ch.nickname || ch.username);
-      }
-      if (channelNameEl) channelNameEl.textContent = ch.nickname || ch.username || 'Канал';
-      attachedChEl.onclick = () => {
-        closeMiniProfileModalEnhanced();
-        openChat(ch.uuid);
+    // Try to find channel in contacts first
+    let ch = contacts.find(x => normUid(x.uuid) === normUid(attachedChannelId) && x.kind === 'channel');
+    // If not found, create a placeholder from profile data if available
+    if (!ch && profile?.attachedChannelData) {
+      ch = {
+        uuid: attachedChannelId,
+        nickname: profile.attachedChannelData.nickname || profile.attachedChannelData.name,
+        avatar: profile.attachedChannelData.avatar,
+        kind: 'channel'
       };
-    } else {
-      attachedChEl.style.display = 'none';
-      // Show "Add Channel" button if it's my profile
-      if (isMyProfile && addChannelEl) {
-        addChannelEl.style.display = 'block';
-        if (addChannelBtn) {
-          addChannelBtn.onclick = () => {
-            closeMiniProfileModalEnhanced();
-            openSettings();
-            // Switch to channel select in settings
-            setTimeout(() => {
-              const channelSelect = document.getElementById('settingsChannelSelect');
-              if (channelSelect) channelSelect.focus();
-            }, 100);
-          };
-        }
-      } else if (addChannelEl) {
-        addChannelEl.style.display = 'none';
-      }
     }
+    // If still not found, create minimal placeholder with ID
+    if (!ch) {
+      ch = {
+        uuid: attachedChannelId,
+        nickname: attachedChannelId.slice(0, 12) + '...',
+        avatar: '',
+        kind: 'channel'
+      };
+    }
+
+    attachedChEl.style.display = 'block';
+    if (addChannelEl) addChannelEl.style.display = 'none';
+    if (channelAvEl) {
+      channelAvEl.innerHTML = '';
+      renderAvatar(channelAvEl, ch.avatar, ch.nickname || ch.username);
+    }
+    if (channelNameEl) channelNameEl.textContent = ch.nickname || ch.username || 'Канал';
+    attachedChEl.onclick = () => {
+      closeMiniProfileModalEnhanced();
+      openChat(ch.uuid);
+    };
   } else if (attachedChEl) {
     attachedChEl.style.display = 'none';
     // Show "Add Channel" button if it's my profile and no channel attached

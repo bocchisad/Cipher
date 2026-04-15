@@ -11297,26 +11297,42 @@
       const channelAvEl = document.getElementById('miniProfileChannelAv');
       const channelNameEl = document.getElementById('miniProfileChannelName');
       if (attachedChEl && attachedChannelId) {
-        const ch = contacts.find((x) => normUid(x.uuid) === normUid(attachedChannelId) && x.kind === 'channel');
-        if (ch) {
-          attachedChEl.style.display = 'block';
-          if (channelAvEl) {
-            channelAvEl.innerHTML = '';
-            renderAvatar(channelAvEl, ch.avatar, ch.nickname || ch.username);
-          }
-          if (channelNameEl) channelNameEl.textContent = ch.nickname || ch.username || 'Канал';
-          // Click to open channel
-          attachedChEl.onclick = () => {
-            const modal = document.getElementById('miniUserProfileModal');
-            if (modal) {
-              modal.style.opacity = '0';
-              setTimeout(() => { modal.style.display = 'none'; }, 200);
-            }
-            openChat(ch.uuid);
+        // Try to find channel in contacts first
+        let ch = contacts.find((x) => normUid(x.uuid) === normUid(attachedChannelId) && x.kind === 'channel');
+        // If not found, create a placeholder from profile data if available
+        if (!ch && profile?.attachedChannelData) {
+          ch = {
+            uuid: attachedChannelId,
+            nickname: profile.attachedChannelData.nickname || profile.attachedChannelData.name,
+            avatar: profile.attachedChannelData.avatar,
+            kind: 'channel'
           };
-        } else {
-          attachedChEl.style.display = 'none';
         }
+        // If still not found, create minimal placeholder with ID
+        if (!ch) {
+          ch = {
+            uuid: attachedChannelId,
+            nickname: attachedChannelId.slice(0, 12) + '...',
+            avatar: '',
+            kind: 'channel'
+          };
+        }
+
+        attachedChEl.style.display = 'block';
+        if (channelAvEl) {
+          channelAvEl.innerHTML = '';
+          renderAvatar(channelAvEl, ch.avatar, ch.nickname || ch.username);
+        }
+        if (channelNameEl) channelNameEl.textContent = ch.nickname || ch.username || 'Канал';
+        // Click to open channel
+        attachedChEl.onclick = () => {
+          const modal = document.getElementById('miniUserProfileModal');
+          if (modal) {
+            modal.style.opacity = '0';
+            setTimeout(() => { modal.style.display = 'none'; }, 200);
+          }
+          openChat(ch.uuid);
+        };
       } else if (attachedChEl) {
         attachedChEl.style.display = 'none';
       }

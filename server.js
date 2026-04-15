@@ -497,6 +497,9 @@ async function handleMessage(ws, msg, setUserId, ip) {
     case 'profile-update':
       handleProfileUpdate(uuid, data);
       break;
+    case 'request-profile':
+      handleRequestProfile(uuid, data, ws);
+      break;
     case 'delete-for-both':
       handleDeleteForBoth(uuid, data);
       break;
@@ -1494,37 +1497,64 @@ function handleProfileUpdate(uuid, data) {
   if (data.nickname) user.nickname = data.nickname.slice(0, 32);
   else if (data.nick) user.nickname = data.nick.slice(0, 32);
   if (data.avatar !== undefined) user.avatar = data.avatar;
-  
+
   // New fields: bio, tracks, attachedChannelId
   if (data.bio !== undefined) user.bio = String(data.bio).slice(0, 140);
   if (data.tracks !== undefined) user.tracks = data.tracks;
   if (data.attachedChannelId !== undefined) user.attachedChannelId = data.attachedChannelId;
-  
+
   user.lastSeen = Date.now();
 
   const memUser = users.get(uuid);
-  if (memUser) Object.assign(memUser, { 
-    nickname: user.nickname, 
-    avatar: user.avatar, 
+  if (memUser) Object.assign(memUser, {
+    nickname: user.nickname,
+    avatar: user.avatar,
     bio: user.bio,
     tracks: user.tracks,
     attachedChannelId: user.attachedChannelId,
-    lastSeen: user.lastSeen 
+    lastSeen: user.lastSeen
   });
 
   saveUserToStore(user);
   console.log(`👤 Profile update: ${user.nickname}`);
 
-  broadcast({ 
-    type: 'user-profile', 
-    data: { 
-      uuid, 
-      nickname: user.nickname, 
+  broadcast({
+    type: 'user-profile',
+    data: {
+      uuid,
+      nickname: user.nickname,
       avatar: user.avatar,
       bio: user.bio,
       tracks: user.tracks,
       attachedChannelId: user.attachedChannelId
-    } 
+    }
+  });
+}
+
+function handleRequestProfile(requesterUuid, data, ws) {
+  if (!data?.uuid) return;
+  const targetUuid = normUid(data.uuid);
+  const requester = getUserFromStore(requesterUuid);
+  if (!requester) return;
+
+  // Get target user from store (database or memory)
+  const target = getUserFromStore(targetUuid);
+  if (!target) {
+    safeWsSend(ws, { type: 'error', data: { error: 'User not found' } });
+    return;
+  }
+
+  // Send profile data to requester
+  safeWsSend(ws, {
+    type: 'profile-data',
+    data: {
+      uuid: target.uuid,
+      nickname: target.nickname,
+      avatar: target.avatar,
+      bio: target.bio,
+      tracks: target.tracks,
+      attachedChannelId: target.attachedChannelId
+    }
   });
 }
 
