@@ -9066,6 +9066,8 @@
           ia.appendChild(sub);
           console.log('[DEBUG] Button added, ia.children count:', ia.children.length);
         }
+        // Update visibility before early return for non-moderators
+        ia.style.display = ia.children.length ? 'flex' : 'none';
         // Only show members list for channel admins
         if (!isChannelMod) return;
         const list = document.createElement('div');
