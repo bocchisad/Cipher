@@ -4783,7 +4783,7 @@
 
             await startApp(uuid);
           } catch (err) {
-            console.warn('⚠️ Connection failed, offline mode');
+            console.warn('⚠️ Connection failed, offline mode:', err);
             myProfile.uuid = uuid;
             await startApp(uuid);
           }
