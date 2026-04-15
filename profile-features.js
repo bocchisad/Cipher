@@ -91,7 +91,8 @@ function refreshSettingsAttachedChannel() {
   const select = document.getElementById('settingsChannelSelect');
   const attachBtn = document.getElementById('settingsAttachChannelBtn');
   
-  const ownedChannels = contacts.filter(c => c.kind === 'channel' && c.isOwner);
+  const meN = normUid(myProfile.uuid);
+  const ownedChannels = contacts.filter(c => c.kind === 'channel' && c.roomOwner && normUid(c.roomOwner) === meN);
   
   if (select) {
     select.innerHTML = '<option value="">Выберите канал...</option>';
@@ -124,27 +125,12 @@ function refreshSettingsAttachedChannel() {
   } else {
     if (attachedDiv) attachedDiv.style.display = 'none';
     if (noAttachedDiv) noAttachedDiv.style.display = 'block';
+    // Always show the button, let click handler deal with "no channels" case
     if (attachBtn) {
-      attachBtn.style.display = ownedChannels.length > 0 ? 'flex' : 'none';
+      attachBtn.style.display = 'flex';
       if (select) select.style.display = 'none';
     }
   }
-}
-
-function showChannelSelect() {
-  const select = document.getElementById('settingsChannelSelect');
-  const btn = document.getElementById('settingsAttachChannelBtn');
-  if (select) {
-    select.style.display = 'block';
-    select.onchange = () => {
-      const val = select.value;
-      if (val) {
-        myProfile.attachedChannelId = val;
-        refreshSettingsAttachedChannel();
-      }
-    };
-  }
-  if (btn) btn.style.display = 'none';
 }
 
 function detachProfileChannel() {
@@ -247,7 +233,7 @@ function openMiniUserProfileEnhanced(userUuid) {
         if (addChannelBtn) {
           addChannelBtn.onclick = () => {
             closeMiniProfileModalEnhanced();
-            openSettingsModal();
+            openSettings();
             // Switch to channel select in settings
             setTimeout(() => {
               const channelSelect = document.getElementById('settingsChannelSelect');
@@ -267,7 +253,7 @@ function openMiniUserProfileEnhanced(userUuid) {
       if (addChannelBtn) {
         addChannelBtn.onclick = () => {
           closeMiniProfileModalEnhanced();
-          openSettingsModal();
+          openSettings();
           // Switch to channel select in settings
           setTimeout(() => {
             const channelSelect = document.getElementById('settingsChannelSelect');
