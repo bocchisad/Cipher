@@ -242,8 +242,14 @@ function openMiniUserProfileEnhanced(userUuid) {
     if (channelNameEl) channelNameEl.textContent = ch.nickname || ch.username || 'Канал';
     attachedChEl.onclick = async () => {
       closeMiniProfileModalEnhanced();
-      // Add channel to contacts if not exists
       const channelUuid = normUid(ch.uuid);
+
+      // Join channel on server first
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        sendToServer('room-join', { roomId: channelUuid });
+      }
+
+      // Add channel to contacts if not exists
       const existing = contacts.find(c => normUid(c.uuid) === channelUuid);
       if (!existing) {
         contacts.push({
