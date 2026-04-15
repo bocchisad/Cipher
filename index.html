@@ -10748,10 +10748,9 @@
         if (attachedDiv) attachedDiv.style.display = 'none';
         if (noAttachedDiv) noAttachedDiv.style.display = 'block';
         console.log('[Settings] No attached channel, attachBtn exists:', !!attachBtn, 'ownedChannels.length:', ownedChannels.length);
+        // FIX: Always show the button, let click handler deal with "no channels" case
         if (attachBtn) {
-          const shouldShow = ownedChannels.length > 0;
-          attachBtn.style.display = shouldShow ? 'flex' : 'none';
-          console.log('[Settings] Setting attachBtn display to:', shouldShow ? 'flex' : 'none');
+          attachBtn.style.display = 'flex';
           if (select) select.style.display = 'none';
         }
       }
@@ -10762,6 +10761,12 @@
       const btn = document.getElementById('settingsAttachChannelBtn');
       const meN = normUid(myProfile.uuid);
       const myChannels = contacts.filter(c => c.kind === 'channel' && c.roomOwner && normUid(c.roomOwner) === meN);
+
+      // FIX: Show toast if user has no channels
+      if (myChannels.length === 0) {
+        showToast('У вас нет своих каналов');
+        return;
+      }
 
       if (select) {
         // Populate channel select like mobile does
