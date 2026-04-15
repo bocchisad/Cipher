@@ -217,7 +217,7 @@ function openMiniUserProfileEnhanced(userUuid) {
     // If not found, create a placeholder from profile data if available
     if (!ch && profile?.attachedChannelData) {
       ch = {
-        uuid: attachedChannelId,
+        uuid: normUid(attachedChannelId),
         nickname: profile.attachedChannelData.nickname || profile.attachedChannelData.name,
         avatar: profile.attachedChannelData.avatar,
         kind: 'channel'
@@ -225,8 +225,9 @@ function openMiniUserProfileEnhanced(userUuid) {
     }
     // If still not found, create minimal placeholder with ID
     if (!ch) {
+      const normalizedId = normUid(attachedChannelId);
       ch = {
-        uuid: attachedChannelId,
+        uuid: normalizedId,
         nickname: attachedChannelId.slice(0, 12) + '...',
         avatar: '',
         kind: 'channel'
