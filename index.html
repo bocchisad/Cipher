@@ -3852,6 +3852,10 @@
       await upsertRoomContact(room);
       showToast('Вас добавили в: ' + (room.title || 'чат'));
       renderSidebar();
+      // Refresh info panel if this room is currently open
+      if (activeChat === normUid(room.id)) {
+        await renderInfoPanel(activeChat);
+      }
     }
 
     // FIX: Send message history to new member when they join
@@ -9038,9 +9042,13 @@
               // Fallback: join by roomId if no username available
               sendToServer('room-join', { roomId: contact.uuid });
             }
+            // Refresh panel after a short delay to show updated membership
+            setTimeout(() => renderInfoPanel(contact.uuid), 500);
           };
           ia.appendChild(sub);
         }
+        // Only show members list for channel admins
+        if (!isChannelMod) return;
         const list = document.createElement('div');
         list.style.marginTop = '8px';
         list.style.fontSize = '11px';
