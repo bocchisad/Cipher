@@ -9031,7 +9031,13 @@
           sub.style.width = '100%';
           sub.textContent = 'Подписаться';
           sub.onclick = () => {
-            sendToServer('channel-subscribe', { username: (contact.channelUsername || '').replace(/^@/, '') });
+            const username = (contact.channelUsername || '').replace(/^@/, '');
+            if (username) {
+              sendToServer('channel-subscribe', { username });
+            } else if (contact.uuid) {
+              // Fallback: join by roomId if no username available
+              sendToServer('room-join', { roomId: contact.uuid });
+            }
           };
           ia.appendChild(sub);
         }
