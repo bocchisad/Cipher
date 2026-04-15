@@ -6689,7 +6689,7 @@
       positionContextMenu(menu, e.clientX, e.clientY);
     }
 
-    async function openChat(uuid){
+    async function openChat(uuid, tempContactData = null){
       // FIX: Flush any pending media from previous chat before switching
       if (pendingMediaGroup.length) {
         renderMediaAlbum();
@@ -6697,7 +6697,28 @@
       activeChat = normUid(uuid);
       renderedMsgIds = new Set();
 
-      const contact = contacts.find((c) => normUid(c.uuid) === activeChat);
+      let contact = contacts.find((c) => normUid(c.uuid) === activeChat);
+      // Create temporary contact if not found (e.g., opening channel from mini-profile without subscribing)
+      if (!contact && tempContactData) {
+        contact = {
+          uuid: activeChat,
+          nickname: tempContactData.nickname || activeChat.slice(0, 12),
+          kind: tempContactData.kind || 'channel',
+          type: 'friend',
+          avatar: tempContactData.avatar || '',
+          online: false,
+          lastMsg: '',
+          lastTs: 0,
+          unread: 0,
+          // Channel-specific fields
+          roomOwner: tempContactData.roomOwner || '',
+          roomAdmins: tempContactData.roomAdmins || [],
+          roomMembers: tempContactData.roomMembers || [],
+          channelUsername: tempContactData.channelUsername || ''
+        };
+        // Add to contacts temporarily for this session only (not saved to DB)
+        contacts.push(contact);
+      }
       const app = document.getElementById('app');
       const ip = document.getElementById('infoPanel');
       if (ip) ip.classList.remove('info-open');
@@ -11339,7 +11360,7 @@
             modal.style.opacity = '0';
             setTimeout(() => { modal.style.display = 'none'; }, 200);
           }
-          openChat(ch.uuid);
+          openChat(ch.uuid, { nickname: ch.nickname || ch.username, avatar: ch.avatar, kind: 'channel' });
         };
       } else if (attachedChEl) {
         attachedChEl.style.display = 'none';

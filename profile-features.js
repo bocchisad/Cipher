@@ -242,7 +242,7 @@ function openMiniUserProfileEnhanced(userUuid) {
     if (channelNameEl) channelNameEl.textContent = ch.nickname || ch.username || 'Канал';
     attachedChEl.onclick = () => {
       closeMiniProfileModalEnhanced();
-      openChat(ch.uuid);
+      openChat(ch.uuid, { nickname: ch.nickname || ch.username, avatar: ch.avatar, kind: 'channel' });
     };
   } else if (attachedChEl) {
     attachedChEl.style.display = 'none';
