@@ -240,8 +240,26 @@ function openMiniUserProfileEnhanced(userUuid) {
       renderAvatar(channelAvEl, ch.avatar, ch.nickname || ch.username);
     }
     if (channelNameEl) channelNameEl.textContent = ch.nickname || ch.username || 'Канал';
-    attachedChEl.onclick = () => {
+    attachedChEl.onclick = async () => {
       closeMiniProfileModalEnhanced();
+      // Add channel to contacts if not exists
+      const channelUuid = normUid(ch.uuid);
+      const existing = contacts.find(c => normUid(c.uuid) === channelUuid);
+      if (!existing) {
+        contacts.push({
+          uuid: channelUuid,
+          nickname: ch.nickname || channelUuid.slice(0, 12),
+          kind: 'channel',
+          type: 'friend',
+          avatar: ch.avatar || '',
+          online: false,
+          lastMsg: '',
+          lastTs: 0,
+          unread: 0
+        });
+        await dbPut('contacts', sanitizeContact(contacts[contacts.length - 1]));
+        renderSidebar();
+      }
       openChat(ch.uuid);
     };
   } else if (attachedChEl) {
