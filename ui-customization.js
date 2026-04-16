@@ -229,7 +229,6 @@ const UICustomizationModule = (() => {
 
         <!-- КНОПКИ -->
         <div class="custom-section" style="display: flex; gap: 8px;">
-          <button type="button" class="btn-primary" onclick="UICustomizationModule.applyAllChanges()" style="flex: 1;">✓ Применить</button>
           <button type="button" class="btn-ghost" onclick="UICustomizationModule.resetToDefaults()" style="flex: 1;">↺ По умолчанию</button>
         </div>
       </div>
@@ -427,11 +426,6 @@ const UICustomizationModule = (() => {
     preview.style.backgroundPosition = 'center';
   }
 
-  function applyAllChanges() {
-    applyTheme();
-    alert('✓ Изменения применены!');
-  }
-
   function resetToDefaults() {
     if (confirm('Сбросить все настройки на значения по умолчанию?')) {
       currentTheme = { ...DEFAULT_THEME };
@@ -461,7 +455,6 @@ const UICustomizationModule = (() => {
     applyTheme,
     resetToDefaults,
     clearBackground,
-    applyAllChanges,
     set: (key, value) => {
       if (key in currentTheme) {
         currentTheme[key] = value;
