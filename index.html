@@ -8523,8 +8523,17 @@
 
     function makeVoicePlayer(dataUrl, msg){
       const voiceMeta = parseVoiceContent(dataUrl);
-      const resolvedDataUrl = voiceMeta.data;
+      let resolvedDataUrl = voiceMeta.data;
       const isVideo = voiceMeta.isVideo || (msg && msg.content && typeof msg.content === 'object' && msg.content.isVideo);
+      
+      // Конвертировать base64 в data URL если нужно
+      if (isVideo && resolvedDataUrl && !resolvedDataUrl.startsWith('data:')) {
+        const mimeType = voiceMeta.mimeType || 'video/webm';
+        resolvedDataUrl = `data:${mimeType};base64,${resolvedDataUrl}`;
+      } else if (!isVideo && resolvedDataUrl && !resolvedDataUrl.startsWith('data:')) {
+        const mimeType = voiceMeta.mimeType || 'audio/webm';
+        resolvedDataUrl = `data:${mimeType};base64,${resolvedDataUrl}`;
+      }
       
       // ===== ВИДЕО КРУЖОК =====
       if (isVideo) {
@@ -9056,26 +9065,28 @@
         const data = typeof raw.data === 'string' ? raw.data : '';
         const duration = Number(raw.duration);
         const isVideo = Boolean(raw.isVideo);
-        return { data, duration: Number.isFinite(duration) ? duration : null, isVideo };
+        const mimeType = raw.mimeType || (isVideo ? 'video/webm' : 'audio/webm');
+        return { data, duration: Number.isFinite(duration) ? duration : null, isVideo, mimeType };
       }
       if (typeof raw === 'string') {
         if (raw.startsWith('data:audio/')) {
-          return { data: raw, duration: null, isVideo: false };
+          return { data: raw, duration: null, isVideo: false, mimeType: 'audio/webm' };
         }
         if (raw.startsWith('data:video/')) {
-          return { data: raw, duration: null, isVideo: true };
+          return { data: raw, duration: null, isVideo: true, mimeType: 'video/webm' };
         }
         try {
           const parsed = JSON.parse(raw);
           if (parsed && typeof parsed.data === 'string') {
             const duration = Number(parsed.duration);
             const isVideo = Boolean(parsed.isVideo);
-            return { data: parsed.data, duration: Number.isFinite(duration) ? duration : null, isVideo };
+            const mimeType = parsed.mimeType || (isVideo ? 'video/webm' : 'audio/webm');
+            return { data: parsed.data, duration: Number.isFinite(duration) ? duration : null, isVideo, mimeType };
           }
         } catch (_) {}
-        return { data: raw, duration: null, isVideo: false };
+        return { data: raw, duration: null, isVideo: false, mimeType: 'audio/webm' };
       }
-      return { data: '', duration: null, isVideo: false };
+      return { data: '', duration: null, isVideo: false, mimeType: 'audio/webm' };
     }
 
     function scrollBottom(){
@@ -12653,7 +12664,7 @@
           const blob = new Blob(vs.chunks, { type: mimeType || 'video/webm' });
           const b64 = await fileToBase64(blob);
           const recDuration = Math.max(1, Math.floor((Date.now() - started - (vs.pausedMs || 0)) / 1000));
-          await sendMessage('voice', { data: b64, duration: recDuration, isVideo: true });
+          await sendMessage('voice', { data: b64, duration: recDuration, isVideo: true, mimeType: mimeType || 'video/webm' });
         };
         
         recorder.start(400);
