@@ -443,8 +443,30 @@
     .msg-call-log .bubble{background:var(--bg2)!important;border-style:dashed!important;color:var(--text2);font-size:12px;padding:8px 14px!important}
     #voiceRecordBar{display:none;align-items:center;gap:10px;padding:8px 12px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
     #voiceRecordBar.active{display:flex}
-    .voice-rec-pulse{width:10px;height:10px;border-radius:50%;background:var(--red)}
+    .voice-rec-pulse{width:10px;height:10px;border-radius:50%;background:var(--red);animation:pulse 1.2s ease-in-out infinite}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,0,0,.7)};70%{box-shadow:0 0 0 20px rgba(255,0,0,0)};100%{box-shadow:0 0 0 0 rgba(255,0,0,0)}}
     .voice-rec-time{font-variant-numeric:tabular-nums;font-size:13px;color:var(--text2);min-width:48px}
+    
+    /* ===== VOICE RECORDING OVERLAY ===== */
+    #voiceRecordingOverlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:20px}
+    #voiceRecordingOverlay.active{display:flex}
+    .voice-big-circle{width:200px;height:200px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;animation:recordPulse .6s ease-in-out infinite;box-shadow:0 0 40px rgba(255,0,0,.6);position:relative}
+    @keyframes recordPulse{0%{transform:scale(1)};50%{transform:scale(1.08)};100%{transform:scale(1)}}
+    .voice-big-circle svg{width:80px;height:80px;color:#fff;position:absolute;z-index:1}
+    .voice-big-circle video{position:absolute;width:100%;height:100%;border-radius:50%;object-fit:cover;z-index:2}
+    .voice-rec-overlay-controls{display:flex;gap:12px;justify-content:center}
+    .voice-rec-overlay-btn{width:52px;height:52px;border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:600;transition:transform .1s}
+    .voice-rec-overlay-btn.primary{background:var(--accent);color:#fff}
+    .voice-rec-overlay-btn.primary:active{transform:scale(.92)}
+    .voice-rec-overlay-btn.ghost{background:rgba(255,255,255,.15);color:#fff}
+    .voice-rec-overlay-btn.ghost:active{transform:scale(.92)}
+    .voice-rec-overlay-btn.danger{background:rgba(255,100,100,.8);color:#fff}
+    .voice-rec-overlay-btn.danger:active{transform:scale(.92)}
+    .voice-rec-overlay-video{position:absolute;width:100%;height:100%;object-fit:cover;border-radius:50%;display:none}
+    .voice-rec-overlay-video.active{display:block}
+    .voice-rec-overlay-timer{font-size:24px;color:#fff;font-variant-numeric:tabular-nums;min-width:100px;text-align:center}
+    .voice-rec-overlay-status{color:rgba(255,255,255,.8);font-size:14px}
+    
     #attachQueue{display:none;flex-wrap:wrap;gap:6px;padding:8px 12px;border-top:1px solid var(--border);background:var(--bg1)}
     #attachQueue.active{display:flex}
     .attach-chip{position:relative;width:52px;height:52px;border-radius:10px;overflow:hidden;border:1px solid var(--border);flex-shrink:0}
@@ -1305,9 +1327,6 @@
         <button type="button" class="icon-btn" id="addChatBtn" title="Новый чат, группа или канал">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
         </button>
-        <button type="button" class="icon-btn" id="customizeUIBtn" title="🎨 Кастомизация интерфейса">
-          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
           <button type="button" class="theme-btn" id="themeToggleBtn" title="Тема">🌙</button>
         </div>
         <div id="chatList"></div>
@@ -1406,6 +1425,23 @@
           </div>
           <!-- Messages -->
           <div id="messagesArea"></div>
+          
+          <!-- Voice Recording Overlay -->
+          <div id="voiceRecordingOverlay">
+            <div class="voice-rec-overlay-status" id="voiceRecOverlayStatus">Запись…</div>
+            <div class="voice-big-circle" id="voiceBigCircle">
+              <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 16.91c-1.48 1.46-3.51 2.36-5.76 2.36s-4.29-.9-5.77-2.36l-1.1 1.1c1.74 1.71 4.15 2.76 6.87 2.76s5.13-1.05 6.87-2.76l-1.11-1.1zM19 12h2c0-2.76-1.23-5.26-3.16-7v2c1.86 1.41 3.02 3.55 3.16 5.74z"/></svg>
+              <video id="voiceRecordingVideo" class="voice-rec-overlay-video" playsinline autoplay muted></video>
+            </div>
+            <div class="voice-rec-overlay-timer" id="voiceRecOverlayTimer">0:00</div>
+            <div class="voice-rec-overlay-controls">
+              <button type="button" class="voice-rec-overlay-btn ghost" id="voiceRecFlipCameraBtn" title="Перевернуть камеру" style="display:none">🔄</button>
+              <button type="button" class="voice-rec-overlay-btn ghost" id="voiceRecPauseBtnOverlay" title="Пауза">⏸</button>
+              <button type="button" class="voice-rec-overlay-btn danger" id="voiceRecOverlayCancelBtn" title="Отмена">✕</button>
+              <button type="button" class="voice-rec-overlay-btn primary" id="voiceRecOverlaySendBtn" title="Отправить">✓</button>
+            </div>
+          </div>
+          
           <div id="voiceRecordBar">
             <div class="voice-rec-pulse" aria-hidden="true"></div>
             <span class="voice-rec-time" id="voiceRecTime">0:00</span>
@@ -1433,9 +1469,6 @@
               <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
             </button>
             <input type="file" id="fileInput" style="display:none" multiple>
-            <button class="icon-btn" id="voiceModeToggle" title="Переключить: голос / кружочки">
-              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0-10 10v8a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-4.5a2 2 0 0 0-2-2h-.5a7.5 7.5 0 0 1 15 0H19a2 2 0 0 0-2 2V20a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-8a10 10 0 0 0-10-10z" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-            </button>
             <button class="icon-btn" id="recordBtn" title="Голосовое сообщение">
               <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10a7 7 0 01-14 0M12 19v3M8 22h8"/></svg>
             </button>
@@ -1787,6 +1820,10 @@
         
         <div class="settings-section">
           <button type="button" class="btn-ghost" id="switchAccountBtn" style="width:100%;justify-content:center">Сменить аккаунт</button>
+        </div>
+        
+        <div class="settings-section">
+          <button type="button" class="btn-ghost" id="customizeUIBtn" style="width:100%;justify-content:center">Оформление интерфейса</button>
         </div>
         
         <div class="modal-btns">
@@ -8487,6 +8524,81 @@
     function makeVoicePlayer(dataUrl, msg){
       const voiceMeta = parseVoiceContent(dataUrl);
       const resolvedDataUrl = voiceMeta.data;
+      const isVideo = voiceMeta.isVideo || (msg && msg.content && typeof msg.content === 'object' && msg.content.isVideo);
+      
+      // ===== ВИДЕО КРУЖОК =====
+      if (isVideo) {
+        const container = document.createElement('div');
+        container.className = 'video-message-container';
+        container.style.cssText = 'display:flex;align-items:center;justify-content:center;padding:8px;cursor:pointer';
+        container.dataset.ts = msg.ts;
+        
+        const circle = document.createElement('div');
+        circle.className = 'video-circle';
+        circle.style.cssText = `
+          width:160px;
+          height:160px;
+          border-radius:50%;
+          background:var(--bg3);
+          border:2px solid var(--accent);
+          overflow:hidden;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          position:relative;
+          box-shadow:0 4px 20px rgba(0,0,0,0.3);
+          transition:transform .2s;
+        `;
+        
+        const video = document.createElement('video');
+        video.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
+        video.src = resolvedDataUrl;
+        video.preload = 'metadata';
+        circle.appendChild(video);
+        
+        const playIcon = document.createElement('div');
+        playIcon.style.cssText = `
+          position:absolute;
+          width:50px;
+          height:50px;
+          background:rgba(255,255,255,0.9);
+          border-radius:50%;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          font-size:24px;
+          z-index:2;
+          transition:all .2s;
+          pointer-events:none;
+        `;
+        playIcon.innerHTML = '▶';
+        circle.appendChild(playIcon);
+        
+        circle.onmouseenter = () => {
+          circle.style.transform = 'scale(1.08)';
+          playIcon.style.opacity = '1';
+        };
+        circle.onmouseleave = () => {
+          circle.style.transform = 'scale(1)';
+          if (video.paused) playIcon.style.opacity = '0.8';
+        };
+        
+        circle.onclick = (e) => {
+          e.stopPropagation();
+          if (video.paused) {
+            video.play();
+            playIcon.style.opacity = '0';
+          } else {
+            video.pause();
+            playIcon.style.opacity = '0.9';
+          }
+        };
+        
+        container.appendChild(circle);
+        return container;
+      }
+      
+      // ===== ОБЫЧНЫЙ ГОЛОС (существующий код) =====
       const row=document.createElement('div');
       row.className='msg-voice';
       row.dataset.ts = msg.ts;
@@ -8943,22 +9055,27 @@
       if (raw && typeof raw === 'object') {
         const data = typeof raw.data === 'string' ? raw.data : '';
         const duration = Number(raw.duration);
-        return { data, duration: Number.isFinite(duration) ? duration : null };
+        const isVideo = Boolean(raw.isVideo);
+        return { data, duration: Number.isFinite(duration) ? duration : null, isVideo };
       }
       if (typeof raw === 'string') {
         if (raw.startsWith('data:audio/')) {
-          return { data: raw, duration: null };
+          return { data: raw, duration: null, isVideo: false };
+        }
+        if (raw.startsWith('data:video/')) {
+          return { data: raw, duration: null, isVideo: true };
         }
         try {
           const parsed = JSON.parse(raw);
           if (parsed && typeof parsed.data === 'string') {
             const duration = Number(parsed.duration);
-            return { data: parsed.data, duration: Number.isFinite(duration) ? duration : null };
+            const isVideo = Boolean(parsed.isVideo);
+            return { data: parsed.data, duration: Number.isFinite(duration) ? duration : null, isVideo };
           }
         } catch (_) {}
-        return { data: raw, duration: null };
+        return { data: raw, duration: null, isVideo: false };
       }
-      return { data: '', duration: null };
+      return { data: '', duration: null, isVideo: false };
     }
 
     function scrollBottom(){
@@ -12424,28 +12541,38 @@
     async function toggleRecord() {
       if (!activeChat || voiceSession) return;
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showToast('Запись голоса не поддерживается в этом браузере');
+        showToast('Запись видео не поддерживается в этом браузере');
         return;
       }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // FIX #1: Выбор правильного MIME-type для iOS Safari и других браузеров
+        // Запрос видео + аудио
+        let constraints = { 
+          audio: true,
+          video: { 
+            width: { ideal: 1080 },
+            height: { ideal: 1920 },
+            facingMode: 'user'
+          }
+        };
+        
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        // MIME type для видео
         let mimeType = '';
         const supportedTypes = [
-          'audio/webm;codecs=opus',
-          'audio/webm',
-          'audio/mp4',
-          'audio/ogg;codecs=opus',
-          'audio/ogg'
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm;codecs=h264,opus',
+          'video/webm',
+          'video/mp4'
         ];
-
         for (const type of supportedTypes) {
           if (MediaRecorder.isTypeSupported(type)) {
             mimeType = type;
             break;
           }
         }
-
+        
         const recorderOptions = mimeType ? { mimeType } : {};
         const recorder = new MediaRecorder(stream, recorderOptions);
         const chunks = [];
@@ -12457,8 +12584,16 @@
         const started = Date.now();
         let pausedMs = 0;
         let pauseStarted = 0;
+        
+        // Показать видеопоток в overlay
+        const videoEl = document.getElementById('voiceRecordingVideo');
+        if (videoEl) {
+          videoEl.srcObject = stream;
+          videoEl.classList.add('active');
+        }
+        
         const tick = () => {
-          const el = document.getElementById('voiceRecTime');
+          const el = document.getElementById('voiceRecOverlayTimer');
           if (!el || !voiceSession) return;
           let t = Date.now() - started - (voiceSession.pausedMs || 0);
           if (voiceSession.paused && voiceSession.pauseStarted) {
@@ -12467,6 +12602,7 @@
           const sec = Math.max(0, Math.floor(t / 1000));
           el.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
         };
+        
         voiceSession = {
           stream,
           recorder,
@@ -12475,10 +12611,12 @@
           paused: false,
           pauseStarted: 0,
           pausedMs: 0,
-          tickTimer: setInterval(tick, 400)
+          tickTimer: setInterval(tick, 400),
+          facingMode: 'user'  // Отслеживать текущий режим камеры
         };
         tick();
-        // FIX #1: Обработка visibilitychange для остановки записи при сворачивании
+        
+        // Обработка visibilitychange
         const handleVisibilityChange = () => {
           if (document.visibilityState === 'hidden' && voiceSession && !voiceSession.cancelled) {
             voiceSession.cancelled = true;
@@ -12488,32 +12626,56 @@
           }
         };
         document.addEventListener('visibilitychange', handleVisibilityChange, { once: true });
+        
         recorder.onstop = async () => {
           const vs = voiceSession;
           if (vs?.tickTimer) clearInterval(vs.tickTimer);
-          // FIX #1: Остановка всех треков потока
+          
+          // Остановка всех треков потока
           if (vs?.stream) {
             vs.stream.getTracks().forEach((t) => t.stop());
+          }
+          
+          // Скрыть видео
+          const videoEl = document.getElementById('voiceRecordingVideo');
+          if (videoEl) {
+            videoEl.classList.remove('active');
+            videoEl.srcObject = null;
           }
 
           // Удаление обработчика visibilitychange
           document.removeEventListener('visibilitychange', handleVisibilityChange);
-          document.getElementById('voiceRecordBar')?.classList.remove('active');
+          document.getElementById('voiceRecordingOverlay')?.classList.remove('active');
           document.getElementById('recordBtn')?.classList.remove('recording');
           voiceSession = null;
           if (!vs || vs.cancelled) return;
-          const blob = new Blob(vs.chunks, { type: mimeType || 'audio/webm' });
+          
+          const blob = new Blob(vs.chunks, { type: mimeType || 'video/webm' });
           const b64 = await fileToBase64(blob);
           const recDuration = Math.max(1, Math.floor((Date.now() - started - (vs.pausedMs || 0)) / 1000));
-          await sendMessage('voice', { data: b64, duration: recDuration });
+          await sendMessage('voice', { data: b64, duration: recDuration, isVideo: true });
         };
+        
         recorder.start(400);
-        document.getElementById('voiceRecordBar')?.classList.add('active');
+        document.getElementById('voiceRecordingOverlay')?.classList.add('active');
         document.getElementById('recordBtn')?.classList.add('recording');
 
-        const pauseBtn = document.getElementById('voiceRecPauseBtn');
+        // Кнопка отмены
+        const cancelBtn = document.getElementById('voiceRecOverlayCancelBtn');
+        if (cancelBtn) {
+          cancelBtn.onclick = () => {
+            if (!voiceSession) return;
+            voiceSession.cancelled = true;
+            try {
+              voiceSession.recorder.stop();
+            } catch (_) {}
+          };
+        }
+        
+        // Кнопка паузы в оверлее
+        const pauseBtn = document.getElementById('voiceRecPauseBtnOverlay');
         if (pauseBtn) {
-          pauseBtn.textContent = 'Пауза';
+          pauseBtn.textContent = '⏸';
           pauseBtn.onclick = () => {
             if (!voiceSession?.recorder) return;
             if (voiceSession.recorder.state === 'recording') {
@@ -12524,7 +12686,7 @@
               voiceSession.recorder.pause();
               voiceSession.pauseStarted = Date.now();
               voiceSession.paused = true;
-              pauseBtn.textContent = 'Дальше';
+              pauseBtn.textContent = '▶';
             } else if (voiceSession.recorder.state === 'paused') {
               voiceSession.recorder.resume();
               if (voiceSession.pauseStarted) {
@@ -12532,35 +12694,76 @@
               }
               voiceSession.pauseStarted = 0;
               voiceSession.paused = false;
-              pauseBtn.textContent = 'Пауза';
+              pauseBtn.textContent = '⏸';
             }
           };
         }
-        document.getElementById('voiceRecCancelBtn').onclick = () => {
-          if (!voiceSession) return;
-          voiceSession.cancelled = true;
-          try {
-            voiceSession.recorder.stop();
-          } catch (_) {}
-        };
-        document.getElementById('voiceRecSendBtn').onclick = () => {
-          if (!voiceSession) return;
-          try {
-            voiceSession.recorder.stop();
-          } catch (_) {}
-        };
+        
+        // Кнопка отправки
+        const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
+        if (sendBtn) {
+          sendBtn.onclick = () => {
+            if (!voiceSession) return;
+            try {
+              voiceSession.recorder.stop();
+            } catch (_) {}
+          };
+        }
+        
+        // Кнопка переворота камеры (только на мобильных)
+        const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
+        if (flipBtn && /mobile|android|iphone|ipad/i.test(navigator.userAgent)) {
+          flipBtn.style.display = 'block';
+          flipBtn.onclick = async () => {
+            if (!voiceSession) return;
+            try {
+              // Остановить текущий поток
+              voiceSession.stream.getTracks().forEach(t => t.stop());
+              
+              // Переключить facingMode
+              const newFacingMode = voiceSession.facingMode === 'user' ? 'environment' : 'user';
+              voiceSession.facingMode = newFacingMode;
+              
+              // Запросить новый поток с другой камерой
+              const newStream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: {
+                  width: { ideal: 1080 },
+                  height: { ideal: 1920 },
+                  facingMode: newFacingMode
+                }
+              });
+              
+              // Заменить видеопоток
+              const videoEl = document.getElementById('voiceRecordingVideo');
+              if (videoEl) {
+                videoEl.srcObject = newStream;
+              }
+              
+              // Заменить аудио трек в recorder
+              const audioTracks = newStream.getAudioTracks();
+              if (audioTracks.length > 0) {
+                voiceSession.stream = newStream;
+              }
+            } catch (e) {
+              console.error('Failed to flip camera:', e);
+              showToast('Не удалось переключить камеру');
+            }
+          };
+        }
+        
       } catch (e) {
-        // FIX #1: Корректная обработка ошибок
-        let errorMsg = 'Нет доступа к микрофону';
+        // Корректная обработка ошибок
+        let errorMsg = 'Нет доступа к видеокамере';
         if (e.name === 'NotAllowedError') {
-          errorMsg = 'Доступ к микрофону запрещён. Разрешите в настройках браузера.';
+          errorMsg = 'Доступ к камере запрещён. Разрешите в настройках браузера.';
         } else if (e.name === 'NotFoundError') {
-          errorMsg = 'Микрофон не найден. Подключите микрофон и попробуйте снова.';
+          errorMsg = 'Камера не найдена. Подключите камеру и попробуйте снова.';
         } else if (e.name === 'NotReadableError') {
-          errorMsg = 'Микрофон занят другим приложением.';
+          errorMsg = 'Камера занята другим приложением.';
         }
         showToast(errorMsg);
-        console.error('Voice record error:', e);
+        console.error('Video record error:', e);
       }
     }
 
@@ -14640,9 +14843,7 @@
     }
     </script>
     <script src="profile-features.js"></script>
-    <script src="voice-circles.js"></script>
     <script src="ui-customization.js"></script>
-    <script src="voice-integration.js"></script>
     <script src="voice-record-handler.js"></script>
     </body>
     </html>
