@@ -47,15 +47,21 @@ const UICustomizationModule = (() => {
   // ==================== ПРИМЕНЕНИЕ ТЕМЫ ====================
   function applyTheme() {
     const root = document.documentElement;
+    const body = document.body;
 
-    // Фоновое изображение
+    // Фоновое изображение - применить к body и html
     if (currentTheme.bgImage) {
       root.style.backgroundImage = `url(${currentTheme.bgImage})`;
+      body.style.backgroundImage = `url(${currentTheme.bgImage})`;
       root.style.backgroundSize = 'cover';
+      body.style.backgroundSize = 'cover';
       root.style.backgroundAttachment = 'fixed';
+      body.style.backgroundAttachment = 'fixed';
       root.style.backgroundPosition = 'center';
+      body.style.backgroundPosition = 'center';
     } else {
       root.style.backgroundImage = 'none';
+      body.style.backgroundImage = 'none';
     }
 
     // Основной фон с прозрачностью
@@ -76,7 +82,7 @@ const UICustomizationModule = (() => {
       updateCSSVariable('--accent-glow', `rgba(${hexToRgb(currentTheme.accentColor)},0.18)`);
     }
 
-    // Применить фильтр к фоnovation если есть бэкграунд
+    // Применить фильтр к фону если есть бэкграунд
     if (currentTheme.bgImage) {
       applyBackgroundOverlay();
     }
@@ -110,7 +116,10 @@ const UICustomizationModule = (() => {
   }
 
   function createBackgroundOverlay() {
-    const overlay = document.createElement('div');
+    let overlay = document.getElementById('bgOverlay');
+    if (overlay) return overlay;
+    
+    overlay = document.createElement('div');
     overlay.id = 'bgOverlay';
     overlay.style.cssText = `
       position: fixed;
@@ -122,7 +131,7 @@ const UICustomizationModule = (() => {
       pointer-events: none;
       z-index: -1;
     `;
-    document.body.insertBefore(overlay, document.body.firstChild);
+    document.body.appendChild(overlay);
     return overlay;
   }
 
