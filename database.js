@@ -186,6 +186,23 @@ function loadRoomKey(roomId) {
 
 // ==================== MESSAGE QUEUE (E2EE FORMAT) ====================
 function enqueueMessage(message) {
+  // Убедиться, что ПОЛНОЕ сообщение сохранено в raw_json
+  const fullMessage = {
+    from: message.from,
+    to: message.to,
+    type: message.type || 'msg',
+    payload: message.payload,
+    iv: message.iv,
+    signature: message.signature,
+    ts: message.ts || Date.now(),
+    timeBucket: message.timeBucket || message.time_bucket,
+    // Сохранить криптографические поля если они есть
+    dhPublicKey: message.dhPublicKey,
+    sessionKey: message.sessionKey,
+    messageNumber: message.messageNumber,
+    recipientToken: message.recipientToken
+  };
+  
   db.prepare(`
     INSERT INTO message_queue (from_uuid, to_uuid, payload, iv, signature, raw_json, msg_type, ts, time_bucket)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -195,10 +212,10 @@ function enqueueMessage(message) {
     String(message.payload || ''),
     String(message.iv || ''),
     String(message.signature || ''),
-    JSON.stringify(message || {}),
+    JSON.stringify(fullMessage),
     message.type || 'msg',
     message.ts || Date.now(),
-    message.time_bucket || Math.floor(Date.now() / (60 * 60 * 1000)) * (60 * 60 * 1000)
+    message.timeBucket || message.time_bucket || Math.floor(Date.now() / (60 * 60 * 1000)) * (60 * 60 * 1000)
   );
 }
 
@@ -212,20 +229,30 @@ function dequeueMessages(toUuid) {
   }
 
   return msgs.map(row => {
+    // Сначала попытаться восстановить из raw_json (содержит ВСЕ поля)
     if (row.raw_json) {
       try {
-        return JSON.parse(row.raw_json);
+        const parsed = JSON.parse(row.raw_json);
+        // Убедиться, что все обязательные поля есть
+        if (parsed && parsed.from && parsed.to && parsed.type) {
+          return parsed;
+        }
       } catch (_) {}
     }
-    return {
+    
+    // Fallback: восстановить базовое сообщение из полей БД
+    const msg = {
       from: row.from_uuid,
       to: row.to_uuid,
       payload: row.payload,
       iv: row.iv,
       signature: row.signature,
       type: row.msg_type,
-      ts: row.ts
+      ts: row.ts,
+      timeBucket: row.time_bucket
     };
+    
+    return msg;
   });
 }
 
