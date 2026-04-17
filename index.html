@@ -537,23 +537,34 @@
       --messages-bg:rgba(232, 236, 243, 0.15);
       --input-bg:rgba(255, 255, 255, 0.9);
     }
-    :root[data-theme="light"] .msg .bubble{background:#ffffff;border-color:#dde2ec;color:#1a1d26}
-    :root[data-theme="light"] .msg.out .bubble{background:linear-gradient(135deg,#ddeeff,#cce5ff);border-color:#99ccff;color:#0a1a2f}
-    :root[data-theme="light"]{--out-time-color:rgba(10,26,47,.72)}
-    :root[data-theme="light"] #chatHeader{background:#ffffff}
-    :root[data-theme="light"] #sidebar{background:#f8f9fb}
-    :root[data-theme="light"] .sidebar-top{background:#f8f9fb}
-    :root[data-theme="light"] #inputArea{background:#ffffff}
-    :root[data-theme="light"] #msgInput{background:#f0f2f5;border-color:#d1d5de;color:#1a1d26}
+    :root[data-theme="light"] .msg .bubble{background:#ffffff;border-color:#cdd1d9;color:#1a1d26;box-shadow:0 1px 2px rgba(0,0,0,0.05)}
+    :root[data-theme="light"] .msg.out .bubble{background:linear-gradient(135deg,#4f8ef7,#3a7be8);border-color:#2966d0;color:#ffffff}
+    :root[data-theme="light"] .msg .bubble .msg-time{color:#6b7280}
+    :root[data-theme="light"] .msg.out .bubble .msg-time{color:rgba(255,255,255,0.85)}
+    :root[data-theme="light"]{--out-time-color:rgba(255,255,255,.85)}
+    :root[data-theme="light"] #chatHeader{background:#ffffff;border-bottom:1px solid #e2e5ec}
+    :root[data-theme="light"] #chatHeader h3{color:#1a1d26}
+    :root[data-theme="light"] #chatHeader .chat-meta{color:#6b7280}
+    :root[data-theme="light"] #sidebar{background:#ffffff;border-right:1px solid #e2e5ec}
+    :root[data-theme="light"] .sidebar-top{background:#ffffff;border-bottom:1px solid #e2e5ec}
+    :root[data-theme="light"] .sidebar-bottom{background:#ffffff;border-top:1px solid #e2e5ec}
+    :root[data-theme="light"] #inputArea{background:#ffffff;border-top:1px solid #e2e5ec}
+    :root[data-theme="light"] #msgInput{background:#f3f4f6;border-color:#d1d5de;color:#1a1d26}
+    :root[data-theme="light"] #msgInput::placeholder{color:#9ca3af}
     :root[data-theme="light"] #regOverlay{background:#eef0f5}
-    :root[data-theme="light"] .reg-box{background:linear-gradient(135deg,#ffffff,#f5f7fa)}
-    :root[data-theme="light"] .modal{background:#ffffff}
-    :root[data-theme="light"] .modal input{background:#f5f7fa;color:#1a1d26}
+    :root[data-theme="light"] .reg-box{background:linear-gradient(135deg,#ffffff,#f5f7fa);border:1px solid #e2e5ec}
+    :root[data-theme="light"] .modal{background:#ffffff;border:1px solid #e2e5ec;box-shadow:0 20px 60px rgba(0,0,0,0.15)}
+    :root[data-theme="light"] .modal input{background:#f5f7fa;border:1px solid #d1d5de;color:#1a1d26}
+    :root[data-theme="light"] .ctx-menu{background:#ffffff;border:1px solid #e2e5ec;box-shadow:0 10px 40px rgba(0,0,0,0.12)}
+    :root[data-theme="light"] .ctx-item{color:#1a1d26}
     :root[data-theme="light"] .ctx-item:hover{background:#f0f2f5}
-    :root[data-theme="light"] #toast{background:#333;color:#fff}
-    :root[data-theme="light"] .chat-item:hover{background:#eef0f4}
-    :root[data-theme="light"] .chat-item.active{background:#e2e8f8}
-    :root[data-theme="light"] .info-top{background:linear-gradient(135deg,#f0f4ff,#f8f9fb)}
+    :root[data-theme="light"] #toast{background:#1f2937;color:#fff}
+    :root[data-theme="light"] .chat-item:hover{background:#f3f4f6}
+    :root[data-theme="light"] .chat-item.active{background:#e0e7ff}
+    :root[data-theme="light"] .chat-item .chat-name{color:#1a1d26}
+    :root[data-theme="light"] .chat-item .chat-preview{color:#6b7280}
+    :root[data-theme="light"] .chat-item .chat-time{color:#9ca3af}
+    :root[data-theme="light"] .info-top{background:linear-gradient(135deg,#f0f4ff,#f8f9fb);border-bottom:1px solid #e2e5ec}
 
     /* ===== LIGHT THEME AUDIO PLAYER ===== */
     :root[data-theme="light"] #globalAudioPlayer{background:linear-gradient(135deg,rgba(255,255,255,0.95),rgba(248,249,251,0.98));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(0,0,0,0.08);box-shadow:0 4px 24px rgba(0,0,0,0.12)}
@@ -580,7 +591,19 @@
     :root[data-theme="light"] #inputArea,
     :root[data-theme="light"] #voiceRecordBar,
     :root[data-theme="light"] #attachQueue{background:var(--bg1);backdrop-filter:none;-webkit-backdrop-filter:none}
-    :root[data-theme="light"] #replyPreview{background:var(--bg3)}
+    :root[data-theme="light"] #replyPreview{background:var(--bg3);border-left-color:var(--accent)}
+    :root[data-theme="light"] .icon-btn{color:#4a5568}
+    :root[data-theme="light"] .icon-btn:hover{color:var(--accent);background:#f0f2f5}
+    :root[data-theme="light"] #recordBtn{color:var(--accent)}
+    :root[data-theme="light"] #recordBtn:hover{background:#f0f2f5}
+    :root[data-theme="light"] #emojiPicker{background:#ffffff;border-color:#e2e5ec;box-shadow:0 12px 40px rgba(0,0,0,.15)}
+    :root[data-theme="light"] .emoji-category{color:#6b7280}
+    :root[data-theme="light"] .btn-ghost{color:#4a5568;border-color:#d1d5de}
+    :root[data-theme="light"] .btn-ghost:hover{background:#f0f2f5;border-color:var(--accent);color:var(--accent)}
+    :root[data-theme="light"] .btn-primary{background:var(--accent);color:#fff}
+    :root[data-theme="light"] .btn-danger{color:#e74c3c}
+    :root[data-theme="light"] #attachBtn{color:#4a5568}
+    :root[data-theme="light"] #sendBtn{color:var(--accent)}
     /* Mobile light theme: override inline dark backgrounds */
     @media (max-width:900px) {
       :root[data-theme="light"] #app{background:var(--bg0)}
@@ -1600,6 +1623,12 @@
           <button type="button" id="mobileSettingsAttachChannelBtn" class="btn-ghost" style="width:100%;margin-top:8px;padding:10px;display:flex;align-items:center;justify-content:center;gap:8px">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
             Прикрепить канал
+          </button>
+
+          <h3 style="font-size:12px;color:var(--text3);margin:16px 0 10px">ОФОРМЛЕНИЕ</h3>
+          <button id="mobileCustomizeUIBtn" class="btn-ghost" type="button" style="width:100%;justify-content:center;min-height:46px;display:flex;align-items:center;gap:8px">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v10M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6m6 0h10M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>
+            Кастомизация интерфейса
           </button>
           
           <button id="mobileSettingsSaveBtn" class="btn-primary" type="button" style="margin-top:16px;min-height:46px">Сохранить профиль</button>
@@ -10265,6 +10294,14 @@
       if (mobileGradientToggle) {
         mobileGradientToggle.onchange = () => applyGradientPreference(mobileGradientToggle.checked);
       }
+      const mobileCustomizeUIBtn = document.getElementById('mobileCustomizeUIBtn');
+      if (mobileCustomizeUIBtn) {
+        mobileCustomizeUIBtn.onclick = () => {
+          if (typeof UICustomizationModule !== 'undefined' && UICustomizationModule.openCustomizationPanel) {
+            UICustomizationModule.openCustomizationPanel();
+          }
+        };
+      }
       const mobileSettingsSwitchAccountBtn = document.getElementById('mobileSettingsSwitchAccountBtn');
       if (mobileSettingsSwitchAccountBtn) mobileSettingsSwitchAccountBtn.onclick = () => document.getElementById('switchAccountBtn')?.click();
       document.querySelectorAll('#mobileBottomNav .mobile-nav-item[data-mobile-tab]').forEach((btn) => {
@@ -12668,6 +12705,11 @@
           }
           const sec = Math.max(0, Math.floor(t / 1000));
           el.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+          
+          // Обновляем круговую шкалу для видеокружков
+          if (isVideoMode && typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.updateCircularProgress) {
+            VoiceCirclesModule.updateCircularProgress(t, 60000);
+          }
         };
         
         voiceSession = {
@@ -12683,6 +12725,17 @@
           isVideo: isVideoMode
         };
         tick();
+        
+        // Настройка UI в зависимости от режима
+        if (typeof VoiceCirclesModule !== 'undefined') {
+          if (isVideoMode) {
+            VoiceCirclesModule.setupVideoModeUI?.(stream);
+          } else {
+            VoiceCirclesModule.setupVoiceModeUI?.();
+            // Запускаем waveform визуализацию для голоса
+            VoiceCirclesModule.startWaveformVisualization?.(stream);
+          }
+        }
         
         // Обработка visibilitychange
         const handleVisibilityChange = () => {
@@ -12709,6 +12762,13 @@
           if (videoEl) {
             videoEl.classList.remove('active');
             videoEl.srcObject = null;
+          }
+
+          // Остановить waveform визуализацию и очистить UI
+          if (typeof VoiceCirclesModule !== 'undefined') {
+            VoiceCirclesModule.stopWaveformVisualization?.();
+            VoiceCirclesModule.removeCircularProgress?.();
+            VoiceCirclesModule.removeSwipeLockUI?.();
           }
 
           // Удаление обработчика visibilitychange
