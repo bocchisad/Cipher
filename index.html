@@ -579,6 +579,13 @@
     }
     @media (max-width:900px){
       #app:not(.app-chat-open) .sidebar-bottom{display:none!important}
+      /* Мобильная версия - прозрачность фона */
+      #app #sidebar{background:rgba(17, 19, 24, 0.65)!important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);}
+      #app #chatList{background:rgba(13, 16, 22, 0.5)!important;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);}
+      #app #mainChat{background:transparent!important;}
+      #app #messagesArea{background:rgba(10, 11, 13, 0.1)!important;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);}
+      #app #inputArea{background:rgba(17, 19, 24, 0.9)!important;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);}
+      #app #chatView{background:transparent!important;}
     }
     body.use-gradients #app:not(.app-chat-open) #sidebar{
       background:var(--grad-sidebar)!important;
@@ -1429,6 +1436,7 @@
           <!-- Voice Recording Overlay -->
           <div id="voiceRecordingOverlay">
             <div class="voice-rec-overlay-status" id="voiceRecOverlayStatus">Запись…</div>
+            <div class="voice-rec-mode-indicator" id="voiceModeIndicator">🎤 ГОЛОС</div>
             <div class="voice-big-circle" id="voiceBigCircle">
               <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 16.91c-1.48 1.46-3.51 2.36-5.76 2.36s-4.29-.9-5.77-2.36l-1.1 1.1c1.74 1.71 4.15 2.76 6.87 2.76s5.13-1.05 6.87-2.76l-1.11-1.1zM19 12h2c0-2.76-1.23-5.26-3.16-7v2c1.86 1.41 3.02 3.55 3.16 5.74z"/></svg>
               <video id="voiceRecordingVideo" class="voice-rec-overlay-video" playsinline autoplay muted></video>
@@ -8561,8 +8569,15 @@
         
         const video = document.createElement('video');
         video.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
-        video.src = resolvedDataUrl;
         video.preload = 'metadata';
+        video.controls = false;
+        
+        // Use source element for better compatibility
+        const source = document.createElement('source');
+        source.src = resolvedDataUrl;
+        source.type = voiceMeta.mimeType || 'video/webm';
+        video.appendChild(source);
+        
         circle.appendChild(video);
         
         const playIcon = document.createElement('div');
@@ -8595,7 +8610,11 @@
         circle.onclick = (e) => {
           e.stopPropagation();
           if (video.paused) {
-            video.play();
+            video.play().catch(err => {
+              console.error('❌ Video play error:', err);
+              console.log('Video src:', video.src);
+              console.log('Source type:', source.type);
+            });
             playIcon.style.opacity = '0';
           } else {
             video.pause();
