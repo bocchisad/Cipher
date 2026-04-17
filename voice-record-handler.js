@@ -69,6 +69,8 @@ const VoiceRecordHandler = (() => {
           if (sendBtn && typeof sendBtn.onclick === 'function') {
             sendBtn.onclick();
           }
+          // Очистить индикаторы микрофона/камеры
+          setTimeout(() => clearMediaIndicators(), 100);
         }
       } else if (holdDuration < HOLD_THRESHOLD) {
         // Если это был просто click (< 200мс) - переключить режим
@@ -80,6 +82,15 @@ const VoiceRecordHandler = (() => {
 
     isHolding = false;
     e.preventDefault();
+  }
+
+  // Очистить индикаторы микрофона/камеры
+  function clearMediaIndicators() {
+    const recordBtn = document.getElementById('recordBtn');
+    if (recordBtn) {
+      recordBtn.classList.remove('recording');
+      recordBtn.style.color = 'inherit';
+    }
   }
 
   return {
