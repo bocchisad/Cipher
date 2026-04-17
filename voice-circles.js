@@ -20,13 +20,24 @@ const VoiceCirclesModule = (() => {
     const toggle = document.getElementById('voiceModeToggle');
     if (toggle) {
       toggle.classList.toggle('circle-mode', circleMode);
-      toggle.title = circleMode ? 'Кружочки' : 'Голос сообщение';
+      toggle.classList.toggle('video-mode', !circleMode);
+      toggle.title = circleMode ? '📹 Видео кружки' : '🎤 Микрофон';
+      toggle.style.transition = 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
       const icon = toggle.querySelector('svg');
       if (icon) {
-        icon.innerHTML = circleMode 
-          ? '<circle cx="12" cy="12" r="10" fill="currentColor"/>' // Круг
-          : '<path d="M12 2a10 10 0 0 0-10 10v8a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-4.5a2 2 0 0 0-2-2h-.5a7.5 7.5 0 0 1 15 0H19a2 2 0 0 0-2 2V20a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-8a10 10 0 0 0-10-10z" fill="none" stroke="currentColor" stroke-width="2"/>'; // Микрофон
+        icon.style.transition = 'transform 0.3s, opacity 0.3s, filter 0.3s';
+        if (circleMode) {
+          icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>';
+          icon.style.filter = 'drop-shadow(0 0 4px rgba(79,142,247,0.6))';
+        } else {
+          icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a5 5 0 0 0-5 5v6a5 5 0 0 0 10 0V6a5 5 0 0 0-5-5zM1 9a1 1 0 0 1 1 1v2a11 11 0 0 0 22 0v-2a1 1 0 0 1 2 0v2a13 13 0 0 1-26 0v-2a1 1 0 0 1 1-1zm8 13a1 1 0 0 0-1 1v.5a1 1 0 0 0 2 0V24a1 1 0 0 0-1-1zm-4 0a1 1 0 0 0-1 1v.5a1 1 0 0 0 2 0V24a1 1 0 0 0-1-1zm8 0a1 1 0 0 0-1 1v.5a1 1 0 0 0 2 0V24a1 1 0 0 0-1-1zm4 0a1 1 0 0 0-1 1v.5a1 1 0 0 0 2 0V24a1 1 0 0 0-1-1z"/></svg>';
+          icon.style.filter = 'none';
+        }
       }
+      toggle.style.transform = 'scale(1.15) rotate(10deg)';
+      setTimeout(() => { 
+        toggle.style.transform = 'scale(1) rotate(0deg)'; 
+      }, 250);
     }
   }
 
@@ -206,52 +217,57 @@ const VoiceCirclesModule = (() => {
     
     const circle = document.createElement('div');
     circle.className = 'voice-circle';
+    const isVideo = circleData.isVideo || false;
     circle.style.cssText = `
       width: 80px;
       height: 80px;
       border-radius: 50%;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      background: linear-gradient(135deg, ${isVideo ? '#e74c3c' : 'var(--accent)'}, ${isVideo ? '#c0392b' : 'var(--accent2)'});
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       position: relative;
-      transition: transform 0.2s;
+      transition: transform 0.2s, background 0.3s, box-shadow 0.3s;
       box-shadow: 0 2px 8px rgba(79, 142, 247, 0.3);
       flex-shrink: 0;
+      border: 2px solid rgba(255, 255, 255, 0.2);
     `;
 
-    // Плей кнопка
+    // Плей кнопка с иконкой микрофона или камеры
     const playBtn = document.createElement('button');
     playBtn.type = 'button';
-    playBtn.innerHTML = '▶';
+    playBtn.innerHTML = isVideo ? '📹' : '🎤';
     playBtn.style.cssText = `
       background: none;
       border: none;
       color: white;
-      font-size: 28px;
+      font-size: 32px;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       width: 100%;
       height: 100%;
-      transition: transform 0.2s;
+      transition: transform 0.2s, filter 0.2s;
+      filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
     `;
 
-    // Время в центре
+    // Время в центре - исправлено форматирование
     const timeDiv = document.createElement('div');
     timeDiv.className = 'voice-circle-time';
-    timeDiv.textContent = formatTime(circleData.duration);
+    const duration = Math.max(0, Math.min(3600, parseInt(circleData.duration) || 0));
+    timeDiv.textContent = formatTime(duration);
     timeDiv.style.cssText = `
       position: absolute;
       font-size: 10px;
-      color: rgba(255, 255, 255, 0.8);
+      color: rgba(255, 255, 255, 0.9);
       white-space: nowrap;
       font-weight: 600;
       bottom: 6px;
       left: 50%;
       transform: translateX(-50%);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     `;
 
     circle.appendChild(playBtn);
@@ -265,10 +281,12 @@ const VoiceCirclesModule = (() => {
     });
 
     circle.addEventListener('mouseenter', () => {
-      circle.style.transform = 'scale(1.08)';
+      circle.style.transform = 'scale(1.12)';
+      circle.style.boxShadow = '0 4px 16px rgba(79, 142, 247, 0.5)';
     });
     circle.addEventListener('mouseleave', () => {
       circle.style.transform = 'scale(1)';
+      circle.style.boxShadow = '0 2px 8px rgba(79, 142, 247, 0.3)';
     });
 
     container.appendChild(circle);
@@ -337,7 +355,7 @@ const VoiceCirclesModule = (() => {
     return voiceDiv;
   }
 
-  // Воспроизведение кружочка или голос сообщения
+  // Воспроизведение кружочка или голос сообщения - исправлено
   function playVoiceCircle(voiceData) {
     if (!voiceData.blob && !voiceData.audio) {
       console.error('❌ No audio data to play');
@@ -346,29 +364,70 @@ const VoiceCirclesModule = (() => {
 
     try {
       let blob = voiceData.blob;
+      const isVideo = voiceData.isVideo || false;
+      
+      // Правильно определяем MIME type
+      let mimeType = voiceData.mimeType;
+      if (!mimeType) {
+        if (isVideo) {
+          mimeType = 'video/webm';
+        } else {
+          mimeType = 'audio/webm';
+        }
+      }
 
       // Если audio в base64, конвертировать в blob
       if (!blob && voiceData.audio) {
-        const binaryString = atob(voiceData.audio);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
+        try {
+          const binaryString = atob(voiceData.audio);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          blob = new Blob([bytes], { type: mimeType });
+        } catch (e) {
+          console.error('❌ Failed to decode base64:', e);
+          return;
         }
-        blob = new Blob([bytes], { type: 'audio/wav' });
       }
 
-      const audio = new Audio(URL.createObjectURL(blob));
-      audio.play().catch(err => console.error('❌ Play error:', err));
+      if (!blob) {
+        console.error('❌ No valid blob created');
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+
+      if (isVideo) {
+        const video = document.createElement('video');
+        video.controls = true;
+        video.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);max-width:90vw;max-height:90vh;border-radius:8px;z-index:9999;';
+        video.addEventListener('ended', () => {
+          document.body.removeChild(video);
+          URL.revokeObjectURL(url);
+        });
+        document.body.appendChild(video);
+        video.src = url;
+        video.play().catch(err => console.error('❌ Video play error:', err));
+      } else {
+        const audio = new Audio();
+        audio.addEventListener('ended', () => {
+          URL.revokeObjectURL(url);
+        });
+        audio.src = url;
+        audio.play().catch(err => console.error('❌ Audio play error:', err));
+      }
     } catch (err) {
       console.error('❌ Error playing voice:', err);
     }
   }
 
-  // Форматирование времени
+  // Форматирование времени - исправлено
   function formatTime(seconds) {
-    if (!seconds) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
+    const num = Math.max(0, parseInt(seconds) || 0);
+    if (isNaN(num) || num < 0) return '0:00';
+    const mins = Math.floor(num / 60);
+    const secs = Math.floor(num % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
