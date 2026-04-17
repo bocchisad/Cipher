@@ -18,6 +18,8 @@ const VoiceCirclesModule = (() => {
   function toggleCircleMode() {
     circleMode = !circleMode;
     const toggle = document.getElementById('voiceModeToggle');
+    const indicator = document.getElementById('voiceModeIndicator');
+    
     if (toggle) {
       toggle.classList.toggle('circle-mode', circleMode);
       toggle.classList.toggle('video-mode', !circleMode);
@@ -38,6 +40,18 @@ const VoiceCirclesModule = (() => {
       setTimeout(() => { 
         toggle.style.transform = 'scale(1) rotate(0deg)'; 
       }, 250);
+    }
+
+    // Обновить индикатор режима
+    if (indicator) {
+      indicator.style.transition = 'all 0.3s ease';
+      if (circleMode) {
+        indicator.textContent = '📹 ВИДЕО';
+        indicator.style.color = '#e74c3c';
+      } else {
+        indicator.textContent = '🎤 ГОЛОС';
+        indicator.style.color = 'var(--accent)';
+      }
     }
   }
 
