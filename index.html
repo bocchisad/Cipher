@@ -72,7 +72,7 @@
       --messages-bg:rgba(10, 11, 13, 0.15);
       --input-bg:rgba(17, 19, 24, 0.9);
     }
-    html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg0);background-color:var(--bg0);color:var(--text);font-family:var(--font)}
+    html,body{height:100%;height:100dvh;overflow:hidden;background-color:var(--bg0);color:var(--text);font-family:var(--font)}
     html[data-theme="dark"],html[data-theme="dark"] body{background-color:#0a0b0d}
     html[data-theme="light"],html[data-theme="light"] body{background-color:#e6e6e6}
     :root.theme-sync *{transition:none!important;animation:none!important}
@@ -604,8 +604,8 @@
     :root[data-theme="light"] #sendBtn{color:var(--accent)}
     /* Mobile light theme: override inline dark backgrounds */
     @media (max-width:900px) {
-      :root[data-theme="light"] #app{background:var(--bg0)}
-      :root[data-theme="light"] html,:root[data-theme="light"] body{background:var(--bg0)}
+      :root[data-theme="light"] #app{background-color:var(--bg0)}
+      :root[data-theme="light"] html,:root[data-theme="light"] body{background-color:var(--bg0)}
       :root[data-theme="light"] #app:not(.app-chat-open) #sidebar{background:var(--sidebar-bg);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
       :root[data-theme="light"] #app.app-chat-open #sidebar{background:var(--sidebar-bg);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
       :root[data-theme="light"] #app.app-chat-open #mainChat{background:transparent}
@@ -11273,9 +11273,16 @@
       input.value = '';
     }
 
+    const MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1 GB limit
+
     async function addFilesToAttachmentQueue(fileArr) {
       if (!activeChat || !fileArr.length) return;
       for (const f of fileArr) {
+        // Проверка лимита размера файла (1 ГБ)
+        if (f.size > MAX_FILE_SIZE) {
+          showToast(`Файл "${f.name}" слишком большой. Максимальный размер: 1 ГБ`, { duration: 4000 });
+          continue;
+        }
         const id = ++attachmentIdSeq;
         let previewUrl = null;
         if (f.type.startsWith('image/')) {
@@ -12709,9 +12716,14 @@
           const sec = Math.max(0, Math.floor(t / 1000));
           el.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
           
-          // Обновляем круговую шкалу для видеокружков
+          // Обновляем круговую шкалу для видеокружков и таймер для компактного бара
           if (isVideoMode && typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.updateCircularProgress) {
             VoiceCirclesModule.updateCircularProgress(t, 60000);
+          }
+          // Обновляем таймер в компактном баре
+          const voiceRecTime = document.getElementById('voiceRecTime');
+          if (voiceRecTime && !isVideoMode) {
+            voiceRecTime.textContent = el.textContent;
           }
         };
         
@@ -12730,14 +12742,16 @@
         tick();
         
         // Настройка UI в зависимости от режима
-        if (typeof VoiceCirclesModule !== 'undefined') {
-          if (isVideoMode) {
+        if (isVideoMode) {
+          // Видеокружки - полноэкранный overlay
+          document.getElementById('voiceRecordingOverlay')?.classList.add('active');
+          if (typeof VoiceCirclesModule !== 'undefined') {
             VoiceCirclesModule.setupVideoModeUI?.(stream);
-          } else {
-            VoiceCirclesModule.setupVoiceModeUI?.();
-            // Запускаем waveform визуализацию для голоса
-            VoiceCirclesModule.startWaveformVisualization?.(stream);
           }
+        } else {
+          // Обычное аудио - компактный бар
+          document.getElementById('voiceRecordBar')?.classList.add('active');
+          document.getElementById('inputArea')?.classList.add('recording');
         }
         
         // Обработка visibilitychange
@@ -12776,7 +12790,10 @@
 
           // Удаление обработчика visibilitychange
           document.removeEventListener('visibilitychange', handleVisibilityChange);
+          // Скрываем оба UI
           document.getElementById('voiceRecordingOverlay')?.classList.remove('active');
+          document.getElementById('voiceRecordBar')?.classList.remove('active');
+          document.getElementById('inputArea')?.classList.remove('recording');
           document.getElementById('recordBtn')?.classList.remove('recording');
           voiceSession = null;
           if (!vs || vs.cancelled) return;
@@ -12788,10 +12805,9 @@
         };
         
         recorder.start(400);
-        document.getElementById('voiceRecordingOverlay')?.classList.add('active');
         document.getElementById('recordBtn')?.classList.add('recording');
 
-        // Показать/скрыть кнопку переворота камеры
+        // Показать/скрыть кнопку переворота камеры (только для видео)
         const flipCameraBtn = document.getElementById('voiceRecFlipCameraBtn');
         if (flipCameraBtn) {
           flipCameraBtn.style.display = isVideoMode ? 'flex' : 'none';
@@ -12836,10 +12852,60 @@
           };
         }
         
-        // Кнопка отправки
+        // Кнопка отправки (overlay)
         const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
         if (sendBtn) {
           sendBtn.onclick = () => {
+            if (!voiceSession) return;
+            try {
+              voiceSession.recorder.stop();
+            } catch (_) {}
+          };
+        }
+
+        // ===== КНОПКИ ДЛЯ КОМПАКТНОГО БАРА (обычное аудио) =====
+        // Кнопка паузы в компактном баре
+        const compactPauseBtn = document.getElementById('voiceRecPauseBtn');
+        if (compactPauseBtn) {
+          compactPauseBtn.onclick = () => {
+            if (!voiceSession?.recorder) return;
+            if (voiceSession.recorder.state === 'recording') {
+              if (typeof voiceSession.recorder.pause !== 'function') {
+                showToast('Пауза не поддерживается в этом браузере');
+                return;
+              }
+              voiceSession.recorder.pause();
+              voiceSession.pauseStarted = Date.now();
+              voiceSession.paused = true;
+              compactPauseBtn.textContent = '▶ Продолжить';
+            } else if (voiceSession.recorder.state === 'paused') {
+              voiceSession.recorder.resume();
+              if (voiceSession.pauseStarted) {
+                voiceSession.pausedMs = (voiceSession.pausedMs || 0) + (Date.now() - voiceSession.pauseStarted);
+              }
+              voiceSession.pauseStarted = 0;
+              voiceSession.paused = false;
+              compactPauseBtn.textContent = '⏸ Пауза';
+            }
+          };
+        }
+
+        // Кнопка отмены в компактном баре
+        const compactCancelBtn = document.getElementById('voiceRecCancelBtn');
+        if (compactCancelBtn) {
+          compactCancelBtn.onclick = () => {
+            if (!voiceSession) return;
+            voiceSession.cancelled = true;
+            try {
+              voiceSession.recorder.stop();
+            } catch (_) {}
+          };
+        }
+
+        // Кнопка отправки в компактном баре
+        const compactSendBtn = document.getElementById('voiceRecSendBtn');
+        if (compactSendBtn) {
+          compactSendBtn.onclick = () => {
             if (!voiceSession) return;
             try {
               voiceSession.recorder.stop();
