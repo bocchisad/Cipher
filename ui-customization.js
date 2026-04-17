@@ -63,33 +63,11 @@ const UICustomizationModule = (() => {
       body.style.backgroundImage = 'none';
     }
 
-    // Переменные для панелей с прозрачностью
-    const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
-    
-    if (isDarkTheme) {
-      // Dark theme panel colors with transparency
-      updateCSSVariable('--sidebar-bg', `rgba(17, 19, 24, ${currentTheme.panelOpacity})`);
-      updateCSSVariable('--chatlist-bg', `rgba(17, 19, 24, ${currentTheme.panelOpacity})`);
-      updateCSSVariable('--welcome-bg-opacity', `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.05})`);
-      updateCSSVariable('--mainchat-bg', `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.2})`);
-      updateCSSVariable('--messages-bg', `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.15})`);
-      updateCSSVariable('--input-bg', `rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.9})`);
-    } else {
-      // Light theme panel colors with transparency
-      updateCSSVariable('--sidebar-bg', `rgba(255, 255, 255, ${currentTheme.panelOpacity})`);
-      updateCSSVariable('--chatlist-bg', `rgba(255, 255, 255, ${currentTheme.panelOpacity})`);
-      updateCSSVariable('--welcome-bg-opacity', `rgba(232, 236, 243, ${currentTheme.bgOpacity * 0.05})`);
-      updateCSSVariable('--mainchat-bg', `rgba(232, 236, 243, ${currentTheme.bgOpacity * 0.2})`);
-      updateCSSVariable('--messages-bg', `rgba(232, 236, 243, ${currentTheme.bgOpacity * 0.15})`);
-      updateCSSVariable('--input-bg', `rgba(255, 255, 255, ${currentTheme.panelOpacity * 0.9})`);
-    }
+    // Прозрачность панелей - применяем ко ВСЕМ панелям
+    applyPanelsTransparency();
 
-    // Основной фон БЕЗ изменения прозрачности - оставляем оригинальные цвета
-    updateCSSVariable('--bg0', '#0a0b0d');
-    updateCSSVariable('--bg1', '#111318');
-    updateCSSVariable('--bg2', '#181b22');
-    updateCSSVariable('--bg3', '#1f232d');
-    updateCSSVariable('--bg4', '#252a36');
+    // Прозрачность фона - применяем только к фону (overlay)
+    applyBackgroundTransparency();
 
     // Цвета
     updateCSSVariable('--accent', currentTheme.accentColor);
@@ -97,139 +75,96 @@ const UICustomizationModule = (() => {
     updateCSSVariable('--text', currentTheme.textColor);
     updateCSSVariable('--border', currentTheme.borderColor);
 
-    // Обновить граненты
+    // Обновить градиенты
     if (currentTheme.useAccentGradient) {
       updateCSSVariable('--accent-glow', `rgba(${hexToRgb(currentTheme.accentColor)},0.18)`);
-    }
-
-    // Применить фильтр к фону если есть бэкграунд
-    if (currentTheme.bgImage) {
-      applyBackgroundOverlay();
     }
 
     saveThemeToStorage();
   }
 
-  function applySidebarTransparency() {
+  // Применить прозрачность ко ВСЕМ панелям (sidebar, chatList, inputArea и т.д.)
+  function applyPanelsTransparency() {
     const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    
-    const sidebarTop = sidebar.querySelector('.sidebar-top');
     const chatList = document.getElementById('chatList');
-    const sidebarBottom = sidebar.querySelector('.sidebar-bottom');
+    const inputArea = document.getElementById('inputArea');
+    const chatHeader = document.getElementById('chatHeader');
+    const voiceRecordBar = document.getElementById('voiceRecordBar');
+    const attachQueue = document.getElementById('attachQueue');
+    const replyPreview = document.getElementById('replyPreview');
+    const infoPanel = document.getElementById('infoPanel');
+    const sidebarTop = document.querySelector('.sidebar-top');
+    const sidebarBottom = document.querySelector('.sidebar-bottom');
     
-    // Если есть background image, добавляем blur и хардкодированные стили
-    // Иначе - используем CSS переменные (--sidebar-bg, --chatlist-bg)
+    const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
     
-    if (currentTheme.bgImage) {
-      // Шапка НЕ прозрачная
-      if (sidebarTop) {
-        sidebarTop.style.background = `linear-gradient(180deg, rgba(17, 19, 24, 1), rgba(13, 16, 22, 0.95))`;
-        sidebarTop.style.backgroundColor = `rgba(17, 19, 24, 1)`;
-        sidebarTop.style.backdropFilter = 'blur(10px)';
-        sidebarTop.style.WebkitBackdropFilter = 'blur(10px)';
-      }
-      
-      // Нижняя навигация НЕ прозрачная
-      if (sidebarBottom) {
-        sidebarBottom.style.background = `linear-gradient(180deg, rgba(13, 16, 22, 0.95), rgba(10, 11, 13, 1))`;
-        sidebarBottom.style.backgroundColor = `rgba(13, 16, 22, 0.95)`;
-        sidebarBottom.style.backdropFilter = 'blur(10px)';
-        sidebarBottom.style.WebkitBackdropFilter = 'blur(10px)';
-      }
-      
-      // Лист чатов ПРОЗРАЧНЫЙ с blur
-      if (chatList) {
-        chatList.style.background = `linear-gradient(180deg, rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.7}), rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.5}))`;
-        chatList.style.backgroundColor = `rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.6})`;
-        chatList.style.backdropFilter = 'blur(12px)';
-        chatList.style.WebkitBackdropFilter = 'blur(12px)';
-      }
-      
-      // Главная боковая панель
-      sidebar.style.background = `linear-gradient(180deg, rgba(17, 19, 24, ${currentTheme.panelOpacity}), rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.8}))`;
-      sidebar.style.backgroundColor = `rgba(17, 19, 24, ${currentTheme.panelOpacity})`;
-      sidebar.style.backdropFilter = 'blur(12px)';
-      sidebar.style.WebkitBackdropFilter = 'blur(12px)';
-    } else {
-      // Очистить inline styles если нет background image
-      if (sidebarTop) {
-        sidebarTop.style.background = '';
-        sidebarTop.style.backgroundColor = '';
-        sidebarTop.style.backdropFilter = '';
-        sidebarTop.style.WebkitBackdropFilter = '';
-      }
-      if (sidebarBottom) {
-        sidebarBottom.style.background = '';
-        sidebarBottom.style.backgroundColor = '';
-        sidebarBottom.style.backdropFilter = '';
-        sidebarBottom.style.WebkitBackdropFilter = '';
-      }
-      if (chatList) {
-        chatList.style.background = '';
-        chatList.style.backgroundColor = '';
-        chatList.style.backdropFilter = '';
-        chatList.style.WebkitBackdropFilter = '';
-      }
-      sidebar.style.background = '';
-      sidebar.style.backgroundColor = '';
-      sidebar.style.backdropFilter = '';
-      sidebar.style.WebkitBackdropFilter = '';
-    }
+    // Определяем базовые цвета в зависимости от темы
+    const baseBg = isDarkTheme ? '17, 19, 24' : '255, 255, 255';
+    const panelOpacity = currentTheme.panelOpacity;
+    
+    // Применяем прозрачность ко всем панелям
+    const panelStyles = {
+      backgroundColor: `rgba(${baseBg}, ${panelOpacity})`,
+      backdropFilter: panelOpacity < 1 ? 'blur(12px)' : 'none',
+      WebkitBackdropFilter: panelOpacity < 1 ? 'blur(12px)' : 'none'
+    };
+    
+    // Sidebar и её части
+    if (sidebar) Object.assign(sidebar.style, panelStyles);
+    if (sidebarTop) Object.assign(sidebarTop.style, panelStyles);
+    if (sidebarBottom) Object.assign(sidebarBottom.style, panelStyles);
+    if (chatList) Object.assign(chatList.style, panelStyles);
+    
+    // Чат
+    if (chatHeader) Object.assign(chatHeader.style, panelStyles);
+    if (inputArea) Object.assign(inputArea.style, panelStyles);
+    if (voiceRecordBar) Object.assign(voiceRecordBar.style, panelStyles);
+    if (attachQueue) Object.assign(attachQueue.style, panelStyles);
+    if (replyPreview) Object.assign(replyPreview.style, panelStyles);
+    
+    // Инфо панель
+    if (infoPanel) Object.assign(infoPanel.style, panelStyles);
+    
+    // Обновляем CSS переменные для использования в других местах
+    updateCSSVariable('--sidebar-bg', `rgba(${baseBg}, ${panelOpacity})`);
+    updateCSSVariable('--chatlist-bg', `rgba(${baseBg}, ${panelOpacity})`);
+    updateCSSVariable('--input-bg', `rgba(${baseBg}, ${panelOpacity})`);
   }
 
-  function applyChatTransparency() {
+  // Применить прозрачность ТОЛЬКО к фону (оверлей поверх фонового изображения)
+  function applyBackgroundTransparency() {
+    const root = document.documentElement;
+    const body = document.body;
     const mainChat = document.getElementById('mainChat');
     const chatView = document.getElementById('chatView');
     const messagesArea = document.getElementById('messagesArea');
-    const inputArea = document.getElementById('inputArea');
     
+    const bgOpacity = currentTheme.bgOpacity;
+    const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
+    
+    // Цвет фона чата с учетом прозрачности
+    const baseChatBg = isDarkTheme ? '10, 11, 13' : '232, 236, 243';
+    
+    // Применяем прозрачность к фону чата
+    if (mainChat) {
+      mainChat.style.backgroundColor = `rgba(${baseChatBg}, ${bgOpacity})`;
+    }
+    if (chatView) {
+      chatView.style.backgroundColor = `rgba(${baseChatBg}, ${bgOpacity})`;
+    }
+    if (messagesArea) {
+      messagesArea.style.backgroundColor = `rgba(${baseChatBg}, ${bgOpacity * 0.8})`;
+    }
+    
+    // Обновляем оверлей если есть фоновое изображение
     if (currentTheme.bgImage) {
-      // Главная панель прозрачная
-      if (mainChat) {
-        mainChat.style.backgroundColor = `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.2})`;
-        mainChat.style.background = `transparent`;
-      }
-      if (chatView) {
-        chatView.style.backgroundColor = `transparent`;
-        chatView.style.background = `transparent`;
-      }
-      // Область сообщений прозрачная
-      if (messagesArea) {
-        messagesArea.style.backgroundColor = `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.15})`;
-        messagesArea.style.background = `transparent`;
-        messagesArea.style.backdropFilter = 'blur(2px)';
-        messagesArea.style.WebkitBackdropFilter = 'blur(2px)';
-      }
-      // Поле ввода полупрозрачное
-      if (inputArea) {
-        inputArea.style.backgroundColor = `rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.9})`;
-        inputArea.style.background = `linear-gradient(180deg, rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.95}), rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.85}))`;
-        inputArea.style.backdropFilter = 'blur(10px)';
-        inputArea.style.WebkitBackdropFilter = 'blur(10px)';
-      }
-    } else {
-      // Очистить inline styles если нет background image - используются CSS переменные
-      if (mainChat) {
-        mainChat.style.backgroundColor = '';
-        mainChat.style.background = '';
-      }
-      if (chatView) {
-        chatView.style.backgroundColor = '';
-        chatView.style.background = '';
-      }
-      if (messagesArea) {
-        messagesArea.style.backgroundColor = '';
-        messagesArea.style.background = '';
-        messagesArea.style.backdropFilter = '';
-        messagesArea.style.WebkitBackdropFilter = '';
-      }
-      if (inputArea) {
-        inputArea.style.backgroundColor = '';
-        inputArea.style.background = '';
-        inputArea.style.backdropFilter = '';
-        inputArea.style.WebkitBackdropFilter = '';
-      }
+      const overlay = document.getElementById('bgOverlay') || createBackgroundOverlay();
+      // Инвертируем логику: при низкой прозрачности фона оверлей темнее
+      const overlayOpacity = Math.max(0, 0.6 - (bgOpacity * 0.5));
+      overlay.style.opacity = overlayOpacity;
+      overlay.style.background = isDarkTheme 
+        ? `rgba(0, 0, 0, ${overlayOpacity})` 
+        : `rgba(255, 255, 255, ${overlayOpacity})`;
     }
   }
 
@@ -249,13 +184,6 @@ const UICustomizationModule = (() => {
     // Преобразовать hex в rgba
     const [r, g, b] = [(color.substring(1, 3)), (color.substring(3, 5)), (color.substring(5, 7))];
     return `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${opacity})`;
-  }
-
-  function applyBackgroundOverlay() {
-    // Добавить темный оверлей поверх фона для улучшения читаемости
-    const overlay = document.getElementById('bgOverlay') || createBackgroundOverlay();
-    const overlayOpacity = Math.max(0, 0.3 - (currentTheme.bgOpacity * 0.1));
-    overlay.style.opacity = overlayOpacity;
   }
 
   function createBackgroundOverlay() {
@@ -337,7 +265,7 @@ const UICustomizationModule = (() => {
 
         <!-- ПРОЗРАЧНОСТЬ ФОНА -->
         <div class="custom-section">
-          <label>🌫️ Прозрачность фона</label>
+          <label>🌫️ Прозрачность фона чата</label>
           <div style="display: flex; gap: 10px; align-items: center;">
             <input type="range" id="bgOpacitySlider" min="0" max="1" step="0.1" value="${currentTheme.bgOpacity}" style="flex: 1;">
             <span id="bgOpacityValue" style="width: 35px; text-align: center;">${(currentTheme.bgOpacity * 100).toFixed(0)}%</span>
@@ -346,9 +274,9 @@ const UICustomizationModule = (() => {
 
         <!-- ПРОЗРАЧНОСТЬ ПАНЕЛЕЙ -->
         <div class="custom-section">
-          <label>💠 Прозрачность панелей</label>
+          <label>💠 Прозрачность всех панелей</label>
           <div style="display: flex; gap: 10px; align-items: center;">
-            <input type="range" id="panelOpacitySlider" min="0.5" max="1" step="0.05" value="${currentTheme.panelOpacity}" style="flex: 1;">
+            <input type="range" id="panelOpacitySlider" min="0.3" max="1" step="0.05" value="${currentTheme.panelOpacity}" style="flex: 1;">
             <span id="panelOpacityValue" style="width: 35px; text-align: center;">${(currentTheme.panelOpacity * 100).toFixed(0)}%</span>
           </div>
         </div>
@@ -615,7 +543,7 @@ const UICustomizationModule = (() => {
       });
     }
 
-    // Прозрачность фона
+    // Прозрачность фона - применяется только к фону чата
     const bgOpacitySlider = document.getElementById('bgOpacitySlider');
     if (bgOpacitySlider) {
       bgOpacitySlider.addEventListener('input', (e) => {
@@ -625,7 +553,7 @@ const UICustomizationModule = (() => {
       });
     }
 
-    // Прозрачность панелей
+    // Прозрачность панелей - применяется ко ВСЕМ панелям
     const panelOpacitySlider = document.getElementById('panelOpacitySlider');
     if (panelOpacitySlider) {
       panelOpacitySlider.addEventListener('input', (e) => {
