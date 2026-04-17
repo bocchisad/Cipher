@@ -64,12 +64,34 @@ const UICustomizationModule = (() => {
       body.style.backgroundImage = 'none';
     }
 
-    // Основной фон с прозрачностью
-    updateCSSVariable('--bg0', adjustColorOpacity('#0a0b0d', currentTheme.bgOpacity));
-    updateCSSVariable('--bg1', adjustColorOpacity('#111318', currentTheme.panelOpacity));
-    updateCSSVariable('--bg2', adjustColorOpacity('#181b22', currentTheme.panelOpacity));
-    updateCSSVariable('--bg3', adjustColorOpacity('#1f232d', currentTheme.panelOpacity));
-    updateCSSVariable('--bg4', adjustColorOpacity('#252a36', currentTheme.panelOpacity));
+    // НЕ обновляем --bg1-4 с прозрачностью! Они используются везде, включая аватарки.
+    // Вместо этого обновляем новые переменные для панелей которые рассчитаны на прозрачность
+    
+    // Переменные для панелей с прозрачностью
+    const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
+    
+    if (isDarkTheme) {
+      // Dark theme panel colors with transparency
+      updateCSSVariable('--sidebar-bg', `rgba(17, 19, 24, ${currentTheme.panelOpacity})`);
+      updateCSSVariable('--chatlist-bg', `rgba(17, 19, 24, ${currentTheme.panelOpacity})`);
+      updateCSSVariable('--mainchat-bg', `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.2})`);
+      updateCSSVariable('--messages-bg', `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.15})`);
+      updateCSSVariable('--input-bg', `rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.9})`);
+    } else {
+      // Light theme panel colors with transparency
+      updateCSSVariable('--sidebar-bg', `rgba(255, 255, 255, ${currentTheme.panelOpacity})`);
+      updateCSSVariable('--chatlist-bg', `rgba(255, 255, 255, ${currentTheme.panelOpacity})`);
+      updateCSSVariable('--mainchat-bg', `rgba(232, 236, 243, ${currentTheme.bgOpacity * 0.2})`);
+      updateCSSVariable('--messages-bg', `rgba(232, 236, 243, ${currentTheme.bgOpacity * 0.15})`);
+      updateCSSVariable('--input-bg', `rgba(255, 255, 255, ${currentTheme.panelOpacity * 0.9})`);
+    }
+
+    // Основной фон БЕЗ изменения прозрачности - оставляем ориги­нальные цвета
+    updateCSSVariable('--bg0', '#0a0b0d');
+    updateCSSVariable('--bg1', '#111318');
+    updateCSSVariable('--bg2', '#181b22');
+    updateCSSVariable('--bg3', '#1f232d');
+    updateCSSVariable('--bg4', '#252a36');
 
     // Цвета
     updateCSSVariable('--accent', currentTheme.accentColor);
@@ -82,7 +104,7 @@ const UICustomizationModule = (() => {
       updateCSSVariable('--accent-glow', `rgba(${hexToRgb(currentTheme.accentColor)},0.18)`);
     }
 
-    // Применить прозрачность к левой панели и чату
+    // Применить дополнительные стили
     applySidebarTransparency();
     applyChatTransparency();
 
@@ -102,58 +124,59 @@ const UICustomizationModule = (() => {
     const chatList = document.getElementById('chatList');
     const sidebarBottom = sidebar.querySelector('.sidebar-bottom');
     
-    // Шапка НЕ прозрачная
-    if (sidebarTop) {
-      if (currentTheme.bgImage) {
+    // Если есть background image, добавляем blur и хардкодированные стили
+    // Иначе - используем CSS переменные (--sidebar-bg, --chatlist-bg)
+    
+    if (currentTheme.bgImage) {
+      // Шапка НЕ прозрачная
+      if (sidebarTop) {
         sidebarTop.style.background = `linear-gradient(180deg, rgba(17, 19, 24, 1), rgba(13, 16, 22, 0.95))`;
         sidebarTop.style.backgroundColor = `rgba(17, 19, 24, 1)`;
         sidebarTop.style.backdropFilter = 'blur(10px)';
         sidebarTop.style.WebkitBackdropFilter = 'blur(10px)';
-      } else {
-        sidebarTop.style.background = '';
-        sidebarTop.style.backgroundColor = '';
-        sidebarTop.style.backdropFilter = '';
-        sidebarTop.style.WebkitBackdropFilter = '';
       }
-    }
-    
-    // Нижняя навигация НЕ прозрачная
-    if (sidebarBottom) {
-      if (currentTheme.bgImage) {
+      
+      // Нижняя навигация НЕ прозрачная
+      if (sidebarBottom) {
         sidebarBottom.style.background = `linear-gradient(180deg, rgba(13, 16, 22, 0.95), rgba(10, 11, 13, 1))`;
         sidebarBottom.style.backgroundColor = `rgba(13, 16, 22, 0.95)`;
         sidebarBottom.style.backdropFilter = 'blur(10px)';
         sidebarBottom.style.WebkitBackdropFilter = 'blur(10px)';
-      } else {
-        sidebarBottom.style.background = '';
-        sidebarBottom.style.backgroundColor = '';
-        sidebarBottom.style.backdropFilter = '';
-        sidebarBottom.style.WebkitBackdropFilter = '';
       }
-    }
-    
-    // Лист чатов ПРОЗРАЧНЫЙ
-    if (chatList) {
-      if (currentTheme.bgImage) {
+      
+      // Лист чатов ПРОЗРАЧНЫЙ с blur
+      if (chatList) {
         chatList.style.background = `linear-gradient(180deg, rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.7}), rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.5}))`;
         chatList.style.backgroundColor = `rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.6})`;
         chatList.style.backdropFilter = 'blur(12px)';
         chatList.style.WebkitBackdropFilter = 'blur(12px)';
-      } else {
-        chatList.style.background = '';
-        chatList.style.backgroundColor = '';
-        chatList.style.backdropFilter = '';
-        chatList.style.WebkitBackdropFilter = '';
       }
-    }
-    
-    // Главная боковая панель
-    if (currentTheme.bgImage) {
+      
+      // Главная боковая панель
       sidebar.style.background = `linear-gradient(180deg, rgba(17, 19, 24, ${currentTheme.panelOpacity}), rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.8}))`;
       sidebar.style.backgroundColor = `rgba(17, 19, 24, ${currentTheme.panelOpacity})`;
       sidebar.style.backdropFilter = 'blur(12px)';
       sidebar.style.WebkitBackdropFilter = 'blur(12px)';
     } else {
+      // Очистить inline styles если нет background image
+      if (sidebarTop) {
+        sidebarTop.style.background = '';
+        sidebarTop.style.backgroundColor = '';
+        sidebarTop.style.backdropFilter = '';
+        sidebarTop.style.WebkitBackdropFilter = '';
+      }
+      if (sidebarBottom) {
+        sidebarBottom.style.background = '';
+        sidebarBottom.style.backgroundColor = '';
+        sidebarBottom.style.backdropFilter = '';
+        sidebarBottom.style.WebkitBackdropFilter = '';
+      }
+      if (chatList) {
+        chatList.style.background = '';
+        chatList.style.backgroundColor = '';
+        chatList.style.backdropFilter = '';
+        chatList.style.WebkitBackdropFilter = '';
+      }
       sidebar.style.background = '';
       sidebar.style.backgroundColor = '';
       sidebar.style.backdropFilter = '';
@@ -192,10 +215,27 @@ const UICustomizationModule = (() => {
         inputArea.style.WebkitBackdropFilter = 'blur(10px)';
       }
     } else {
-      if (mainChat) mainChat.style.backgroundColor = '';
-      if (chatView) chatView.style.backgroundColor = '';
-      if (messagesArea) messagesArea.style.backgroundColor = '';
-      if (inputArea) inputArea.style.backgroundColor = '';
+      // Очистить inline styles если нет background image - используются CSS переменные
+      if (mainChat) {
+        mainChat.style.backgroundColor = '';
+        mainChat.style.background = '';
+      }
+      if (chatView) {
+        chatView.style.backgroundColor = '';
+        chatView.style.background = '';
+      }
+      if (messagesArea) {
+        messagesArea.style.backgroundColor = '';
+        messagesArea.style.background = '';
+        messagesArea.style.backdropFilter = '';
+        messagesArea.style.WebkitBackdropFilter = '';
+      }
+      if (inputArea) {
+        inputArea.style.backgroundColor = '';
+        inputArea.style.background = '';
+        inputArea.style.backdropFilter = '';
+        inputArea.style.WebkitBackdropFilter = '';
+      }
     }
   }
 
