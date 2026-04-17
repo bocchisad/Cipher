@@ -44,7 +44,6 @@ const UICustomizationModule = (() => {
     }
   }
 
-  // ==================== ПРИМЕНЕНИЕ ТЕМЫ ====================
   function applyTheme() {
     const root = document.documentElement;
     const body = document.body;
@@ -64,9 +63,6 @@ const UICustomizationModule = (() => {
       body.style.backgroundImage = 'none';
     }
 
-    // НЕ обновляем --bg1-4 с прозрачностью! Они используются везде, включая аватарки.
-    // Вместо этого обновляем новые переменные для панелей которые рассчитаны на прозрачность
-    
     // Переменные для панелей с прозрачностью
     const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
     
@@ -74,6 +70,7 @@ const UICustomizationModule = (() => {
       // Dark theme panel colors with transparency
       updateCSSVariable('--sidebar-bg', `rgba(17, 19, 24, ${currentTheme.panelOpacity})`);
       updateCSSVariable('--chatlist-bg', `rgba(17, 19, 24, ${currentTheme.panelOpacity})`);
+      updateCSSVariable('--welcome-bg-opacity', `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.05})`);
       updateCSSVariable('--mainchat-bg', `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.2})`);
       updateCSSVariable('--messages-bg', `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.15})`);
       updateCSSVariable('--input-bg', `rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.9})`);
@@ -81,12 +78,13 @@ const UICustomizationModule = (() => {
       // Light theme panel colors with transparency
       updateCSSVariable('--sidebar-bg', `rgba(255, 255, 255, ${currentTheme.panelOpacity})`);
       updateCSSVariable('--chatlist-bg', `rgba(255, 255, 255, ${currentTheme.panelOpacity})`);
+      updateCSSVariable('--welcome-bg-opacity', `rgba(232, 236, 243, ${currentTheme.bgOpacity * 0.05})`);
       updateCSSVariable('--mainchat-bg', `rgba(232, 236, 243, ${currentTheme.bgOpacity * 0.2})`);
       updateCSSVariable('--messages-bg', `rgba(232, 236, 243, ${currentTheme.bgOpacity * 0.15})`);
       updateCSSVariable('--input-bg', `rgba(255, 255, 255, ${currentTheme.panelOpacity * 0.9})`);
     }
 
-    // Основной фон БЕЗ изменения прозрачности - оставляем ориги­нальные цвета
+    // Основной фон БЕЗ изменения прозрачности - оставляем оригинальные цвета
     updateCSSVariable('--bg0', '#0a0b0d');
     updateCSSVariable('--bg1', '#111318');
     updateCSSVariable('--bg2', '#181b22');
@@ -103,10 +101,6 @@ const UICustomizationModule = (() => {
     if (currentTheme.useAccentGradient) {
       updateCSSVariable('--accent-glow', `rgba(${hexToRgb(currentTheme.accentColor)},0.18)`);
     }
-
-    // Применить дополнительные стили
-    applySidebarTransparency();
-    applyChatTransparency();
 
     // Применить фильтр к фону если есть бэкграунд
     if (currentTheme.bgImage) {
