@@ -5,44 +5,74 @@
 const VoiceCirclesModule = (() => {
   let circleMode = false; // false = голос сообщение, true = кружочек
   let isRecordingCircle = false;
+  let waveformInterval = null;
+  let mediaRecorder = null;
+  let audioContext = null;
+  let analyser = null;
+
+  // SVG иконки
+  const MIC_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a5 5 0 0 0-5 5v6a5 5 0 0 0 10 0V6a5 5 0 0 0-5-5z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/></svg>`;
+  const CAMERA_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`;
 
   // Инициализация
   function init() {
-    const modeToggle = document.getElementById('voiceModeToggle');
-    if (modeToggle) {
-      modeToggle.addEventListener('click', toggleCircleMode);
+    const recordBtn = document.getElementById('recordBtn');
+    if (recordBtn) {
+      // Удаляем старые обработчики
+      const newBtn = recordBtn.cloneNode(true);
+      recordBtn.parentNode.replaceChild(newBtn, recordBtn);
+      
+      // Инициализируем иконку по умолчанию (микрофон)
+      updateButtonIcon(newBtn, false);
+      
+      // Добавляем обработчики для переключения режима
+      newBtn.addEventListener('click', (e) => {
+        // Если не идет запись - переключаем режим
+        if (!voiceSession || !voiceSession.recorder) {
+          toggleCircleMode();
+        }
+      });
     }
+  }
+
+  // Обновление иконки кнопки с плавной анимацией
+  function updateButtonIcon(btn, isCircleMode) {
+    // Анимация исчезновения
+    btn.style.transform = 'scale(0.8) rotate(-90deg)';
+    btn.style.opacity = '0.5';
+    
+    setTimeout(() => {
+      // Меняем иконку
+      btn.innerHTML = isCircleMode ? CAMERA_ICON : MIC_ICON;
+      btn.style.color = isCircleMode ? '#e74c3c' : 'var(--accent)';
+      btn.title = isCircleMode ? '📹 Видео кружки (нажмите для голоса)' : '🎤 Голос (нажмите для кружков)';
+      
+      // Анимация появления
+      btn.style.transform = 'scale(1.15) rotate(0deg)';
+      btn.style.opacity = '1';
+      
+      setTimeout(() => {
+        btn.style.transform = 'scale(1) rotate(0deg)';
+      }, 200);
+    }, 150);
+    
+    // Устанавливаем CSS transition для плавности
+    btn.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s, color 0.3s';
   }
 
   // Переключение между голос сообщением и кружочком
   function toggleCircleMode() {
     circleMode = !circleMode;
-    const toggle = document.getElementById('voiceModeToggle');
+    const recordBtn = document.getElementById('recordBtn');
     const indicator = document.getElementById('voiceModeIndicator');
+    const overlayStatus = document.getElementById('voiceRecOverlayStatus');
     
-    if (toggle) {
-      toggle.classList.toggle('circle-mode', circleMode);
-      toggle.classList.toggle('video-mode', !circleMode);
-      toggle.title = circleMode ? '📹 Видео кружки' : '🎤 Микрофон';
-      toggle.style.transition = 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
-      const icon = toggle.querySelector('svg');
-      if (icon) {
-        icon.style.transition = 'transform 0.3s, opacity 0.3s, filter 0.3s';
-        if (circleMode) {
-          icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>';
-          icon.style.filter = 'drop-shadow(0 0 4px rgba(79,142,247,0.6))';
-        } else {
-          icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a5 5 0 0 0-5 5v6a5 5 0 0 0 10 0V6a5 5 0 0 0-5-5zM1 9a1 1 0 0 1 1 1v2a11 11 0 0 0 22 0v-2a1 1 0 0 1 2 0v2a13 13 0 0 1-26 0v-2a1 1 0 0 1 1-1zm8 13a1 1 0 0 0-1 1v.5a1 1 0 0 0 2 0V24a1 1 0 0 0-1-1zm-4 0a1 1 0 0 0-1 1v.5a1 1 0 0 0 2 0V24a1 1 0 0 0-1-1zm8 0a1 1 0 0 0-1 1v.5a1 1 0 0 0 2 0V24a1 1 0 0 0-1-1zm4 0a1 1 0 0 0-1 1v.5a1 1 0 0 0 2 0V24a1 1 0 0 0-1-1z"/></svg>';
-          icon.style.filter = 'none';
-        }
-      }
-      toggle.style.transform = 'scale(1.15) rotate(10deg)';
-      setTimeout(() => { 
-        toggle.style.transform = 'scale(1) rotate(0deg)'; 
-      }, 250);
+    // Обновляем иконку кнопки с анимацией
+    if (recordBtn) {
+      updateButtonIcon(recordBtn, circleMode);
     }
 
-    // Обновить индикатор режима
+    // Обновить индикатор режима в оверлее
     if (indicator) {
       indicator.style.transition = 'all 0.3s ease';
       if (circleMode) {
@@ -53,10 +83,335 @@ const VoiceCirclesModule = (() => {
         indicator.style.color = 'var(--accent)';
       }
     }
+
+    // Обновляем статус в оверлее
+    if (overlayStatus) {
+      overlayStatus.textContent = circleMode ? 'Видео кружок…' : 'Запись голоса…';
+    }
+
+    // Показываем toast
+    showToast(circleMode ? '📹 Режим видео-кружков' : '🎤 Режим голосовых сообщений', { duration: 1500 });
   }
 
+  // Получить текущий режим
   function getCircleMode() {
     return circleMode;
+  }
+
+  // ==================== WAVEFORM ВИЗУАЛИЗАЦИЯ ====================
+  // Создать и запустить визуализацию waveform для голосовых сообщений
+  function startWaveformVisualization(stream) {
+    try {
+      // Создаем аудио контекст
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.8;
+
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+
+      // Создаем canvas для waveform
+      createWaveformCanvas();
+      
+      const canvas = document.getElementById('waveformCanvas');
+      if (!canvas) return;
+
+      const ctx = canvas.getContext('2d');
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      function drawWaveform() {
+        if (!voiceSession || voiceSession.paused) {
+          waveformInterval = requestAnimationFrame(drawWaveform);
+          return;
+        }
+
+        analyser.getByteFrequencyData(dataArray);
+
+        // Очищаем canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Рисуем waveform
+        const bars = 20;
+        const barWidth = canvas.width / bars;
+        const gap = 2;
+        const centerY = canvas.height / 2;
+
+        for (let i = 0; i < bars; i++) {
+          const dataIndex = Math.floor(i * (bufferLength / bars));
+          const value = dataArray[dataIndex];
+          const percent = value / 255;
+          const barHeight = percent * canvas.height * 0.8;
+
+          const x = i * barWidth + gap / 2;
+          const y = centerY - barHeight / 2;
+
+          // Градиент
+          const gradient = ctx.createLinearGradient(0, y, 0, y + barHeight);
+          gradient.addColorStop(0, 'var(--accent)');
+          gradient.addColorStop(1, 'rgba(79, 142, 247, 0.3)');
+
+          ctx.fillStyle = gradient;
+          ctx.roundRect(x, y, barWidth - gap, barHeight, 4);
+          ctx.fill();
+        }
+
+        waveformInterval = requestAnimationFrame(drawWaveform);
+      }
+
+      drawWaveform();
+    } catch (err) {
+      console.warn('Waveform visualization error:', err);
+    }
+  }
+
+  // Создать canvas для waveform
+  function createWaveformCanvas() {
+    let canvas = document.getElementById('waveformCanvas');
+    if (canvas) canvas.remove();
+
+    canvas = document.createElement('canvas');
+    canvas.id = 'waveformCanvas';
+    canvas.width = 300;
+    canvas.height = 80;
+    canvas.style.cssText = `
+      position: absolute;
+      bottom: 200px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10000;
+      pointer-events: none;
+    `;
+
+    const overlay = document.getElementById('voiceRecordingOverlay');
+    if (overlay) {
+      overlay.appendChild(canvas);
+    }
+  }
+
+  // Остановить waveform
+  function stopWaveformVisualization() {
+    if (waveformInterval) {
+      cancelAnimationFrame(waveformInterval);
+      waveformInterval = null;
+    }
+    if (audioContext) {
+      audioContext.close().catch(() => {});
+      audioContext = null;
+    }
+    analyser = null;
+    
+    const canvas = document.getElementById('waveformCanvas');
+    if (canvas) canvas.remove();
+  }
+
+  // ==================== КРУГОВАЯ ШКАЛА ДЛЯ ВИДЕОКРУЖКОВ ====================
+  // Создать круговой прогресс бар вокруг видео
+  function createCircularProgress() {
+    let progress = document.getElementById('circleVideoProgress');
+    if (progress) progress.remove();
+
+    progress = document.createElement('div');
+    progress.id = 'circleVideoProgress';
+    progress.style.cssText = `
+      position: absolute;
+      top: -8px;
+      left: -8px;
+      right: -8px;
+      bottom: -8px;
+      border-radius: 50%;
+      background: conic-gradient(var(--accent) 0deg, transparent 0deg);
+      z-index: 3;
+      pointer-events: none;
+      transition: background 0.1s linear;
+    `;
+
+    // Создаем маску для кольца
+    const mask = document.createElement('div');
+    mask.style.cssText = `
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      right: 4px;
+      bottom: 4px;
+      border-radius: 50%;
+      background: var(--bg2);
+      z-index: 4;
+    `;
+    progress.appendChild(mask);
+
+    const bigCircle = document.getElementById('voiceBigCircle');
+    if (bigCircle) {
+      bigCircle.style.position = 'relative';
+      bigCircle.insertBefore(progress, bigCircle.firstChild);
+    }
+
+    return progress;
+  }
+
+  // Обновить прогресс круговой шкалы
+  function updateCircularProgress(elapsedMs, maxDurationMs = 60000) {
+    const progress = document.getElementById('circleVideoProgress');
+    if (!progress) return;
+
+    const percent = Math.min(elapsedMs / maxDurationMs, 1);
+    const degrees = percent * 360;
+    
+    // Цвет меняется от синего к красному при приближении к лимиту
+    const color = percent > 0.9 ? '#e74c3c' : 'var(--accent)';
+    progress.style.background = `conic-gradient(${color} ${degrees}deg, transparent ${degrees}deg)`;
+  }
+
+  // Удалить круговой прогресс
+  function removeCircularProgress() {
+    const progress = document.getElementById('circleVideoProgress');
+    if (progress) progress.remove();
+  }
+
+  // ==================== НАСТРОЙКА UI ДЛЯ РЕЖИМОВ ====================
+  // Настроить UI для режима голосового сообщения
+  function setupVoiceModeUI() {
+    const bigCircle = document.getElementById('voiceBigCircle');
+    const video = document.getElementById('voiceRecordingVideo');
+    
+    if (bigCircle) {
+      bigCircle.style.background = 'var(--red)';
+      bigCircle.style.animation = 'recordPulse .6s ease-in-out infinite';
+    }
+    
+    if (video) {
+      video.style.display = 'none';
+      video.srcObject = null;
+    }
+
+    // Показываем иконку микрофона в круге
+    const svg = bigCircle?.querySelector('svg');
+    if (svg) {
+      svg.style.display = 'block';
+      svg.style.opacity = '1';
+    }
+
+    removeCircularProgress();
+  }
+
+  // Настроить UI для режима видеокружка
+  function setupVideoModeUI(stream) {
+    const bigCircle = document.getElementById('voiceBigCircle');
+    const video = document.getElementById('voiceRecordingVideo');
+    
+    if (bigCircle) {
+      bigCircle.style.background = 'transparent';
+      bigCircle.style.animation = 'none';
+      bigCircle.style.border = '3px solid var(--accent)';
+      bigCircle.style.boxShadow = '0 0 30px rgba(79, 142, 247, 0.4), inset 0 0 30px rgba(0, 0, 0, 0.2)';
+    }
+    
+    if (video) {
+      video.style.display = 'block';
+      video.style.opacity = '1';
+      video.srcObject = stream;
+      video.muted = true;
+      video.play().catch(() => {});
+      // Зеркальный эффект
+      video.style.transform = 'scaleX(-1)';
+    }
+
+    // Скрываем иконку микрофона в круге
+    const svg = bigCircle?.querySelector('svg');
+    if (svg) {
+      svg.style.display = 'none';
+    }
+
+    createCircularProgress();
+  }
+
+  // ==================== SWIPE UP LOCK ====================
+  // Создать UI для свайпа вверх с замочком
+  function createSwipeUpLockUI() {
+    let swipeContainer = document.getElementById('swipeLockContainer');
+    if (swipeContainer) swipeContainer.remove();
+
+    swipeContainer = document.createElement('div');
+    swipeContainer.id = 'swipeLockContainer';
+    swipeContainer.style.cssText = `
+      position: absolute;
+      bottom: 120px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      z-index: 10001;
+      pointer-events: none;
+    `;
+
+    // Иконка замочка
+    const lockIcon = document.createElement('div');
+    lockIcon.id = 'swipeLockIcon';
+    lockIcon.innerHTML = '🔒';
+    lockIcon.style.cssText = `
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      opacity: 0.5;
+      transition: all 0.3s;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+    `;
+
+    // Текст подсказки
+    const hint = document.createElement('div');
+    hint.id = 'swipeLockHint';
+    hint.textContent = 'Свайп вверх для блокировки';
+    hint.style.cssText = `
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+      white-space: nowrap;
+      transition: all 0.3s;
+    `;
+
+    swipeContainer.appendChild(lockIcon);
+    swipeContainer.appendChild(hint);
+
+    const overlay = document.getElementById('voiceRecordingOverlay');
+    if (overlay) {
+      overlay.appendChild(swipeContainer);
+    }
+
+    return swipeContainer;
+  }
+
+  // Активировать замочек (при свайпе вверх)
+  function activateLock() {
+    const lockIcon = document.getElementById('swipeLockIcon');
+    const hint = document.getElementById('swipeLockHint');
+    
+    if (lockIcon) {
+      lockIcon.style.opacity = '1';
+      lockIcon.style.background = 'var(--accent)';
+      lockIcon.style.borderColor = 'var(--accent)';
+      lockIcon.style.transform = 'scale(1.2)';
+      lockIcon.innerHTML = '🔓';
+    }
+    
+    if (hint) {
+      hint.textContent = 'Запись заблокирована';
+      hint.style.color = 'var(--accent)';
+    }
+
+    return true;
+  }
+
+  // Удалить UI свайпа
+  function removeSwipeLockUI() {
+    const swipeContainer = document.getElementById('swipeLockContainer');
+    if (swipeContainer) swipeContainer.remove();
   }
 
   // ==================== ШИФРОВАНИЕ И ОТПРАВКА ====================
@@ -500,7 +855,17 @@ const VoiceCirclesModule = (() => {
     renderVoiceMessage,
     playVoiceCircle,
     addCircleToProfile,
-    formatTime
+    formatTime,
+    // Новые функции для UI
+    startWaveformVisualization,
+    stopWaveformVisualization,
+    setupVoiceModeUI,
+    setupVideoModeUI,
+    updateCircularProgress,
+    createSwipeUpLockUI,
+    removeSwipeLockUI,
+    activateLock,
+    updateButtonIcon
   };
 })();
 
