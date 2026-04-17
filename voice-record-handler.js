@@ -87,10 +87,15 @@ const VoiceRecordHandler = (() => {
       // Если запись идет и не заблокирована - остановить её
       else if (typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder) {
         if (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused') {
-          // Отправить голос
-          const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
+          // Отправить голос - используем кнопку отправки из текущего UI
+          const sendBtn = document.getElementById('voiceRecOverlaySendBtn') || document.getElementById('voiceRecSendBtn');
           if (sendBtn && typeof sendBtn.onclick === 'function') {
             sendBtn.onclick();
+          } else {
+            // Fallback - останавливаем напрямую
+            try {
+              voiceSession.recorder.stop();
+            } catch (_) {}
           }
         }
       } else if (holdDuration < HOLD_THRESHOLD) {
