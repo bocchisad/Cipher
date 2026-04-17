@@ -82,12 +82,121 @@ const UICustomizationModule = (() => {
       updateCSSVariable('--accent-glow', `rgba(${hexToRgb(currentTheme.accentColor)},0.18)`);
     }
 
+    // Применить прозрачность к левой панели и чату
+    applySidebarTransparency();
+    applyChatTransparency();
+
     // Применить фильтр к фону если есть бэкграунд
     if (currentTheme.bgImage) {
       applyBackgroundOverlay();
     }
 
     saveThemeToStorage();
+  }
+
+  function applySidebarTransparency() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    
+    const sidebarTop = sidebar.querySelector('.sidebar-top');
+    const chatList = document.getElementById('chatList');
+    const sidebarBottom = sidebar.querySelector('.sidebar-bottom');
+    
+    // Шапка НЕ прозрачная
+    if (sidebarTop) {
+      if (currentTheme.bgImage) {
+        sidebarTop.style.background = `linear-gradient(180deg, rgba(17, 19, 24, 1), rgba(13, 16, 22, 0.95))`;
+        sidebarTop.style.backgroundColor = `rgba(17, 19, 24, 1)`;
+        sidebarTop.style.backdropFilter = 'blur(10px)';
+        sidebarTop.style.WebkitBackdropFilter = 'blur(10px)';
+      } else {
+        sidebarTop.style.background = '';
+        sidebarTop.style.backgroundColor = '';
+        sidebarTop.style.backdropFilter = '';
+        sidebarTop.style.WebkitBackdropFilter = '';
+      }
+    }
+    
+    // Нижняя навигация НЕ прозрачная
+    if (sidebarBottom) {
+      if (currentTheme.bgImage) {
+        sidebarBottom.style.background = `linear-gradient(180deg, rgba(13, 16, 22, 0.95), rgba(10, 11, 13, 1))`;
+        sidebarBottom.style.backgroundColor = `rgba(13, 16, 22, 0.95)`;
+        sidebarBottom.style.backdropFilter = 'blur(10px)';
+        sidebarBottom.style.WebkitBackdropFilter = 'blur(10px)';
+      } else {
+        sidebarBottom.style.background = '';
+        sidebarBottom.style.backgroundColor = '';
+        sidebarBottom.style.backdropFilter = '';
+        sidebarBottom.style.WebkitBackdropFilter = '';
+      }
+    }
+    
+    // Лист чатов ПРОЗРАЧНЫЙ
+    if (chatList) {
+      if (currentTheme.bgImage) {
+        chatList.style.background = `linear-gradient(180deg, rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.7}), rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.5}))`;
+        chatList.style.backgroundColor = `rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.6})`;
+        chatList.style.backdropFilter = 'blur(12px)';
+        chatList.style.WebkitBackdropFilter = 'blur(12px)';
+      } else {
+        chatList.style.background = '';
+        chatList.style.backgroundColor = '';
+        chatList.style.backdropFilter = '';
+        chatList.style.WebkitBackdropFilter = '';
+      }
+    }
+    
+    // Главная боковая панель
+    if (currentTheme.bgImage) {
+      sidebar.style.background = `linear-gradient(180deg, rgba(17, 19, 24, ${currentTheme.panelOpacity}), rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.8}))`;
+      sidebar.style.backgroundColor = `rgba(17, 19, 24, ${currentTheme.panelOpacity})`;
+      sidebar.style.backdropFilter = 'blur(12px)';
+      sidebar.style.WebkitBackdropFilter = 'blur(12px)';
+    } else {
+      sidebar.style.background = '';
+      sidebar.style.backgroundColor = '';
+      sidebar.style.backdropFilter = '';
+      sidebar.style.WebkitBackdropFilter = '';
+    }
+  }
+
+  function applyChatTransparency() {
+    const mainChat = document.getElementById('mainChat');
+    const chatView = document.getElementById('chatView');
+    const messagesArea = document.getElementById('messagesArea');
+    const inputArea = document.getElementById('inputArea');
+    
+    if (currentTheme.bgImage) {
+      // Главная панель прозрачная
+      if (mainChat) {
+        mainChat.style.backgroundColor = `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.2})`;
+        mainChat.style.background = `transparent`;
+      }
+      if (chatView) {
+        chatView.style.backgroundColor = `transparent`;
+        chatView.style.background = `transparent`;
+      }
+      // Область сообщений прозрачная
+      if (messagesArea) {
+        messagesArea.style.backgroundColor = `rgba(10, 11, 13, ${currentTheme.bgOpacity * 0.15})`;
+        messagesArea.style.background = `transparent`;
+        messagesArea.style.backdropFilter = 'blur(2px)';
+        messagesArea.style.WebkitBackdropFilter = 'blur(2px)';
+      }
+      // Поле ввода полупрозрачное
+      if (inputArea) {
+        inputArea.style.backgroundColor = `rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.9})`;
+        inputArea.style.background = `linear-gradient(180deg, rgba(17, 19, 24, ${currentTheme.panelOpacity * 0.95}), rgba(13, 16, 22, ${currentTheme.panelOpacity * 0.85}))`;
+        inputArea.style.backdropFilter = 'blur(10px)';
+        inputArea.style.WebkitBackdropFilter = 'blur(10px)';
+      }
+    } else {
+      if (mainChat) mainChat.style.backgroundColor = '';
+      if (chatView) chatView.style.backgroundColor = '';
+      if (messagesArea) messagesArea.style.backgroundColor = '';
+      if (inputArea) inputArea.style.backgroundColor = '';
+    }
   }
 
   // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
@@ -147,8 +256,27 @@ const UICustomizationModule = (() => {
   }
 
   function openCustomizationPanel() {
+    // Закрыть все другие модали
+    const settingsModal = document.getElementById('settingsModal');
+    if (settingsModal && settingsModal.style.display !== 'none') {
+      settingsModal.style.display = 'none';
+    }
+    const roomSettingsModal = document.getElementById('roomSettingsModal');
+    if (roomSettingsModal && roomSettingsModal.style.display !== 'none') {
+      roomSettingsModal.style.display = 'none';
+    }
+    
     const panel = document.getElementById('uiCustomizationPanel') || createCustomizationPanel();
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    const backdrop = document.getElementById('uiCustomizationBackdrop');
+    
+    const isActive = panel.classList.contains('active');
+    if (isActive) {
+      panel.classList.remove('active');
+      if (backdrop) backdrop.classList.remove('active');
+    } else {
+      panel.classList.add('active');
+      if (backdrop) backdrop.classList.add('active');
+    }
   }
 
   function createCustomizationPanel() {
@@ -253,6 +381,26 @@ const UICustomizationModule = (() => {
         box-shadow: 0 20px 80px rgba(0, 0, 0, 0.5);
         display: none;
       }
+      
+      .ui-customization-panel.active {
+        display: block;
+      }
+      // Backdrop overlay - просывается раньше
+      .ui-customization-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 9998;
+        display: none;
+        cursor: pointer;
+      }
+      
+      .ui-customization-backdrop.active {
+        display: block;
+      }
 
       .custom-panel-header {
         display: flex;
@@ -263,6 +411,7 @@ const UICustomizationModule = (() => {
         position: sticky;
         top: 0;
         background: var(--bg2);
+        z-index: 10000;
       }
 
       .custom-panel-header h3 {
@@ -349,8 +498,67 @@ const UICustomizationModule = (() => {
 
     document.body.appendChild(panel);
 
+    // Создать backdrop overlay
+    let backdrop = document.getElementById('uiCustomizationBackdrop');
+    if (!backdrop) {
+      backdrop = document.createElement('div');
+      backdrop.id = 'uiCustomizationBackdrop';
+      backdrop.className = 'ui-customization-backdrop';
+      backdrop.addEventListener('click', () => {
+        panel.classList.remove('active');
+        backdrop.classList.remove('active');
+      });
+      document.body.appendChild(backdrop);
+    }
+
+    // Закрытие при клике на фон (внутри панели)
+    panel.addEventListener('click', (e) => {
+      if (e.target === panel) {
+        panel.classList.remove('active');
+        backdrop.classList.remove('active');
+      }
+    });
+
+    // Обновить openCustomizationPanel чтобы управлять классами
+    const originalOpen = window.UICustomizationModule?.openCustomizationPanel;
+    
+    // Стандартное закрытие по X кнопке
+    const closeBtn = panel.querySelector('.close-btn');
+    if (closeBtn) {
+      closeBtn.onclick = () => {
+        panel.classList.remove('active');
+        if (backdrop) backdrop.classList.remove('active');
+      };
+    }
+
     // Обработчики событий
     setupCustomizationEventListeners();
+    
+    // Закытие при клике на бакдроп
+    if (backdrop) {
+      backdrop.onclick = () => {
+        panel.classList.remove('active');
+        backdrop.classList.remove('active');
+      };
+    }
+    
+    // Предотвратить закрытие при клике на панель
+    panel.onclick = (e) => {
+      if (e.target === panel) {
+        panel.classList.remove('active');
+        if (backdrop) backdrop.classList.remove('active');
+      }
+    };
+    
+    // Закытие по Escape
+    const closeOnEscape = (e) => {
+      if (e.key === 'Escape' && panel.classList.contains('active')) {
+        panel.classList.remove('active');
+        if (backdrop) backdrop.classList.remove('active');
+        document.removeEventListener('keydown', closeOnEscape);
+      }
+    };
+    document.addEventListener('keydown', closeOnEscape);
 
     return panel;
   }
@@ -445,14 +653,24 @@ const UICustomizationModule = (() => {
 
   function closePanel() {
     const panel = document.getElementById('uiCustomizationPanel');
-    if (panel) panel.style.display = 'none';
+    const backdrop = document.getElementById('uiCustomizationBackdrop');
+    if (panel) panel.classList.remove('active');
+    if (backdrop) backdrop.classList.remove('active');
   }
 
+  function closePanel() {
+    const panel = document.getElementById('uiCustomizationPanel');
+    const backdrop = document.getElementById('uiCustomizationBackdrop');
+    if (panel) panel.classList.remove('active');
+    if (backdrop) backdrop.classList.remove('active');
+  }
   return {
     init,
-    openCustomizationPanel,
-    closePanel,
+    loadThemeFromStorage,
+    saveThemeToStorage,
     applyTheme,
+    closePanel,
+    openCustomizationPanel,
     resetToDefaults,
     clearBackground,
     set: (key, value) => {
