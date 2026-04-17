@@ -720,8 +720,23 @@ function handleLogin(ws, msg, setUserId, ip) {
   if (pending.length > 0) {
     console.log(`📨 Delivering ${pending.length} queued messages to ${user.nickname}`);
     pending.forEach(qMsg => {
-      if (qMsg.type && ['msg', 'rtc-offer', 'rtc-answer', 'rtc-ice', 'edit-msg', 'edit-message', 'anonymous-msg'].includes(qMsg.type)) {
+      // Валидация сообщения перед отправкой
+      if (!qMsg || !qMsg.type) {
+        console.warn(`⚠️ Invalid queued message, skipping`);
+        return;
+      }
+      
+      // Убедиться, что зашифрованные сообщения содержат все необходимые ключи
+      if (['msg', 'rtc-offer', 'rtc-answer', 'rtc-ice'].includes(qMsg.type)) {
+        if (!qMsg.payload || !qMsg.iv || !qMsg.signature) {
+          console.warn(`⚠️ Queued E2EE message missing encryption keys, skipping`);
+          return;
+        }
         safeWsSend(ws, { type: qMsg.type, data: qMsg });
+      } else if (['edit-msg', 'edit-message'].includes(qMsg.type)) {
+        safeWsSend(ws, { type: 'edit-msg', data: qMsg });
+      } else if (qMsg.type === 'anonymous-msg') {
+        safeWsSend(ws, { type: 'anonymous-msg', data: qMsg });
       } else {
         safeWsSend(ws, { type: 'message', data: qMsg });
       }
@@ -784,6 +799,8 @@ function handleE2EEMessage(fromUuid, type, data) {
   }
 
   const toUuid = normUid(data.to);
+  
+  // Сохранить ВСЕ поля необходимые для расшифровки
   const message = {
     from: fromUuid,
     to: toUuid,
@@ -792,7 +809,13 @@ function handleE2EEMessage(fromUuid, type, data) {
     iv: data.iv,
     signature: data.signature,
     // PRIVACY: Use coarse-grained time bucket instead of precise timestamp
-    timeBucket: getTimeBucket()
+    timeBucket: getTimeBucket(),
+    ts: Date.now(),
+    // Сохранить дополнительные криптографические поля если они есть
+    dhPublicKey: data.dhPublicKey,
+    sessionKey: data.sessionKey,
+    messageNumber: data.messageNumber,
+    recipientToken: data.recipientToken
   };
 
   const toUser = getUserLive(toUuid);
