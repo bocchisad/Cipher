@@ -67,6 +67,7 @@
       /* PANEL TRANSPARENCY - отдельные переменные для панелей */
       --sidebar-bg:rgba(17, 19, 24, 0.95);
       --chatlist-bg:rgba(17, 19, 24, 0.95);
+      --welcome-bg-opacity:rgba(10, 11, 13, 0.05);
       --mainchat-bg:rgba(10, 11, 13, 0.2);
       --messages-bg:rgba(10, 11, 13, 0.15);
       --input-bg:rgba(17, 19, 24, 0.9);
@@ -531,6 +532,7 @@
       /* PANEL TRANSPARENCY for light theme */
       --sidebar-bg:rgba(255, 255, 255, 0.95);
       --chatlist-bg:rgba(255, 255, 255, 0.95);
+      --welcome-bg-opacity:rgba(232, 236, 243, 0.05);
       --mainchat-bg:rgba(232, 236, 243, 0.2);
       --messages-bg:rgba(232, 236, 243, 0.15);
       --input-bg:rgba(255, 255, 255, 0.9);
@@ -702,7 +704,7 @@
     /* ===== PC pixel fixes ===== */
     #noChatView{
       flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-      color:var(--text3);gap:12px;background:var(--welcome-bg);min-height:0;overflow:hidden;
+      color:var(--text3);gap:12px;background:var(--welcome-bg-opacity);min-height:0;overflow:hidden;
     }
     .nc-logo{font-size:48px;font-weight:700;letter-spacing:-1px;color:var(--text3);margin-bottom:8px}
     .nc-logo span{color:var(--accent)}
@@ -12586,31 +12588,48 @@
     async function toggleRecord() {
       if (!activeChat || voiceSession) return;
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showToast('Запись видео не поддерживается в этом браузере');
+        showToast('Запись не поддерживается в этом браузере');
         return;
       }
       try {
-        // Запрос видео + аудио
+        // Проверить режим - аудио или видео
+        const isVideoMode = typeof VoiceCirclesModule !== 'undefined' && 
+                            typeof VoiceCirclesModule.getCircleMode === 'function' && 
+                            VoiceCirclesModule.getCircleMode();
+
+        // Запрос медиа в зависимости от режима
         let constraints = { 
           audio: true,
-          video: { 
+          video: isVideoMode ? { 
             width: { ideal: 1080 },
             height: { ideal: 1920 },
             facingMode: 'user'
-          }
+          } : false
         };
         
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         
-        // MIME type для видео
+        // MIME type - выбрать видео или аудио
         let mimeType = '';
-        const supportedTypes = [
-          'video/webm;codecs=vp9,opus',
-          'video/webm;codecs=vp8,opus',
-          'video/webm;codecs=h264,opus',
-          'video/webm',
-          'video/mp4'
-        ];
+        let supportedTypes = [];
+        
+        if (isVideoMode) {
+          supportedTypes = [
+            'video/webm;codecs=vp9,opus',
+            'video/webm;codecs=vp8,opus',
+            'video/webm;codecs=h264,opus',
+            'video/webm',
+            'video/mp4'
+          ];
+        } else {
+          supportedTypes = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            'audio/mpeg'
+          ];
+        }
+        
         for (const type of supportedTypes) {
           if (MediaRecorder.isTypeSupported(type)) {
             mimeType = type;
@@ -12630,11 +12649,14 @@
         let pausedMs = 0;
         let pauseStarted = 0;
         
-        // Показать видеопоток в overlay
+        // Показать видеопоток в overlay (только если видео режим)
         const videoEl = document.getElementById('voiceRecordingVideo');
-        if (videoEl) {
+        if (videoEl && isVideoMode) {
           videoEl.srcObject = stream;
           videoEl.classList.add('active');
+        } else if (videoEl) {
+          videoEl.classList.remove('active');
+          videoEl.srcObject = null;
         }
         
         const tick = () => {
@@ -12657,7 +12679,8 @@
           pauseStarted: 0,
           pausedMs: 0,
           tickTimer: setInterval(tick, 400),
-          facingMode: 'user'  // Отслеживать текущий режим камеры
+          facingMode: 'user',  // Отслеживать текущий режим камеры
+          isVideo: isVideoMode
         };
         tick();
         
@@ -12695,15 +12718,21 @@
           voiceSession = null;
           if (!vs || vs.cancelled) return;
           
-          const blob = new Blob(vs.chunks, { type: mimeType || 'video/webm' });
+          const blob = new Blob(vs.chunks, { type: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm') });
           const b64 = await fileToBase64(blob);
           const recDuration = Math.max(1, Math.floor((Date.now() - started - (vs.pausedMs || 0)) / 1000));
-          await sendMessage('voice', { data: b64, duration: recDuration, isVideo: true, mimeType: mimeType || 'video/webm' });
+          await sendMessage('voice', { data: b64, duration: recDuration, isVideo: isVideoMode, mimeType: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm') });
         };
         
         recorder.start(400);
         document.getElementById('voiceRecordingOverlay')?.classList.add('active');
         document.getElementById('recordBtn')?.classList.add('recording');
+
+        // Показать/скрыть кнопку переворота камеры
+        const flipCameraBtn = document.getElementById('voiceRecFlipCameraBtn');
+        if (flipCameraBtn) {
+          flipCameraBtn.style.display = isVideoMode ? 'flex' : 'none';
+        }
 
         // Кнопка отмены
         const cancelBtn = document.getElementById('voiceRecOverlayCancelBtn');
