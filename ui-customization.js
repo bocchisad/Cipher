@@ -83,78 +83,40 @@ const UICustomizationModule = (() => {
     saveThemeToStorage();
   }
 
-  // Применить прозрачность ко ВСЕМ панелям (sidebar, chatList, inputArea и т.д.)
+  // Применить прозрачность ко ВСЕМ панелям через CSS переменные
   function applyPanelsTransparency() {
-    const sidebar = document.getElementById('sidebar');
-    const chatList = document.getElementById('chatList');
-    const inputArea = document.getElementById('inputArea');
-    const chatHeader = document.getElementById('chatHeader');
-    const voiceRecordBar = document.getElementById('voiceRecordBar');
-    const attachQueue = document.getElementById('attachQueue');
-    const replyPreview = document.getElementById('replyPreview');
-    const infoPanel = document.getElementById('infoPanel');
-    const sidebarTop = document.querySelector('.sidebar-top');
-    const sidebarBottom = document.querySelector('.sidebar-bottom');
-    
     const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
     
     // Определяем базовые цвета в зависимости от темы
     const baseBg = isDarkTheme ? '17, 19, 24' : '255, 255, 255';
     const panelOpacity = currentTheme.panelOpacity;
     
-    // Применяем прозрачность ко всем панелям
-    const panelStyles = {
-      backgroundColor: `rgba(${baseBg}, ${panelOpacity})`,
-      backdropFilter: panelOpacity < 1 ? 'blur(12px)' : 'none',
-      WebkitBackdropFilter: panelOpacity < 1 ? 'blur(12px)' : 'none'
-    };
-    
-    // Sidebar и её части
-    if (sidebar) Object.assign(sidebar.style, panelStyles);
-    if (sidebarTop) Object.assign(sidebarTop.style, panelStyles);
-    if (sidebarBottom) Object.assign(sidebarBottom.style, panelStyles);
-    if (chatList) Object.assign(chatList.style, panelStyles);
-    
-    // Чат
-    if (chatHeader) Object.assign(chatHeader.style, panelStyles);
-    if (inputArea) Object.assign(inputArea.style, panelStyles);
-    if (voiceRecordBar) Object.assign(voiceRecordBar.style, panelStyles);
-    if (attachQueue) Object.assign(attachQueue.style, panelStyles);
-    if (replyPreview) Object.assign(replyPreview.style, panelStyles);
-    
-    // Инфо панель
-    if (infoPanel) Object.assign(infoPanel.style, panelStyles);
-    
-    // Обновляем CSS переменные для использования в других местах
+    // Обновляем CSS переменные - стили в CSS используют эти переменные
     updateCSSVariable('--sidebar-bg', `rgba(${baseBg}, ${panelOpacity})`);
     updateCSSVariable('--chatlist-bg', `rgba(${baseBg}, ${panelOpacity})`);
     updateCSSVariable('--input-bg', `rgba(${baseBg}, ${panelOpacity})`);
+    
+    // Добавляем класс для blur эффекта если прозрачность < 1
+    const root = document.documentElement;
+    if (panelOpacity < 1) {
+      root.classList.add('panels-transparent');
+    } else {
+      root.classList.remove('panels-transparent');
+    }
   }
 
-  // Применить прозрачность ТОЛЬКО к фону (оверлей поверх фонового изображения)
+  // Применить прозрачность ТОЛЬКО к фону через CSS переменные
   function applyBackgroundTransparency() {
-    const root = document.documentElement;
-    const body = document.body;
-    const mainChat = document.getElementById('mainChat');
-    const chatView = document.getElementById('chatView');
-    const messagesArea = document.getElementById('messagesArea');
-    
     const bgOpacity = currentTheme.bgOpacity;
     const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
     
     // Цвет фона чата с учетом прозрачности
     const baseChatBg = isDarkTheme ? '10, 11, 13' : '232, 236, 243';
     
-    // Применяем прозрачность к фону чата
-    if (mainChat) {
-      mainChat.style.backgroundColor = `rgba(${baseChatBg}, ${bgOpacity})`;
-    }
-    if (chatView) {
-      chatView.style.backgroundColor = `rgba(${baseChatBg}, ${bgOpacity})`;
-    }
-    if (messagesArea) {
-      messagesArea.style.backgroundColor = `rgba(${baseChatBg}, ${bgOpacity * 0.8})`;
-    }
+    // Обновляем CSS переменные для фона
+    updateCSSVariable('--chat-thread-bg', `rgba(${baseChatBg}, ${bgOpacity})`);
+    updateCSSVariable('--mainchat-bg', `rgba(${baseChatBg}, ${bgOpacity})`);
+    updateCSSVariable('--messages-bg', `rgba(${baseChatBg}, ${bgOpacity * 0.8})`);
     
     // Обновляем оверлей если есть фоновое изображение
     if (currentTheme.bgImage) {
