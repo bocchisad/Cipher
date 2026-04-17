@@ -18,20 +18,10 @@ const VoiceCirclesModule = (() => {
   function init() {
     const recordBtn = document.getElementById('recordBtn');
     if (recordBtn) {
-      // Удаляем старые обработчики
-      const newBtn = recordBtn.cloneNode(true);
-      recordBtn.parentNode.replaceChild(newBtn, recordBtn);
-      
       // Инициализируем иконку по умолчанию (микрофон)
-      updateButtonIcon(newBtn, false);
-      
-      // Добавляем обработчики для переключения режима
-      newBtn.addEventListener('click', (e) => {
-        // Если не идет запись - переключаем режим
-        if (!voiceSession || !voiceSession.recorder) {
-          toggleCircleMode();
-        }
-      });
+      updateButtonIcon(recordBtn, false);
+      // NOTE: Обработка кликов и удержания делается в VoiceRecordHandler
+      // Этот модуль только управляет режимом и UI
     }
   }
 
