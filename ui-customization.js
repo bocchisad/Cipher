@@ -54,8 +54,16 @@ const UICustomizationModule = (() => {
     const root = document.documentElement;
     const body = document.body;
 
+    // FIX #5: Check if user is authenticated before applying background image
+    // Background should only show when #app is visible and regOverlay is hidden
+    const regOverlay = document.getElementById('regOverlay');
+    const appEl = document.getElementById('app');
+    const isAuthenticated = regOverlay && regOverlay.style.display === 'none' && 
+                           appEl && appEl.style.display !== 'none';
+
     // Фоновое изображение - используем ::before псевдоэлемент на #app
-    if (currentTheme.bgImage) {
+    // Only apply if user is authenticated
+    if (currentTheme.bgImage && isAuthenticated) {
       // Remove old background element if exists
       const oldBgElement = document.getElementById('cipherFixedBackground');
       if (oldBgElement) oldBgElement.remove();
@@ -97,12 +105,16 @@ const UICustomizationModule = (() => {
           background-size: cover;
           background-position: center;
           background-repeat: no-repeat;
-          z-index: 0;
+          z-index: -2;
           pointer-events: none;
         }
-        #sidebar, #mainChat, #infoPanel, #chatHeader, #inputArea, #noChatView {
+        /* Ensure background tint overlay is also behind panels */
+        #cipherBgTintOverlay {
+          z-index: -1 !important;
+        }
+        #sidebar, #mainChat, #infoPanel, #chatHeader, #inputArea, #noChatView, #globalAudioPlayer {
           position: relative;
-          z-index: 1;
+          z-index: 2;
         }
         /* Ensure registration overlay is above background */
         #regOverlay {
@@ -209,13 +221,19 @@ const UICustomizationModule = (() => {
       document.head.appendChild(styleEl);
     }
     
-    // Применяем прозрачность ко всем панелям через CSS
+    // Применяем прозрачность ко всем панелям через CSS (включая аудиоплеер)
     styleEl.textContent = `
       #sidebar { background: rgba(${baseBg}, ${panelOpacity}) !important; }
       #chatList { background: rgba(${baseBg}, ${panelOpacity}) !important; }
       #inputArea { background: rgba(${baseBg}, ${panelOpacity}) !important; }
       #chatHeader { background: rgba(${baseBg}, ${panelOpacity}) !important; }
       #infoPanel { background: rgba(${baseBg}, ${panelOpacity}) !important; }
+      #globalAudioPlayer {
+        background: linear-gradient(135deg,
+          rgba(${baseBg}, ${panelOpacity}),
+          rgba(${baseBg}, ${Math.min(1, panelOpacity + 0.03)})
+        ) !important;
+      }
       .ui-customization-panel { background: rgba(${baseBg}, ${panelOpacity}) !important; }
       .custom-panel-header { background: rgba(${baseBg}, ${panelOpacity}) !important; }
     `;
@@ -224,6 +242,7 @@ const UICustomizationModule = (() => {
     updateCSSVariable('--sidebar-bg', `rgba(${baseBg}, ${panelOpacity})`);
     updateCSSVariable('--chatlist-bg', `rgba(${baseBg}, ${panelOpacity})`);
     updateCSSVariable('--input-bg', `rgba(${baseBg}, ${panelOpacity})`);
+    updateCSSVariable('--audio-player-bg', `rgba(${baseBg}, ${panelOpacity})`);
     
     // Добавляем класс для blur эффекта если прозрачность < 1
     const root = document.documentElement;
