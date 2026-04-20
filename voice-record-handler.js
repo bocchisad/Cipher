@@ -82,27 +82,21 @@ const VoiceRecordHandler = (() => {
     }
 
     if (isHolding) {
-      // Если запись заблокирована свайпом - продолжаем запись
-      if (isLocked && typeof voiceSession !== 'undefined' && voiceSession) {
-        // Ничего не делаем - запись продолжается
+      const isRecordingActive = typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder &&
+        (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused');
+
+      if (isLocked && isRecordingActive) {
         console.log('Recording locked - continuing');
-      }
-      // Если запись идет и не заблокирована - остановить её
-      else if (typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder) {
-        if (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused') {
-          // Отправить голос - используем кнопку отправки из текущего UI
-          const sendBtn = document.getElementById('voiceRecOverlaySendBtn') || document.getElementById('voiceRecSendBtn');
-          if (sendBtn && typeof sendBtn.onclick === 'function') {
-            sendBtn.onclick();
-          } else {
-            // Fallback - останавливаем напрямую
-            try {
-              voiceSession.recorder.stop();
-            } catch (_) {}
-          }
+      } else if (isRecordingActive) {
+        const sendBtn = document.getElementById('voiceRecOverlaySendBtn') || document.getElementById('voiceRecSendBtn');
+        if (sendBtn && typeof sendBtn.onclick === 'function') {
+          sendBtn.onclick();
+        } else {
+          try {
+            voiceSession.recorder.stop();
+          } catch (_) {}
         }
       } else if (holdDuration < HOLD_THRESHOLD) {
-        // Если это был просто click (< 200мс) - переключить режим
         if (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.toggleCircleMode) {
           VoiceCirclesModule.toggleCircleMode();
         }
