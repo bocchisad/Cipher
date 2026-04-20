@@ -9,15 +9,15 @@ const UICustomizationModule = (() => {
     panelOpacity: 0.95,
     accentColor: '#4f8ef7',
     secondaryColor: '#3a7be8',
-    textColor: '#1a1a1b',
+    textColor: '#a0a7b8',
     borderColor: '#2a2f3d',
     useAccentGradient: true,
     darkMode: true
   };
 
-  // Helper to get theme-appropriate default text color
+  // Helper to get theme-appropriate default text color (less bright)
   function getDefaultTextColor(isDarkMode) {
-    return isDarkMode ? '#e8eaf0' : '#1a1a1b';
+    return isDarkMode ? '#a0a7b8' : '#1a1a1b';
   }
 
   let currentTheme = { ...DEFAULT_THEME };
@@ -33,6 +33,24 @@ const UICustomizationModule = (() => {
       document.addEventListener('DOMContentLoaded', applyTheme, { once: true });
     }
     setupSettingsPanel();
+    
+    // FIX: Watch for theme changes and update text color in real-time
+    const themeObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
+          const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
+          const defaultText = getDefaultTextColor(isDarkTheme);
+          currentTheme.textColor = defaultText;
+          applyTheme();
+          // Update color picker if panel is open
+          const textPicker = document.getElementById('textColorPicker');
+          const textInput = document.getElementById('textColorText');
+          if (textPicker) textPicker.value = defaultText;
+          if (textInput) textInput.value = defaultText;
+        }
+      });
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
 
   // ==================== СОХРАНЕНИЕ И ЗАГРУЗКА ====================
@@ -69,15 +87,9 @@ const UICustomizationModule = (() => {
     const root = document.documentElement;
     const body = document.body;
 
-    // FIX: Auto-update text color based on current theme (dark/light)
-    const isDarkTheme = root.dataset.theme === 'dark' || !root.dataset.theme;
-    const defaultTextColor = isDarkTheme ? '#e8eaf0' : '#1a1a1b';
-    // Only update text color if it's set to a default-like value (not custom)
-    const currentText = currentTheme.textColor?.toLowerCase() || '';
-    const isDefaultDarkText = currentText === '#e8eaf0' || currentText === '#1a1a1b' || currentText === '#1a1a1b' || currentText === '';
-    if (isDefaultDarkText) {
-      currentTheme.textColor = defaultTextColor;
-    }
+    // Cleanup: remove any old aggressive text color styles from previous versions
+    const oldGlobalTextStyle = document.getElementById('cipherGlobalTextColor');
+    if (oldGlobalTextStyle) oldGlobalTextStyle.remove();
 
     // FIX #5: Check if user is authenticated before applying background image
     // Background should only show when #app is visible and regOverlay is hidden
@@ -191,22 +203,6 @@ const UICustomizationModule = (() => {
     root.style.setProperty('--accent', currentTheme.accentColor, 'important');
     root.style.setProperty('--text', currentTheme.textColor, 'important');
     root.style.setProperty('--border', currentTheme.borderColor, 'important');
-    
-    // Apply text color to ALL text elements globally
-    const globalTextStyle = document.getElementById('cipherGlobalTextColor');
-    if (globalTextStyle) globalTextStyle.remove();
-    const textStyleEl = document.createElement('style');
-    textStyleEl.id = 'cipherGlobalTextColor';
-    textStyleEl.textContent = `
-      body, body * { color: ${currentTheme.textColor} !important; }
-      body .msg .bubble, body .msg .bubble * { color: inherit !important; }
-      body .msg.out .bubble, body .msg.out .bubble * { color: #ffffff !important; }
-      body input, body textarea, body input::placeholder, body textarea::placeholder { color: ${currentTheme.textColor} !important; }
-      body .msg .bubble .msg-time { color: inherit !important; opacity: 0.7; }
-      body .btn-primary, body .btn-danger, body .btn-ghost { color: inherit !important; }
-      body [style*="color"]:not(.msg *):not(.bubble *):not(button *) { color: ${currentTheme.textColor} !important; }
-    `;
-    document.head.appendChild(textStyleEl);
 
     // Обновить градиенты
     if (currentTheme.useAccentGradient) {
@@ -794,7 +790,10 @@ const UICustomizationModule = (() => {
 
   function resetToDefaults() {
     if (confirm('Сбросить все настройки на значения по умолчанию?')) {
+      // Clear all UI customization settings from localStorage
+      localStorage.removeItem(STORAGE_KEY_PREFIX + 'theme');
       currentTheme = { ...DEFAULT_THEME };
+      // Apply with current theme context
       applyTheme();
       location.reload();
     }
@@ -813,13 +812,6 @@ const UICustomizationModule = (() => {
     // Remove body classes
     document.body.classList.remove('app-has-bg-image');
     document.body.classList.remove('has-bg-image');
-  }
-
-  function closePanel() {
-    const panel = document.getElementById('uiCustomizationPanel');
-    const backdrop = document.getElementById('uiCustomizationBackdrop');
-    if (panel) panel.classList.remove('active');
-    if (backdrop) backdrop.classList.remove('active');
   }
 
   function closePanel() {
