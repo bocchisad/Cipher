@@ -85,9 +85,8 @@ const UICustomizationModule = (() => {
         document.head.appendChild(bgStyle);
       }
       bgStyle.textContent = `
-        /* Background image - only visible when app is shown (not on login screen) */
-        #app[style*="display: flex"]::before,
-        #app:not([style*="display: none"])::before {
+        /* Background image - use body class to control visibility */
+        body.app-has-bg-image #app::before {
           content: '';
           position: fixed;
           top: 0;
@@ -110,7 +109,13 @@ const UICustomizationModule = (() => {
           z-index: 9999 !important;
           background: var(--bg0) !important;
         }
+        /* Ensure app has relative positioning for ::before */
+        #app {
+          position: relative !important;
+        }
       `;
+      // Add body class to enable background
+      document.body.classList.add('app-has-bg-image');
     } else {
       // Remove background style
       const bgStyle = document.getElementById('cipherBgStyle');
@@ -120,8 +125,13 @@ const UICustomizationModule = (() => {
       const oldBgElement = document.getElementById('cipherFixedBackground');
       if (oldBgElement) oldBgElement.remove();
       
-      // Remove background image class
+      // Remove tint overlay
+      const tintOverlay = document.getElementById('cipherBgTintOverlay');
+      if (tintOverlay) tintOverlay.remove();
+      
+      // Remove background image classes
       document.body.classList.remove('has-bg-image');
+      document.body.classList.remove('app-has-bg-image');
       
       // Restore default background colors
       const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
@@ -159,36 +169,25 @@ const UICustomizationModule = (() => {
       updateCSSVariable('--welcome-bg-opacity', 'transparent');
       updateCSSVariable('--bg0', 'transparent');
       
-      // Directly set inline styles with !important for maximum priority
+      // Set inline styles without !important to allow CSS media queries to work
       const mainChat = document.getElementById('mainChat');
       const chatView = document.getElementById('chatView');
       const messagesArea = document.getElementById('messagesArea');
       const noChatView = document.getElementById('noChatView');
       const app = document.getElementById('app');
       
-      if (mainChat) {
-        mainChat.style.setProperty('background', 'transparent', 'important');
-      }
-      if (chatView) {
-        chatView.style.setProperty('background', 'transparent', 'important');
-      }
+      if (mainChat) mainChat.style.background = 'transparent';
+      if (chatView) chatView.style.background = 'transparent';
       if (messagesArea) {
-        messagesArea.style.setProperty('background', 'transparent', 'important');
-        messagesArea.style.setProperty('backdrop-filter', 'none', 'important');
-        messagesArea.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+        messagesArea.style.background = 'transparent';
+        messagesArea.style.backdropFilter = 'none';
       }
-      if (noChatView) {
-        noChatView.style.setProperty('background', 'transparent', 'important');
-      }
-      if (app) {
-        app.style.setProperty('background', 'transparent', 'important');
-      }
+      if (noChatView) noChatView.style.background = 'transparent';
+      if (app) app.style.background = 'transparent';
       
       // Remove or hide the bgOverlay that covers the background image
       const bgOverlay = document.getElementById('bgOverlay');
-      if (bgOverlay) {
-        bgOverlay.style.display = 'none';
-      }
+      if (bgOverlay) bgOverlay.style.display = 'none';
     }
 
     saveThemeToStorage();
@@ -238,47 +237,21 @@ const UICustomizationModule = (() => {
     if (currentTheme.bgImage) {
       styleEl.textContent += `
         body, html { background-color: transparent !important; }
-        #app { background: transparent !important; }
-        #mainChat { background: transparent !important; }
-        #noChatView { background: transparent !important; }
-        #chatView { background: transparent !important; }
-        #messagesArea { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
-        .chat-empty { background: transparent !important; }
+        body.app-has-bg-image #app { background: transparent !important; }
+        body.app-has-bg-image #mainChat { background: transparent !important; }
+        body.app-has-bg-image #noChatView { background: transparent !important; }
+        body.app-has-bg-image #chatView { background: transparent !important; }
+        body.app-has-bg-image #messagesArea { background: transparent !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+        body.app-has-bg-image .chat-empty { background: transparent !important; }
         #noChatView .nc-logo, #noChatView p { display: none !important; }
-        /* Force transparent backgrounds for both themes - strongest selectors */
-        :root[data-theme="dark"] #mainChat,
-        :root[data-theme="light"] #mainChat,
-        html[data-theme="dark"] #mainChat,
-        html[data-theme="light"] #mainChat { background: transparent !important; }
-        :root[data-theme="dark"] #chatView,
-        :root[data-theme="light"] #chatView,
-        html[data-theme="dark"] #chatView,
-        html[data-theme="light"] #chatView { background: transparent !important; }
-        :root[data-theme="dark"] #messagesArea,
-        :root[data-theme="light"] #messagesArea,
-        html[data-theme="dark"] #messagesArea,
-        html[data-theme="light"] #messagesArea { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
-        :root[data-theme="dark"] #app,
-        :root[data-theme="light"] #app,
-        html[data-theme="dark"] #app,
-        html[data-theme="light"] #app { background: transparent !important; }
-        /* Override specific light theme selectors */
-        :root[data-theme="light"] #messagesArea,
-        html[data-theme="light"] #messagesArea { background: transparent !important; }
-        :root[data-theme="light"] #noChatView,
-        html[data-theme="light"] #noChatView { background: transparent !important; }
-        :root[data-theme="light"] #chatView,
-        html[data-theme="light"] #chatView { background: transparent !important; }
+        /* Desktop only: transparent backgrounds */
+        @media (min-width:901px) {
+          body.app-has-bg-image #mainChat,
+          body.app-has-bg-image #chatView,
+          body.app-has-bg-image #messagesArea { background: transparent !important; }
+        }
         /* Hide background overlay when image is set */
         #bgOverlay { display: none !important; }
-        /* Mobile: ensure transparent backgrounds - override all media queries */
-        @media (max-width:900px) {
-          #app { background: transparent !important; }
-          #mainChat { background: transparent !important; }
-          #messagesArea { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
-          #app #mainChat { background: transparent !important; }
-          #app #messagesArea { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
-        }
       `;
     }
   }
@@ -298,13 +271,34 @@ const UICustomizationModule = (() => {
     // Фон главного экрана (когда чат не выбран)
     updateCSSVariable('--welcome-bg-opacity', `rgba(${baseChatBg}, ${bgOpacity * 0.05})`);
     
-    // Обновляем оверлей если есть фоновое изображение
+    // Если есть фоновое изображение - создаем/обновляем оверлей для регулировки видимости фона
     if (currentTheme.bgImage) {
-      // Don't create/show overlay when there's a background image - it covers the image!
-      const existingOverlay = document.getElementById('bgOverlay');
-      if (existingOverlay) {
-        existingOverlay.style.display = 'none';
+      let overlay = document.getElementById('cipherBgTintOverlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'cipherBgTintOverlay';
+        overlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          z-index: -1;
+          pointer-events: none;
+          transition: opacity 0.2s ease;
+        `;
+        document.body.appendChild(overlay);
       }
+      // Инвертируем opacity: при bgOpacity=1 (полный фон) overlay непрозрачный
+      // при bgOpacity=0 (прозрачный) overlay полностью прозрачный
+      const overlayOpacity = bgOpacity;
+      overlay.style.background = isDarkTheme 
+        ? `rgba(10, 11, 13, ${overlayOpacity})` 
+        : `rgba(232, 236, 243, ${overlayOpacity})`;
+    } else {
+      // Удаляем оверлей если нет фонового изображения
+      const overlay = document.getElementById('cipherBgTintOverlay');
+      if (overlay) overlay.remove();
     }
   }
 
@@ -754,6 +748,9 @@ const UICustomizationModule = (() => {
     // Also remove the background style element
     const bgStyle = document.getElementById('cipherBgStyle');
     if (bgStyle) bgStyle.remove();
+    // Remove body classes
+    document.body.classList.remove('app-has-bg-image');
+    document.body.classList.remove('has-bg-image');
   }
 
   function closePanel() {
