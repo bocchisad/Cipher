@@ -9,11 +9,16 @@ const UICustomizationModule = (() => {
     panelOpacity: 0.95,
     accentColor: '#4f8ef7',
     secondaryColor: '#3a7be8',
-    textColor: '#e8eaf0',
+    textColor: '#1a1a1b',
     borderColor: '#2a2f3d',
     useAccentGradient: true,
     darkMode: true
   };
+
+  // Helper to get theme-appropriate default text color
+  function getDefaultTextColor(isDarkMode) {
+    return isDarkMode ? '#e8eaf0' : '#1a1a1b';
+  }
 
   let currentTheme = { ...DEFAULT_THEME };
 
@@ -35,7 +40,17 @@ const UICustomizationModule = (() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_PREFIX + 'theme');
       if (saved) {
-        currentTheme = { ...DEFAULT_THEME, ...JSON.parse(saved) };
+        const savedTheme = JSON.parse(saved);
+        // FIX: Set appropriate textColor default based on darkMode
+        // If textColor is not explicitly saved, use theme-appropriate default
+        const isDarkMode = savedTheme.darkMode !== undefined ? savedTheme.darkMode : DEFAULT_THEME.darkMode;
+        if (!savedTheme.textColor) {
+          savedTheme.textColor = getDefaultTextColor(isDarkMode);
+        }
+        currentTheme = { ...DEFAULT_THEME, ...savedTheme };
+      } else {
+        // No saved theme - set appropriate default textColor based on darkMode
+        currentTheme.textColor = getDefaultTextColor(currentTheme.darkMode);
       }
     } catch (e) {
       console.error('Failed to load theme:', e);
