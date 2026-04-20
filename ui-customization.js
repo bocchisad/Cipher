@@ -17,7 +17,16 @@ const UICustomizationModule = (() => {
 
   // Helper to get theme-appropriate default text color (less bright)
   function getDefaultTextColor(isDarkMode) {
-    return isDarkMode ? '#a0a7b8' : '#1a1a1b';
+    return isDarkMode ? '#a0a7b8' : '#1a1a2b';
+  }
+
+  // Helper to check if a color is a default text color (dark or light theme default)
+  function isDefaultTextColor(color) {
+    if (!color) return true;
+    const darkDefault = '#a0a7b8';
+    const lightDefault = '#1a1a2b';
+    return color.toLowerCase() === darkDefault.toLowerCase() ||
+           color.toLowerCase() === lightDefault.toLowerCase();
   }
 
   let currentTheme = { ...DEFAULT_THEME };
@@ -35,18 +44,23 @@ const UICustomizationModule = (() => {
     setupSettingsPanel();
     
     // FIX: Watch for theme changes and update text color in real-time
+    // Only update text color if it's currently a default color (user hasn't set custom)
     const themeObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
           const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
           const defaultText = getDefaultTextColor(isDarkTheme);
-          currentTheme.textColor = defaultText;
-          applyTheme();
-          // Update color picker if panel is open
-          const textPicker = document.getElementById('textColorPicker');
-          const textInput = document.getElementById('textColorText');
-          if (textPicker) textPicker.value = defaultText;
-          if (textInput) textInput.value = defaultText;
+          // Only change text color if it's currently a default color
+          // If user set a custom color, preserve it
+          if (isDefaultTextColor(currentTheme.textColor)) {
+            currentTheme.textColor = defaultText;
+            applyTheme();
+            // Update color picker if panel is open
+            const textPicker = document.getElementById('textColorPicker');
+            const textInput = document.getElementById('textColorText');
+            if (textPicker) textPicker.value = defaultText;
+            if (textInput) textInput.value = defaultText;
+          }
         }
       });
     });
