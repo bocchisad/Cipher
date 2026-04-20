@@ -470,7 +470,7 @@
     .voice-rec-overlay-btn.ghost:active{transform:scale(.92)}
     .voice-rec-overlay-btn.danger{background:rgba(255,100,100,.8);color:#fff}
     .voice-rec-overlay-btn.danger:active{transform:scale(.92)}
-    .voice-rec-overlay-video{position:absolute;width:100%;height:100%;object-fit:cover;border-radius:50%;display:none}
+    .voice-rec-overlay-video{position:absolute;width:100%;height:100%;object-fit:cover;border-radius:50%;display:none;z-index:2}
     .voice-rec-overlay-video.active{display:block}
     .voice-rec-overlay-timer{font-size:24px;color:#fff;font-variant-numeric:tabular-nums;min-width:100px;text-align:center}
     .voice-rec-overlay-status{color:rgba(255,255,255,.8);font-size:14px}
@@ -8723,16 +8723,12 @@
         `;
         
         const video = document.createElement('video');
-        video.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%';
-        video.preload = 'metadata';
+        video.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;background:#000';
+        video.preload = 'auto';
         video.controls = false;
-        
-        // Use source element for better compatibility
-        const source = document.createElement('source');
-        source.src = resolvedDataUrl;
-        source.type = voiceMeta.mimeType || 'video/webm';
-        video.appendChild(source);
-        
+        video.src = resolvedDataUrl;
+        video.load();
+
         circle.appendChild(video);
         
         const playIcon = document.createElement('div');
@@ -8749,6 +8745,7 @@
           z-index:2;
           transition:all .2s;
           pointer-events:none;
+          opacity:0.8;
         `;
         playIcon.innerHTML = '▶';
         circle.appendChild(playIcon);
@@ -8786,8 +8783,6 @@
           if (video.paused) {
             video.play().catch(err => {
               console.error('❌ Video play error:', err);
-              console.log('Video src:', video.src);
-              console.log('Source type:', source.type);
             });
             playIcon.style.opacity = '0';
           } else {
@@ -12837,11 +12832,11 @@
         let pausedMs = 0;
         let pauseStarted = 0;
         
-        // Показать видеопоток в overlay (только если видео режим)
         const videoEl = document.getElementById('voiceRecordingVideo');
         if (videoEl && isVideoMode) {
           videoEl.srcObject = stream;
           videoEl.classList.add('active');
+          videoEl.play().catch((e) => console.error('Video preview error:', e));
         } else if (videoEl) {
           videoEl.classList.remove('active');
           videoEl.srcObject = null;
