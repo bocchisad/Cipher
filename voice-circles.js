@@ -10,18 +10,19 @@ const VoiceCirclesModule = (() => {
   let audioContext = null;
   let analyser = null;
 
-  // SVG иконки
-  const MIC_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a5 5 0 0 0-5 5v6a5 5 0 0 0 10 0V6a5 5 0 0 0-5-5z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8"/></svg>`;
-  const CAMERA_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`;
+  const MIC_ICON = `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10a7 7 0 01-14 0M12 19v3M8 22h8"/></svg>`;
+  const CAMERA_ICON = `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
 
   // Инициализация
   function init() {
     const recordBtn = document.getElementById('recordBtn');
     if (recordBtn) {
-      // Инициализируем иконку по умолчанию (микрофон)
       updateButtonIcon(recordBtn, false);
-      // NOTE: Обработка кликов и удержания делается в VoiceRecordHandler
-      // Этот модуль только управляет режимом и UI
+    }
+    const indicator = document.getElementById('voiceModeIndicator');
+    if (indicator) {
+      indicator.textContent = '🎤 ГОЛОС';
+      indicator.style.color = 'var(--accent)';
     }
   }
 
@@ -271,11 +272,10 @@ const VoiceCirclesModule = (() => {
     }
     
     if (video) {
-      video.style.display = 'none';
+      video.classList.remove('active');
       video.srcObject = null;
     }
 
-    // Показываем иконку микрофона в круге
     const svg = bigCircle?.querySelector('svg');
     if (svg) {
       svg.style.display = 'block';
@@ -298,12 +298,10 @@ const VoiceCirclesModule = (() => {
     }
     
     if (video) {
-      video.style.display = 'block';
-      video.style.opacity = '1';
+      video.classList.add('active');
       video.srcObject = stream;
       video.muted = true;
       video.play().catch(() => {});
-      // Зеркальный эффект
       video.style.transform = 'scaleX(-1)';
     }
 

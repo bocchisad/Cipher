@@ -8752,7 +8752,26 @@
         `;
         playIcon.innerHTML = '▶';
         circle.appendChild(playIcon);
-        
+
+        const durationEl = document.createElement('div');
+        durationEl.style.cssText = `
+          position:absolute;
+          bottom:8px;
+          left:50%;
+          transform:translateX(-50%);
+          background:rgba(0,0,0,0.6);
+          color:#fff;
+          font-size:11px;
+          padding:2px 8px;
+          border-radius:10px;
+          z-index:3;
+          font-weight:500;
+          letter-spacing:0.3px;
+        `;
+        const durationSec = Number.isFinite(voiceMeta.duration) && voiceMeta.duration > 0 ? voiceMeta.duration : 0;
+        durationEl.textContent = Math.floor(durationSec / 60) + ':' + String(Math.floor(durationSec) % 60).padStart(2, '0');
+        circle.appendChild(durationEl);
+
         circle.onmouseenter = () => {
           circle.style.transform = 'scale(1.08)';
           playIcon.style.opacity = '1';
@@ -8761,7 +8780,7 @@
           circle.style.transform = 'scale(1)';
           if (video.paused) playIcon.style.opacity = '0.8';
         };
-        
+
         circle.onclick = (e) => {
           e.stopPropagation();
           if (video.paused) {
@@ -8776,7 +8795,11 @@
             playIcon.style.opacity = '0.9';
           }
         };
-        
+
+        video.onended = () => {
+          playIcon.style.opacity = '0.8';
+        };
+
         container.appendChild(circle);
         return container;
       }
