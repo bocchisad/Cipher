@@ -135,6 +135,19 @@ const UICustomizationModule = (() => {
       updateCSSVariable('--messages-bg', 'transparent');
       updateCSSVariable('--welcome-bg', 'transparent');
       updateCSSVariable('--welcome-bg-opacity', 'transparent');
+      
+      // Directly set inline styles for maximum priority
+      const mainChat = document.getElementById('mainChat');
+      const chatView = document.getElementById('chatView');
+      const messagesArea = document.getElementById('messagesArea');
+      const noChatView = document.getElementById('noChatView');
+      const app = document.getElementById('app');
+      
+      if (mainChat) mainChat.style.background = 'transparent';
+      if (chatView) chatView.style.background = 'transparent';
+      if (messagesArea) messagesArea.style.background = 'transparent';
+      if (noChatView) noChatView.style.background = 'transparent';
+      if (app) app.style.background = 'transparent';
     }
 
     saveThemeToStorage();
