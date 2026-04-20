@@ -597,15 +597,18 @@
     :root[data-theme="light"] .reg-box h1 span{color:var(--accent)}
     /* Light theme text styles */
     /* Light theme logo: all letters except first 'C' are dark */
-    :root[data-theme="light"] .sidebar-top .logo{color:var(--text)}
-    :root[data-theme="light"] .sidebar-top .logo span{color:var(--accent)}
+    :root[data-theme="light"] .sidebar-top .logo,
+    :root[data-theme="light"] #sidebarLogoBtn{color:var(--text)!important}
+    :root[data-theme="light"] .sidebar-top .logo span,
+    :root[data-theme="light"] #sidebarLogoBtn span{color:var(--accent)!important}
     /* Main text elements dark in light theme */
     :root[data-theme="light"] body{color:var(--text)}
     :root[data-theme="light"] #sidebar{color:var(--text)}
-    :root[data-theme="light"] .chat-item{color:var(--text)}
-    :root[data-theme="light"] .chat-item .name{color:var(--text)}
-    :root[data-theme="light"] .chat-item .preview{color:var(--text2)}
-    :root[data-theme="light"] .chat-item .time{color:var(--text3)}
+    :root[data-theme="light"] .chat-item{color:var(--text)!important}
+    :root[data-theme="light"] .chat-item .name{color:var(--text)!important}
+    :root[data-theme="light"] .chat-item .preview{color:var(--text2)!important}
+    :root[data-theme="light"] .chat-item .time{color:var(--text3)!important}
+    :root[data-theme="light"] .chat-item .last{color:var(--text2)!important}
     :root[data-theme="light"] #chatHeader{color:var(--text)}
     :root[data-theme="light"] #chatHeader .hname{color:var(--text)}
     :root[data-theme="light"] .msg{color:var(--text)}
@@ -630,9 +633,6 @@
     :root[data-theme="light"] .import-btn{color:var(--text)!important}
     :root[data-theme="light"] .export-btn:hover,
     :root[data-theme="light"] .import-btn:hover{color:var(--accent)!important}
-    /* Light theme: logo text must be dark */
-    :root[data-theme="light"] #sidebarLogoBtn{color:var(--text)!important}
-    :root[data-theme="light"] #sidebarLogoBtn span{color:var(--accent)!important}
     /* Light theme: info panel text */
     :root[data-theme="light"] #infoPanel .info-name{color:var(--text)!important}
     :root[data-theme="light"] #infoPanel .chat-title{color:var(--text)!important}
@@ -658,6 +658,21 @@
     :root[data-theme="light"] .conn-status.disconnected{color:var(--red)!important}
     :root[data-theme="light"] #connStatus.connected{color:var(--green)!important}
     :root[data-theme="light"] #connStatus.disconnected{color:var(--red)!important}
+    /* Light theme: comprehensive text audit */
+    /* Light theme: all sidebar text */
+    :root[data-theme="light"] #chatList{color:var(--text)}
+    :root[data-theme="light"] .chat-item *{color:inherit!important}
+    :root[data-theme="light"] .chat-item .name{color:var(--text)!important}
+    :root[data-theme="light"] .chat-item .preview{color:var(--text2)!important}
+    :root[data-theme="light"] .chat-item .time{color:var(--text3)!important}
+    /* Light theme: info panel */
+    :root[data-theme="light"] #infoName{color:var(--text)!important}
+    :root[data-theme="light"] #infoStatus{color:var(--text2)!important}
+    :root[data-theme="light"] #infoId{color:var(--text3)!important}
+    :root[data-theme="light"] .info-name{color:var(--text)!important}
+    :root[data-theme="light"] .info-status{color:var(--text2)!important}
+    :root[data-theme="light"] .info-id{color:var(--text3)!important}
+    :root[data-theme="light"] .chat-title{color:var(--text)!important}
     /* Light theme: registration */
     :root[data-theme="light"] .reg-box label{color:var(--text)!important}
     :root[data-theme="light"] .reg-box input{color:var(--text)!important}
