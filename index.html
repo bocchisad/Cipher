@@ -625,6 +625,43 @@
     :root[data-theme="light"] .btn-danger{color:#e74c3c}
     :root[data-theme="light"] #attachBtn{color:#4a5568}
     :root[data-theme="light"] #sendBtn{color:var(--accent)}
+    /* Light theme: fix export/import buttons text color */
+    :root[data-theme="light"] .export-btn,
+    :root[data-theme="light"] .import-btn{color:var(--text)!important}
+    :root[data-theme="light"] .export-btn:hover,
+    :root[data-theme="light"] .import-btn:hover{color:var(--accent)!important}
+    /* Light theme: logo text must be dark */
+    :root[data-theme="light"] #sidebarLogoBtn{color:var(--text)!important}
+    :root[data-theme="light"] #sidebarLogoBtn span{color:var(--accent)!important}
+    /* Light theme: info panel text */
+    :root[data-theme="light"] #infoPanel .info-name{color:var(--text)!important}
+    :root[data-theme="light"] #infoPanel .chat-title{color:var(--text)!important}
+    :root[data-theme="light"] .settings-section h3{color:var(--text3)}
+    /* Light theme: modal headings and content */
+    :root[data-theme="light"] .modal h2{color:var(--text)!important}
+    :root[data-theme="light"] #roomSettingsTitle{color:var(--text)!important}
+    :root[data-theme="light"] #pickMembersTitle{color:var(--text)!important}
+    :root[data-theme="light"] #addChatHeading{color:var(--text)!important}
+    :root[data-theme="light"] .add-chat-tab{color:var(--text2)}
+    :root[data-theme="light"] .add-chat-tab.active{color:var(--accent)}
+    :root[data-theme="light"] .add-chat-hint{color:var(--text3)}
+    /* Light theme: mobile navigation */
+    :root[data-theme="light"] .mobile-nav-item{color:var(--text2)}
+    :root[data-theme="light"] .mobile-nav-item.active{color:var(--accent)}
+    :root[data-theme="light"] .mobile-nav-item .mobile-nav-label{color:inherit}
+    /* Light theme: chat list items */
+    :root[data-theme="light"] .chat-item .chat-title{color:var(--text)!important}
+    :root[data-theme="light"] .chat-item .name span{color:var(--text)!important}
+    :root[data-theme="light"] .conn-status{color:var(--text3)!important}
+    :root[data-theme="light"] #connStatus{color:var(--text3)!important}
+    /* Light theme: registration */
+    :root[data-theme="light"] .reg-box label{color:var(--text)!important}
+    :root[data-theme="light"] .reg-box input{color:var(--text)!important}
+    :root[data-theme="light"] .reg-box p{color:var(--text2)!important}
+    /* Light theme: global audio player */
+    :root[data-theme="light"] #globalAudioPlayer{color:var(--text)!important}
+    :root[data-theme="light"] #globalAudioPlayer .track-name{color:var(--text)!important}
+    :root[data-theme="light"] #globalAudioPlayer .track-channel{color:var(--text2)!important}
     /* Mobile light theme: override inline dark backgrounds */
     @media (max-width:900px) {
       :root[data-theme="light"] #app{background-color:var(--bg0)}
