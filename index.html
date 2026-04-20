@@ -10446,8 +10446,12 @@
         const syncSystemBars = (t) => {
           const color = t === 'light' ? '#e6e6e6' : '#0a0b0d';
           if (themeColorMeta) themeColorMeta.setAttribute('content', color);
-          document.documentElement.style.backgroundColor = color;
-          if (document.body) document.body.style.backgroundColor = color;
+          // Don't override background if custom bg image is set
+          const hasBgImage = document.body && document.body.classList.contains('has-bg-image');
+          if (!hasBgImage) {
+            document.documentElement.style.backgroundColor = color;
+            if (document.body) document.body.style.backgroundColor = color;
+          }
         };
         const applyTheme = (t) => {
           const root = document.documentElement;

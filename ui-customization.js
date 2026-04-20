@@ -66,9 +66,9 @@ const UICustomizationModule = (() => {
       root.style.backgroundPosition = '';
       body.style.backgroundPosition = '';
       
-      // Make body/html transparent so background shows through
-      body.style.backgroundColor = 'transparent';
-      root.style.backgroundColor = 'transparent';
+      // Make body/html transparent so background shows through (use !important via CSSText for max priority)
+      body.style.cssText = (body.style.cssText || '').replace(/background-color:\s*[^;]+;?/gi, '') + 'background-color: transparent !important;';
+      root.style.cssText = (root.style.cssText || '').replace(/background-color:\s*[^;]+;?/gi, '') + 'background-color: transparent !important;';
       
       // Create or update fixed background element for mobile compatibility
       let bgElement = document.getElementById('cipherFixedBackground');
@@ -104,8 +104,9 @@ const UICustomizationModule = (() => {
       
       // Restore default background colors
       const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
-      body.style.backgroundColor = isDarkTheme ? '#0a0b0d' : '#e6e6e6';
-      root.style.backgroundColor = isDarkTheme ? '#0a0b0d' : '#e6e6e6';
+      const defaultColor = isDarkTheme ? '#0a0b0d' : '#e6e6e6';
+      body.style.setProperty('background-color', defaultColor, 'important');
+      root.style.setProperty('background-color', defaultColor, 'important');
       
       root.style.backgroundImage = '';
       body.style.backgroundImage = '';
@@ -136,18 +137,18 @@ const UICustomizationModule = (() => {
       updateCSSVariable('--welcome-bg', 'transparent');
       updateCSSVariable('--welcome-bg-opacity', 'transparent');
       
-      // Directly set inline styles for maximum priority
+      // Directly set inline styles with !important for maximum priority
       const mainChat = document.getElementById('mainChat');
       const chatView = document.getElementById('chatView');
       const messagesArea = document.getElementById('messagesArea');
       const noChatView = document.getElementById('noChatView');
       const app = document.getElementById('app');
       
-      if (mainChat) mainChat.style.background = 'transparent';
-      if (chatView) chatView.style.background = 'transparent';
-      if (messagesArea) messagesArea.style.background = 'transparent';
-      if (noChatView) noChatView.style.background = 'transparent';
-      if (app) app.style.background = 'transparent';
+      if (mainChat) mainChat.style.setProperty('background', 'transparent', 'important');
+      if (chatView) chatView.style.setProperty('background', 'transparent', 'important');
+      if (messagesArea) messagesArea.style.setProperty('background', 'transparent', 'important');
+      if (noChatView) noChatView.style.setProperty('background', 'transparent', 'important');
+      if (app) app.style.setProperty('background', 'transparent', 'important');
     }
 
     saveThemeToStorage();
