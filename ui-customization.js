@@ -172,31 +172,9 @@ const UICustomizationModule = (() => {
       updateCSSVariable('--accent-glow', `rgba(${hexToRgb(currentTheme.accentColor)},0.18)`);
     }
 
-    // When background image is set, make main chat backgrounds transparent
+    // When background image is set, applyTheme will be called again
+    // applyBackgroundTransparency() handles the actual opacity values
     if (currentTheme.bgImage) {
-      updateCSSVariable('--mainchat-bg', 'transparent');
-      updateCSSVariable('--chat-thread-bg', 'transparent');
-      updateCSSVariable('--messages-bg', 'transparent');
-      updateCSSVariable('--welcome-bg', 'transparent');
-      updateCSSVariable('--welcome-bg-opacity', 'transparent');
-      updateCSSVariable('--bg0', 'transparent');
-      
-      // Set inline styles without !important to allow CSS media queries to work
-      const mainChat = document.getElementById('mainChat');
-      const chatView = document.getElementById('chatView');
-      const messagesArea = document.getElementById('messagesArea');
-      const noChatView = document.getElementById('noChatView');
-      const app = document.getElementById('app');
-      
-      if (mainChat) mainChat.style.background = 'transparent';
-      if (chatView) chatView.style.background = 'transparent';
-      if (messagesArea) {
-        messagesArea.style.background = 'transparent';
-        messagesArea.style.backdropFilter = 'none';
-      }
-      if (noChatView) noChatView.style.background = 'transparent';
-      if (app) app.style.background = 'transparent';
-      
       // Remove or hide the bgOverlay that covers the background image
       const bgOverlay = document.getElementById('bgOverlay');
       if (bgOverlay) bgOverlay.style.display = 'none';
@@ -290,8 +268,29 @@ const UICustomizationModule = (() => {
     // Фон главного экрана (когда чат не выбран)
     updateCSSVariable('--welcome-bg-opacity', `rgba(${baseChatBg}, ${bgOpacity * 0.05})`);
     
-    // Если есть фоновое изображение - создаем/обновляем оверлей для регулировки видимости фона
+    // Если есть фоновое изображение - применяем прозрачность к inline стилям
+    // чтобы ползунок работал даже с bgImage
     if (currentTheme.bgImage) {
+      const mainChat = document.getElementById('mainChat');
+      const chatView = document.getElementById('chatView');
+      const messagesArea = document.getElementById('messagesArea');
+      const noChatView = document.getElementById('noChatView');
+      
+      const bgWithOpacity = `rgba(${baseChatBg}, ${bgOpacity})`;
+      
+      if (mainChat) mainChat.style.background = bgWithOpacity;
+      if (chatView) chatView.style.background = bgWithOpacity;
+      if (messagesArea) {
+        messagesArea.style.background = `rgba(${baseChatBg}, ${bgOpacity * 0.8})`;
+        if (bgOpacity < 1) {
+          messagesArea.style.backdropFilter = 'blur(2px)';
+        } else {
+          messagesArea.style.backdropFilter = 'none';
+        }
+      }
+      if (noChatView) noChatView.style.background = `rgba(${baseChatBg}, ${bgOpacity * 0.3})`;
+      
+      // Создаем/обновляем оверлей для регулировки видимости фона
       let overlay = document.getElementById('cipherBgTintOverlay');
       if (!overlay) {
         overlay = document.createElement('div');
@@ -310,7 +309,7 @@ const UICustomizationModule = (() => {
       }
       // Инвертируем opacity: при bgOpacity=1 (полный фон) overlay непрозрачный
       // при bgOpacity=0 (прозрачный) overlay полностью прозрачный
-      const overlayOpacity = bgOpacity;
+      const overlayOpacity = 1 - bgOpacity;
       overlay.style.background = isDarkTheme 
         ? `rgba(10, 11, 13, ${overlayOpacity})` 
         : `rgba(232, 236, 243, ${overlayOpacity})`;
