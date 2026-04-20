@@ -20,7 +20,13 @@ const UICustomizationModule = (() => {
   // ==================== ИНИЦИАЛИЗАЦИЯ ====================
   function init() {
     loadThemeFromStorage();
-    applyTheme();
+    // Ensure DOM is ready before applying theme
+    if (document.body) {
+      applyTheme();
+    } else {
+      // Wait for DOMContentLoaded if body not ready
+      document.addEventListener('DOMContentLoaded', applyTheme, { once: true });
+    }
     setupSettingsPanel();
   }
 
@@ -73,13 +79,14 @@ const UICustomizationModule = (() => {
           position: fixed;
           top: 0;
           left: 0;
-          width: 100vw;
-          height: 100vh;
-          z-index: -100;
+          width: 100%;
+          height: 100%;
+          z-index: -9999;
           pointer-events: none;
           background-size: cover;
           background-position: center;
           background-repeat: no-repeat;
+          background-attachment: fixed;
         `;
         document.body.insertBefore(bgElement, document.body.firstChild);
       }
@@ -119,6 +126,15 @@ const UICustomizationModule = (() => {
     // Обновить градиенты
     if (currentTheme.useAccentGradient) {
       updateCSSVariable('--accent-glow', `rgba(${hexToRgb(currentTheme.accentColor)},0.18)`);
+    }
+
+    // When background image is set, make main chat backgrounds transparent
+    if (currentTheme.bgImage) {
+      updateCSSVariable('--mainchat-bg', 'transparent');
+      updateCSSVariable('--chat-thread-bg', 'transparent');
+      updateCSSVariable('--messages-bg', 'transparent');
+      updateCSSVariable('--welcome-bg', 'transparent');
+      updateCSSVariable('--welcome-bg-opacity', 'transparent');
     }
 
     saveThemeToStorage();
@@ -167,11 +183,21 @@ const UICustomizationModule = (() => {
     // When background image is set, make main chat areas transparent to show background
     if (currentTheme.bgImage) {
       styleEl.textContent += `
+        body, html { background-color: transparent !important; }
+        #app { background: transparent !important; }
         #mainChat { background: transparent !important; }
         #noChatView { background: transparent !important; }
         #chatView { background: transparent !important; }
         #messagesArea { background: transparent !important; }
+        .chat-empty { background: transparent !important; }
         #noChatView .nc-logo, #noChatView p { display: none !important; }
+        /* Force transparent backgrounds for both themes */
+        :root[data-theme="dark"] #mainChat,
+        :root[data-theme="light"] #mainChat { background: transparent !important; }
+        :root[data-theme="dark"] #chatView,
+        :root[data-theme="light"] #chatView { background: transparent !important; }
+        :root[data-theme="dark"] #messagesArea,
+        :root[data-theme="light"] #messagesArea { background: transparent !important; }
       `;
     }
   }
