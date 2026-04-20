@@ -654,6 +654,10 @@
     :root[data-theme="light"] .chat-item .name span{color:var(--text)!important}
     :root[data-theme="light"] .conn-status{color:var(--text3)!important}
     :root[data-theme="light"] #connStatus{color:var(--text3)!important}
+    :root[data-theme="light"] .conn-status.connected{color:var(--green)!important}
+    :root[data-theme="light"] .conn-status.disconnected{color:var(--red)!important}
+    :root[data-theme="light"] #connStatus.connected{color:var(--green)!important}
+    :root[data-theme="light"] #connStatus.disconnected{color:var(--red)!important}
     /* Light theme: registration */
     :root[data-theme="light"] .reg-box label{color:var(--text)!important}
     :root[data-theme="light"] .reg-box input{color:var(--text)!important}
@@ -673,6 +677,21 @@
       :root[data-theme="light"] .sidebar-bottom{background:var(--sidebar-bg);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
       :root[data-theme="light"] #chatView{background:var(--chat-thread-bg);overflow:hidden}
       :root[data-theme="light"] #messagesArea{background:transparent}
+      /* Mobile light theme: bottom navigation */
+      :root[data-theme="light"] #mobileBottomNav{background:var(--bg1)!important;border-top-color:var(--border)}
+      :root[data-theme="light"] .mobile-nav-item{color:var(--text2)}
+      :root[data-theme="light"] .mobile-nav-item.active{color:var(--accent)}
+      :root[data-theme="light"] .mobile-nav-item .mobile-nav-label{color:inherit}
+      /* Mobile light theme: connection status badge */
+      :root[data-theme="light"] #mobileConnStatus{color:var(--text3)!important}
+      :root[data-theme="light"] #mobileConnStatus.connected{color:var(--green)!important}
+      :root[data-theme="light"] #mobileConnStatus.disconnected{color:var(--red)!important}
+      /* Mobile light theme: settings section buttons */
+      :root[data-theme="light"] #mobileSettingsExportBtn,
+      :root[data-theme="light"] #mobileSettingsImportBtn{color:var(--text)!important;background:var(--bg3);border-color:var(--border)}
+      :root[data-theme="light"] #mobileSettingsExportBtn:hover,
+      :root[data-theme="light"] #mobileSettingsImportBtn:hover{color:var(--accent)!important;border-color:var(--accent)}
+      :root[data-theme="light"] .mobile-settings-btn{color:var(--text)!important}
     }
     @media (max-width:900px){
       #app:not(.app-chat-open) .sidebar-bottom{display:none!important}
