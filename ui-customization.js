@@ -85,8 +85,9 @@ const UICustomizationModule = (() => {
         document.head.appendChild(bgStyle);
       }
       bgStyle.textContent = `
-        #app { position: relative !important; }
-        #app::before {
+        /* Background image - only visible when app is shown (not on login screen) */
+        #app[style*="display: flex"]::before,
+        #app:not([style*="display: none"])::before {
           content: '';
           position: fixed;
           top: 0;
@@ -103,6 +104,11 @@ const UICustomizationModule = (() => {
         #sidebar, #mainChat, #infoPanel, #chatHeader, #inputArea, #noChatView {
           position: relative;
           z-index: 1;
+        }
+        /* Ensure registration overlay is above background */
+        #regOverlay {
+          z-index: 9999 !important;
+          background: var(--bg0) !important;
         }
       `;
     } else {
@@ -160,11 +166,23 @@ const UICustomizationModule = (() => {
       const noChatView = document.getElementById('noChatView');
       const app = document.getElementById('app');
       
-      if (mainChat) mainChat.style.setProperty('background', 'transparent', 'important');
-      if (chatView) chatView.style.setProperty('background', 'transparent', 'important');
-      if (messagesArea) messagesArea.style.setProperty('background', 'transparent', 'important');
-      if (noChatView) noChatView.style.setProperty('background', 'transparent', 'important');
-      if (app) app.style.setProperty('background', 'transparent', 'important');
+      if (mainChat) {
+        mainChat.style.setProperty('background', 'transparent', 'important');
+      }
+      if (chatView) {
+        chatView.style.setProperty('background', 'transparent', 'important');
+      }
+      if (messagesArea) {
+        messagesArea.style.setProperty('background', 'transparent', 'important');
+        messagesArea.style.setProperty('backdrop-filter', 'none', 'important');
+        messagesArea.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+      }
+      if (noChatView) {
+        noChatView.style.setProperty('background', 'transparent', 'important');
+      }
+      if (app) {
+        app.style.setProperty('background', 'transparent', 'important');
+      }
       
       // Remove or hide the bgOverlay that covers the background image
       const bgOverlay = document.getElementById('bgOverlay');
@@ -224,25 +242,42 @@ const UICustomizationModule = (() => {
         #mainChat { background: transparent !important; }
         #noChatView { background: transparent !important; }
         #chatView { background: transparent !important; }
-        #messagesArea { background: transparent !important; }
+        #messagesArea { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
         .chat-empty { background: transparent !important; }
         #noChatView .nc-logo, #noChatView p { display: none !important; }
-        /* Force transparent backgrounds for both themes */
+        /* Force transparent backgrounds for both themes - strongest selectors */
         :root[data-theme="dark"] #mainChat,
-        :root[data-theme="light"] #mainChat { background: transparent !important; }
+        :root[data-theme="light"] #mainChat,
+        html[data-theme="dark"] #mainChat,
+        html[data-theme="light"] #mainChat { background: transparent !important; }
         :root[data-theme="dark"] #chatView,
-        :root[data-theme="light"] #chatView { background: transparent !important; }
+        :root[data-theme="light"] #chatView,
+        html[data-theme="dark"] #chatView,
+        html[data-theme="light"] #chatView { background: transparent !important; }
         :root[data-theme="dark"] #messagesArea,
-        :root[data-theme="light"] #messagesArea { background: transparent !important; }
+        :root[data-theme="light"] #messagesArea,
+        html[data-theme="dark"] #messagesArea,
+        html[data-theme="light"] #messagesArea { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
         :root[data-theme="dark"] #app,
-        :root[data-theme="light"] #app { background: transparent !important; }
+        :root[data-theme="light"] #app,
+        html[data-theme="dark"] #app,
+        html[data-theme="light"] #app { background: transparent !important; }
+        /* Override specific light theme selectors */
+        :root[data-theme="light"] #messagesArea,
+        html[data-theme="light"] #messagesArea { background: transparent !important; }
+        :root[data-theme="light"] #noChatView,
+        html[data-theme="light"] #noChatView { background: transparent !important; }
+        :root[data-theme="light"] #chatView,
+        html[data-theme="light"] #chatView { background: transparent !important; }
         /* Hide background overlay when image is set */
         #bgOverlay { display: none !important; }
-        /* Mobile: ensure transparent backgrounds */
+        /* Mobile: ensure transparent backgrounds - override all media queries */
         @media (max-width:900px) {
           #app { background: transparent !important; }
           #mainChat { background: transparent !important; }
-          #messagesArea { background: transparent !important; }
+          #messagesArea { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+          #app #mainChat { background: transparent !important; }
+          #app #messagesArea { background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
         }
       `;
     }
