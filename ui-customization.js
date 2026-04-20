@@ -136,6 +136,7 @@ const UICustomizationModule = (() => {
       updateCSSVariable('--messages-bg', 'transparent');
       updateCSSVariable('--welcome-bg', 'transparent');
       updateCSSVariable('--welcome-bg-opacity', 'transparent');
+      updateCSSVariable('--bg0', 'transparent');
       
       // Directly set inline styles with !important for maximum priority
       const mainChat = document.getElementById('mainChat');
@@ -149,6 +150,12 @@ const UICustomizationModule = (() => {
       if (messagesArea) messagesArea.style.setProperty('background', 'transparent', 'important');
       if (noChatView) noChatView.style.setProperty('background', 'transparent', 'important');
       if (app) app.style.setProperty('background', 'transparent', 'important');
+      
+      // Remove or hide the bgOverlay that covers the background image
+      const bgOverlay = document.getElementById('bgOverlay');
+      if (bgOverlay) {
+        bgOverlay.style.display = 'none';
+      }
     }
 
     saveThemeToStorage();
@@ -212,6 +219,16 @@ const UICustomizationModule = (() => {
         :root[data-theme="light"] #chatView { background: transparent !important; }
         :root[data-theme="dark"] #messagesArea,
         :root[data-theme="light"] #messagesArea { background: transparent !important; }
+        :root[data-theme="dark"] #app,
+        :root[data-theme="light"] #app { background: transparent !important; }
+        /* Hide background overlay when image is set */
+        #bgOverlay { display: none !important; }
+        /* Mobile: ensure transparent backgrounds */
+        @media (max-width:900px) {
+          #app { background: transparent !important; }
+          #mainChat { background: transparent !important; }
+          #messagesArea { background: transparent !important; }
+        }
       `;
     }
   }
@@ -233,13 +250,11 @@ const UICustomizationModule = (() => {
     
     // Обновляем оверлей если есть фоновое изображение
     if (currentTheme.bgImage) {
-      const overlay = document.getElementById('bgOverlay') || createBackgroundOverlay();
-      // Инвертируем логику: при низкой прозрачности фона оверлей темнее
-      const overlayOpacity = Math.max(0, 0.6 - (bgOpacity * 0.5));
-      overlay.style.opacity = overlayOpacity;
-      overlay.style.background = isDarkTheme 
-        ? `rgba(0, 0, 0, ${overlayOpacity})` 
-        : `rgba(255, 255, 255, ${overlayOpacity})`;
+      // Don't create/show overlay when there's a background image - it covers the image!
+      const existingOverlay = document.getElementById('bgOverlay');
+      if (existingOverlay) {
+        existingOverlay.style.display = 'none';
+      }
     }
   }
 
