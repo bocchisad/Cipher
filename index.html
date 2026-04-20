@@ -458,7 +458,7 @@
     /* ===== VOICE RECORDING OVERLAY ===== */
     #voiceRecordingOverlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:20px}
     #voiceRecordingOverlay.active{display:flex}
-    .voice-big-circle{width:200px;height:200px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;animation:recordPulse .6s ease-in-out infinite;box-shadow:0 0 40px rgba(255,0,0,.6);position:relative}
+    .voice-big-circle{width:200px;height:200px;border-radius:50%;background:#000;display:flex;align-items:center;justify-content:center;animation:recordPulse .6s ease-in-out infinite;box-shadow:0 0 40px rgba(255,0,0,.6);position:relative;overflow:hidden}
     @keyframes recordPulse{0%{transform:scale(1)};50%{transform:scale(1.08)};100%{transform:scale(1)}}
     .voice-big-circle svg{width:80px;height:80px;color:#fff;position:absolute;z-index:1}
     .voice-big-circle video{position:absolute;width:100%;height:100%;border-radius:50%;object-fit:cover;z-index:2}
@@ -8687,7 +8687,7 @@
     function makeVoicePlayer(dataUrl, msg){
       const voiceMeta = parseVoiceContent(dataUrl);
       let resolvedDataUrl = voiceMeta.data;
-      const isVideo = voiceMeta.isVideo || (msg && msg.content && typeof msg.content === 'object' && msg.content.isVideo);
+      const isVideo = voiceMeta.isVideo;
       
       // Конвертировать base64 в data URL если нужно
       if (isVideo && resolvedDataUrl && !resolvedDataUrl.startsWith('data:')) {
@@ -8724,9 +8724,14 @@
         
         const video = document.createElement('video');
         video.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;background:#000';
-        video.preload = 'auto';
+        video.preload = 'metadata';
         video.controls = false;
         video.src = resolvedDataUrl;
+        video.playsInline = true;
+        video.muted = true;
+        video.addEventListener('loadedmetadata', () => {
+          video.currentTime = 0.1;
+        }, { once: true });
         video.load();
 
         circle.appendChild(video);
@@ -12833,11 +12838,7 @@
         let pauseStarted = 0;
         
         const videoEl = document.getElementById('voiceRecordingVideo');
-        if (videoEl && isVideoMode) {
-          videoEl.srcObject = stream;
-          videoEl.classList.add('active');
-          videoEl.play().catch((e) => console.error('Video preview error:', e));
-        } else if (videoEl) {
+        if (videoEl && !isVideoMode) {
           videoEl.classList.remove('active');
           videoEl.srcObject = null;
         }

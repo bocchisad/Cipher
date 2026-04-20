@@ -13,11 +13,14 @@ const VoiceCirclesModule = (() => {
   const MIC_ICON = `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10a7 7 0 01-14 0M12 19v3M8 22h8"/></svg>`;
   const CAMERA_ICON = `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
 
-  // Инициализация
   function init() {
     const recordBtn = document.getElementById('recordBtn');
     if (recordBtn) {
-      updateButtonIcon(recordBtn, false);
+      recordBtn.innerHTML = MIC_ICON;
+      recordBtn.style.color = 'var(--accent)';
+      recordBtn.style.transform = 'scale(1) rotate(0deg)';
+      recordBtn.style.opacity = '1';
+      recordBtn.title = '🎤 Голос (нажмите для кружков)';
     }
     const indicator = document.getElementById('voiceModeIndicator');
     if (indicator) {
@@ -218,7 +221,6 @@ const VoiceCirclesModule = (() => {
       transition: background 0.1s linear;
     `;
 
-    // Создаем маску для кольца
     const mask = document.createElement('div');
     mask.style.cssText = `
       position: absolute;
@@ -227,8 +229,9 @@ const VoiceCirclesModule = (() => {
       right: 4px;
       bottom: 4px;
       border-radius: 50%;
-      background: var(--bg2);
+      background: transparent;
       z-index: 4;
+      pointer-events: none;
     `;
     progress.appendChild(mask);
 
@@ -261,16 +264,17 @@ const VoiceCirclesModule = (() => {
   }
 
   // ==================== НАСТРОЙКА UI ДЛЯ РЕЖИМОВ ====================
-  // Настроить UI для режима голосового сообщения
   function setupVoiceModeUI() {
     const bigCircle = document.getElementById('voiceBigCircle');
     const video = document.getElementById('voiceRecordingVideo');
-    
+
     if (bigCircle) {
       bigCircle.style.background = 'var(--red)';
       bigCircle.style.animation = 'recordPulse .6s ease-in-out infinite';
+      bigCircle.style.border = 'none';
+      bigCircle.style.boxShadow = '0 0 40px rgba(255,0,0,0.6)';
     }
-    
+
     if (video) {
       video.classList.remove('active');
       video.srcObject = null;
@@ -285,27 +289,33 @@ const VoiceCirclesModule = (() => {
     removeCircularProgress();
   }
 
-  // Настроить UI для режима видеокружка
-  function setupVideoModeUI(stream) {
+  async function setupVideoModeUI(stream) {
     const bigCircle = document.getElementById('voiceBigCircle');
     const video = document.getElementById('voiceRecordingVideo');
-    
+
     if (bigCircle) {
-      bigCircle.style.background = 'transparent';
+      bigCircle.style.background = '#000';
       bigCircle.style.animation = 'none';
       bigCircle.style.border = '3px solid var(--accent)';
-      bigCircle.style.boxShadow = '0 0 30px rgba(79, 142, 247, 0.4), inset 0 0 30px rgba(0, 0, 0, 0.2)';
+      bigCircle.style.boxShadow = '0 0 30px rgba(79, 142, 247, 0.4)';
+      bigCircle.style.overflow = 'hidden';
     }
-    
+
     if (video) {
       video.classList.add('active');
       video.srcObject = stream;
       video.muted = true;
-      video.play().catch(() => {});
+      video.playsInline = true;
+      video.autoplay = true;
       video.style.transform = 'scaleX(-1)';
+      video.style.background = '#000';
+      try {
+        await video.play();
+      } catch (e) {
+        console.error('Video play error:', e);
+      }
     }
 
-    // Скрываем иконку микрофона в круге
     const svg = bigCircle?.querySelector('svg');
     if (svg) {
       svg.style.display = 'none';
