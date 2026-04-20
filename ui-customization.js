@@ -69,6 +69,16 @@ const UICustomizationModule = (() => {
     const root = document.documentElement;
     const body = document.body;
 
+    // FIX: Auto-update text color based on current theme (dark/light)
+    const isDarkTheme = root.dataset.theme === 'dark' || !root.dataset.theme;
+    const defaultTextColor = isDarkTheme ? '#e8eaf0' : '#1a1a1b';
+    // Only update text color if it's set to a default-like value (not custom)
+    const currentText = currentTheme.textColor?.toLowerCase() || '';
+    const isDefaultDarkText = currentText === '#e8eaf0' || currentText === '#1a1a1b' || currentText === '#1a1a1b' || currentText === '';
+    if (isDefaultDarkText) {
+      currentTheme.textColor = defaultTextColor;
+    }
+
     // FIX #5: Check if user is authenticated before applying background image
     // Background should only show when #app is visible and regOverlay is hidden
     const regOverlay = document.getElementById('regOverlay');
@@ -181,6 +191,22 @@ const UICustomizationModule = (() => {
     root.style.setProperty('--accent', currentTheme.accentColor, 'important');
     root.style.setProperty('--text', currentTheme.textColor, 'important');
     root.style.setProperty('--border', currentTheme.borderColor, 'important');
+    
+    // Apply text color to ALL text elements globally
+    const globalTextStyle = document.getElementById('cipherGlobalTextColor');
+    if (globalTextStyle) globalTextStyle.remove();
+    const textStyleEl = document.createElement('style');
+    textStyleEl.id = 'cipherGlobalTextColor';
+    textStyleEl.textContent = `
+      body, body * { color: ${currentTheme.textColor} !important; }
+      body .msg .bubble, body .msg .bubble * { color: inherit !important; }
+      body .msg.out .bubble, body .msg.out .bubble * { color: #ffffff !important; }
+      body input, body textarea, body input::placeholder, body textarea::placeholder { color: ${currentTheme.textColor} !important; }
+      body .msg .bubble .msg-time { color: inherit !important; opacity: 0.7; }
+      body .btn-primary, body .btn-danger, body .btn-ghost { color: inherit !important; }
+      body [style*="color"]:not(.msg *):not(.bubble *):not(button *) { color: ${currentTheme.textColor} !important; }
+    `;
+    document.head.appendChild(textStyleEl);
 
     // Обновить градиенты
     if (currentTheme.useAccentGradient) {

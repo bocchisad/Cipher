@@ -61,7 +61,10 @@ const VoiceRecordHandler = (() => {
     // Задержка перед началом записи (чтобы отличить click от hold)
     holdTimer = setTimeout(() => {
       if (isHolding && typeof toggleRecord === 'function') {
+        // FIX: Lock recording on long press so it doesn't auto-send on release
+        isLocked = true;
         toggleRecord();
+        console.log('Recording locked via long press');
       }
     }, HOLD_THRESHOLD);
 
