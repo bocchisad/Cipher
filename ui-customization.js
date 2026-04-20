@@ -54,8 +54,12 @@ const UICustomizationModule = (() => {
     const root = document.documentElement;
     const body = document.body;
 
-    // Фоновое изображение - используем фиксированный элемент для мобильной совместимости
+    // Фоновое изображение - используем ::before псевдоэлемент на #app
     if (currentTheme.bgImage) {
+      // Remove old background element if exists
+      const oldBgElement = document.getElementById('cipherFixedBackground');
+      if (oldBgElement) oldBgElement.remove();
+      
       // Remove old background styles from root/body
       root.style.backgroundImage = '';
       body.style.backgroundImage = '';
@@ -66,38 +70,49 @@ const UICustomizationModule = (() => {
       root.style.backgroundPosition = '';
       body.style.backgroundPosition = '';
       
-      // Make body/html transparent so background shows through (use !important via CSSText for max priority)
-      body.style.cssText = (body.style.cssText || '').replace(/background-color:\s*[^;]+;?/gi, '') + 'background-color: transparent !important;';
-      root.style.cssText = (root.style.cssText || '').replace(/background-color:\s*[^;]+;?/gi, '') + 'background-color: transparent !important;';
+      // Make body/html transparent
+      body.style.setProperty('background-color', 'transparent', 'important');
+      root.style.setProperty('background-color', 'transparent', 'important');
       
-      // Create or update fixed background element for mobile compatibility
-      let bgElement = document.getElementById('cipherFixedBackground');
-      if (!bgElement) {
-        bgElement = document.createElement('div');
-        bgElement.id = 'cipherFixedBackground';
-        bgElement.style.cssText = `
+      // Add class to body to indicate background image is active
+      document.body.classList.add('has-bg-image');
+      
+      // Apply background using CSS on #app::before - this works reliably
+      let bgStyle = document.getElementById('cipherBgStyle');
+      if (!bgStyle) {
+        bgStyle = document.createElement('style');
+        bgStyle.id = 'cipherBgStyle';
+        document.head.appendChild(bgStyle);
+      }
+      bgStyle.textContent = `
+        #app { position: relative !important; }
+        #app::before {
+          content: '';
           position: fixed;
           top: 0;
           left: 0;
           width: 100%;
           height: 100%;
-          z-index: -9999;
-          pointer-events: none;
+          background-image: url('${currentTheme.bgImage}');
           background-size: cover;
           background-position: center;
           background-repeat: no-repeat;
-          background-attachment: fixed;
-        `;
-        document.body.insertBefore(bgElement, document.body.firstChild);
-      }
-      bgElement.style.backgroundImage = `url(${currentTheme.bgImage})`;
-      
-      // Add class to body to indicate background image is active
-      document.body.classList.add('has-bg-image');
+          z-index: 0;
+          pointer-events: none;
+        }
+        #sidebar, #mainChat, #infoPanel, #chatHeader, #inputArea, #noChatView {
+          position: relative;
+          z-index: 1;
+        }
+      `;
     } else {
-      // Remove fixed background element
-      const bgElement = document.getElementById('cipherFixedBackground');
-      if (bgElement) bgElement.remove();
+      // Remove background style
+      const bgStyle = document.getElementById('cipherBgStyle');
+      if (bgStyle) bgStyle.remove();
+      
+      // Remove old fixed background element if exists
+      const oldBgElement = document.getElementById('cipherFixedBackground');
+      if (oldBgElement) oldBgElement.remove();
       
       // Remove background image class
       document.body.classList.remove('has-bg-image');
@@ -701,6 +716,9 @@ const UICustomizationModule = (() => {
     if (preview) preview.style.backgroundImage = 'none';
     const input = document.getElementById('bgImageInput');
     if (input) input.value = '';
+    // Also remove the background style element
+    const bgStyle = document.getElementById('cipherBgStyle');
+    if (bgStyle) bgStyle.remove();
   }
 
   function closePanel() {
