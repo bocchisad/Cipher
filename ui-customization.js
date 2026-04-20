@@ -176,11 +176,11 @@ const UICustomizationModule = (() => {
     // Прозрачность фона - применяем только к фону (overlay)
     applyBackgroundTransparency();
 
-    // Цвета
-    updateCSSVariable('--accent', currentTheme.accentColor);
-    updateCSSVariable('--accent2', currentTheme.secondaryColor);
-    updateCSSVariable('--text', currentTheme.textColor);
-    updateCSSVariable('--border', currentTheme.borderColor);
+    // ==================== ПРИМЕНЕНИЕ ТЕМЫ ====================
+    // Apply colors with !important to override default styles
+    root.style.setProperty('--accent', currentTheme.accentColor, 'important');
+    root.style.setProperty('--text', currentTheme.textColor, 'important');
+    root.style.setProperty('--border', currentTheme.borderColor, 'important');
 
     // Обновить градиенты
     if (currentTheme.useAccentGradient) {
