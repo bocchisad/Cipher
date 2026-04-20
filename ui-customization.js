@@ -60,6 +60,10 @@ const UICustomizationModule = (() => {
       root.style.backgroundPosition = '';
       body.style.backgroundPosition = '';
       
+      // Make body/html transparent so background shows through
+      body.style.backgroundColor = 'transparent';
+      root.style.backgroundColor = 'transparent';
+      
       // Create or update fixed background element for mobile compatibility
       let bgElement = document.getElementById('cipherFixedBackground');
       if (!bgElement) {
@@ -71,7 +75,7 @@ const UICustomizationModule = (() => {
           left: 0;
           width: 100vw;
           height: 100vh;
-          z-index: -2;
+          z-index: -3;
           pointer-events: none;
         `;
         document.body.insertBefore(bgElement, document.body.firstChild);
@@ -84,6 +88,11 @@ const UICustomizationModule = (() => {
       // Remove fixed background element
       const bgElement = document.getElementById('cipherFixedBackground');
       if (bgElement) bgElement.remove();
+      
+      // Restore default background colors
+      const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
+      body.style.backgroundColor = isDarkTheme ? '#0a0b0d' : '#e6e6e6';
+      root.style.backgroundColor = isDarkTheme ? '#0a0b0d' : '#e6e6e6';
       
       root.style.backgroundImage = '';
       body.style.backgroundImage = '';
@@ -162,6 +171,8 @@ const UICustomizationModule = (() => {
     updateCSSVariable('--chat-thread-bg', `rgba(${baseChatBg}, ${bgOpacity})`);
     updateCSSVariable('--mainchat-bg', `rgba(${baseChatBg}, ${bgOpacity})`);
     updateCSSVariable('--messages-bg', `rgba(${baseChatBg}, ${bgOpacity * 0.8})`);
+    // Фон главного экрана (когда чат не выбран)
+    updateCSSVariable('--welcome-bg-opacity', `rgba(${baseChatBg}, ${bgOpacity * 0.05})`);
     
     // Обновляем оверлей если есть фоновое изображение
     if (currentTheme.bgImage) {
