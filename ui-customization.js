@@ -268,29 +268,29 @@ const UICustomizationModule = (() => {
     // Фон главного экрана (когда чат не выбран)
     updateCSSVariable('--welcome-bg-opacity', `rgba(${baseChatBg}, ${bgOpacity * 0.05})`);
     
-    // Если есть фоновое изображение - применяем прозрачность к inline стилям
-    // чтобы ползунок работал даже с bgImage
-    if (currentTheme.bgImage) {
-      const mainChat = document.getElementById('mainChat');
-      const chatView = document.getElementById('chatView');
-      const messagesArea = document.getElementById('messagesArea');
-      const noChatView = document.getElementById('noChatView');
-      
-      const bgWithOpacity = `rgba(${baseChatBg}, ${bgOpacity})`;
-      
-      if (mainChat) mainChat.style.background = bgWithOpacity;
-      if (chatView) chatView.style.background = bgWithOpacity;
-      if (messagesArea) {
-        messagesArea.style.background = `rgba(${baseChatBg}, ${bgOpacity * 0.8})`;
-        if (bgOpacity < 1) {
-          messagesArea.style.backdropFilter = 'blur(2px)';
-        } else {
-          messagesArea.style.backdropFilter = 'none';
-        }
+    // ВСЕГДА применяем прозрачность к элементам чата - с bgImage или без
+    const mainChat = document.getElementById('mainChat');
+    const chatView = document.getElementById('chatView');
+    const messagesArea = document.getElementById('messagesArea');
+    const noChatView = document.getElementById('noChatView');
+    
+    const bgWithOpacity = `rgba(${baseChatBg}, ${bgOpacity})`;
+    
+    // Use !important to override CSS styles (especially light theme transparent backgrounds)
+    if (mainChat) mainChat.style.setProperty('background', bgWithOpacity, 'important');
+    if (chatView) chatView.style.setProperty('background', bgWithOpacity, 'important');
+    if (messagesArea) {
+      messagesArea.style.setProperty('background', `rgba(${baseChatBg}, ${bgOpacity * 0.8})`, 'important');
+      if (bgOpacity < 1) {
+        messagesArea.style.setProperty('backdrop-filter', 'blur(2px)', 'important');
+      } else {
+        messagesArea.style.setProperty('backdrop-filter', 'none', 'important');
       }
-      if (noChatView) noChatView.style.background = `rgba(${baseChatBg}, ${bgOpacity * 0.3})`;
-      
-      // Создаем/обновляем оверлей для регулировки видимости фона
+    }
+    if (noChatView) noChatView.style.setProperty('background', `rgba(${baseChatBg}, ${bgOpacity * 0.3})`, 'important');
+    
+    // Если есть фоновое изображение - создаем/обновляем оверлей
+    if (currentTheme.bgImage) {
       let overlay = document.getElementById('cipherBgTintOverlay');
       if (!overlay) {
         overlay = document.createElement('div');
@@ -307,8 +307,8 @@ const UICustomizationModule = (() => {
         `;
         document.body.appendChild(overlay);
       }
-      // Инвертируем opacity: при bgOpacity=1 (полный фон) overlay непрозрачный
-      // при bgOpacity=0 (прозрачный) overlay полностью прозрачный
+      // Инвертируем opacity: при bgOpacity=1 (полный фон) overlay прозрачный (виден фон)
+      // при bgOpacity=0 (прозрачный фон чата) overlay непрозрачный (скрываем bgImage)
       const overlayOpacity = 1 - bgOpacity;
       overlay.style.background = isDarkTheme 
         ? `rgba(10, 11, 13, ${overlayOpacity})` 
@@ -700,8 +700,11 @@ const UICustomizationModule = (() => {
     if (bgOpacitySlider) {
       bgOpacitySlider.addEventListener('input', (e) => {
         currentTheme.bgOpacity = parseFloat(e.target.value);
-        document.getElementById('bgOpacityValue').textContent = `${(currentTheme.bgOpacity * 100).toFixed(0)}%`;
-        applyTheme();
+        const valueEl = document.getElementById('bgOpacityValue');
+        if (valueEl) valueEl.textContent = `${(currentTheme.bgOpacity * 100).toFixed(0)}%`;
+        // Directly apply background transparency without full theme re-apply
+        applyBackgroundTransparency();
+        saveThemeToStorage();
       });
     }
 
