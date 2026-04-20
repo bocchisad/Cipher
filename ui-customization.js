@@ -48,19 +48,45 @@ const UICustomizationModule = (() => {
     const root = document.documentElement;
     const body = document.body;
 
-    // Фоновое изображение - применить к body и html
+    // Фоновое изображение - используем фиксированный элемент для мобильной совместимости
     if (currentTheme.bgImage) {
-      root.style.backgroundImage = `url(${currentTheme.bgImage})`;
-      body.style.backgroundImage = `url(${currentTheme.bgImage})`;
-      root.style.backgroundSize = 'cover';
-      body.style.backgroundSize = 'cover';
-      root.style.backgroundAttachment = 'fixed';
-      body.style.backgroundAttachment = 'fixed';
-      root.style.backgroundPosition = 'center';
-      body.style.backgroundPosition = 'center';
+      // Remove old background styles from root/body
+      root.style.backgroundImage = '';
+      body.style.backgroundImage = '';
+      root.style.backgroundSize = '';
+      body.style.backgroundSize = '';
+      root.style.backgroundAttachment = '';
+      body.style.backgroundAttachment = '';
+      root.style.backgroundPosition = '';
+      body.style.backgroundPosition = '';
+      
+      // Create or update fixed background element for mobile compatibility
+      let bgElement = document.getElementById('cipherFixedBackground');
+      if (!bgElement) {
+        bgElement = document.createElement('div');
+        bgElement.id = 'cipherFixedBackground';
+        bgElement.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100vw;
+          height: 100vh;
+          z-index: -2;
+          pointer-events: none;
+        `;
+        document.body.insertBefore(bgElement, document.body.firstChild);
+      }
+      bgElement.style.backgroundImage = `url(${currentTheme.bgImage})`;
+      bgElement.style.backgroundSize = 'cover';
+      bgElement.style.backgroundPosition = 'center';
+      bgElement.style.backgroundRepeat = 'no-repeat';
     } else {
-      root.style.backgroundImage = 'none';
-      body.style.backgroundImage = 'none';
+      // Remove fixed background element
+      const bgElement = document.getElementById('cipherFixedBackground');
+      if (bgElement) bgElement.remove();
+      
+      root.style.backgroundImage = '';
+      body.style.backgroundImage = '';
     }
 
     // Прозрачность панелей - применяем ко ВСЕМ панелям
@@ -91,7 +117,26 @@ const UICustomizationModule = (() => {
     const baseBg = isDarkTheme ? '17, 19, 24' : '255, 255, 255';
     const panelOpacity = currentTheme.panelOpacity;
     
-    // Обновляем CSS переменные - стили в CSS используют эти переменные
+    // Создаем или обновляем стиль для применения прозрачности ко всем панелям
+    let styleEl = document.getElementById('cipherPanelTransparency');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'cipherPanelTransparency';
+      document.head.appendChild(styleEl);
+    }
+    
+    // Применяем прозрачность ко всем панелям через CSS
+    styleEl.textContent = `
+      #sidebar { background: rgba(${baseBg}, ${panelOpacity}) !important; }
+      #chatList { background: rgba(${baseBg}, ${panelOpacity}) !important; }
+      #inputArea { background: rgba(${baseBg}, ${panelOpacity}) !important; }
+      #chatHeader { background: rgba(${baseBg}, ${panelOpacity}) !important; }
+      #infoPanel { background: rgba(${baseBg}, ${panelOpacity}) !important; }
+      .ui-customization-panel { background: rgba(${baseBg}, ${panelOpacity}) !important; }
+      .custom-panel-header { background: rgba(${baseBg}, ${panelOpacity}) !important; }
+    `;
+    
+    // Также обновляем CSS переменные для совместимости
     updateCSSVariable('--sidebar-bg', `rgba(${baseBg}, ${panelOpacity})`);
     updateCSSVariable('--chatlist-bg', `rgba(${baseBg}, ${panelOpacity})`);
     updateCSSVariable('--input-bg', `rgba(${baseBg}, ${panelOpacity})`);

@@ -10543,7 +10543,8 @@
         setTimeout(() => document.getElementById('msgInput')?.focus(), 50);
       };
 
-      document.getElementById('recordBtn').onclick=toggleRecord;
+      // VoiceRecordHandler manages recordBtn interactions (press-and-hold for recording, tap to toggle mode)
+      // Do not set onclick directly here - it would override the proper gesture detection
 
       document.getElementById('audioCallBtn').onclick = () => startOutgoingCall(false);
       document.getElementById('videoCallBtn').onclick = () => startOutgoingCall(true);
