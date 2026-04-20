@@ -75,19 +75,25 @@ const UICustomizationModule = (() => {
           left: 0;
           width: 100vw;
           height: 100vh;
-          z-index: -3;
+          z-index: -100;
           pointer-events: none;
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
         `;
         document.body.insertBefore(bgElement, document.body.firstChild);
       }
       bgElement.style.backgroundImage = `url(${currentTheme.bgImage})`;
-      bgElement.style.backgroundSize = 'cover';
-      bgElement.style.backgroundPosition = 'center';
-      bgElement.style.backgroundRepeat = 'no-repeat';
+      
+      // Add class to body to indicate background image is active
+      document.body.classList.add('has-bg-image');
     } else {
       // Remove fixed background element
       const bgElement = document.getElementById('cipherFixedBackground');
       if (bgElement) bgElement.remove();
+      
+      // Remove background image class
+      document.body.classList.remove('has-bg-image');
       
       // Restore default background colors
       const isDarkTheme = document.documentElement.dataset.theme === 'dark' || !document.documentElement.dataset.theme;
@@ -156,6 +162,17 @@ const UICustomizationModule = (() => {
       root.classList.add('panels-transparent');
     } else {
       root.classList.remove('panels-transparent');
+    }
+    
+    // When background image is set, make main chat areas transparent to show background
+    if (currentTheme.bgImage) {
+      styleEl.textContent += `
+        #mainChat { background: transparent !important; }
+        #noChatView { background: transparent !important; }
+        #chatView { background: transparent !important; }
+        #messagesArea { background: transparent !important; }
+        #noChatView .nc-logo, #noChatView p { display: none !important; }
+      `;
     }
   }
 
