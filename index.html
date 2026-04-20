@@ -8689,13 +8689,12 @@
       let resolvedDataUrl = voiceMeta.data;
       const isVideo = voiceMeta.isVideo;
       
-      // Конвертировать base64 в data URL если нужно
       if (isVideo && resolvedDataUrl && !resolvedDataUrl.startsWith('data:')) {
-        const mimeType = voiceMeta.mimeType || 'video/webm';
-        resolvedDataUrl = `data:${mimeType};base64,${resolvedDataUrl}`;
+        const cleanMimeType = (voiceMeta.mimeType || 'video/webm').split(';')[0];
+        resolvedDataUrl = `data:${cleanMimeType};base64,${resolvedDataUrl}`;
       } else if (!isVideo && resolvedDataUrl && !resolvedDataUrl.startsWith('data:')) {
-        const mimeType = voiceMeta.mimeType || 'audio/webm';
-        resolvedDataUrl = `data:${mimeType};base64,${resolvedDataUrl}`;
+        const cleanMimeType = (voiceMeta.mimeType || 'audio/webm').split(';')[0];
+        resolvedDataUrl = `data:${cleanMimeType};base64,${resolvedDataUrl}`;
       }
       
       // ===== ВИДЕО КРУЖОК =====
@@ -8726,13 +8725,18 @@
         video.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;background:#000';
         video.preload = 'metadata';
         video.controls = false;
-        video.src = resolvedDataUrl;
         video.playsInline = true;
-        video.muted = true;
-        video.addEventListener('loadedmetadata', () => {
-          video.currentTime = 0.1;
+        video.src = resolvedDataUrl;
+
+        video.addEventListener('loadeddata', () => {
+          if (video.readyState >= 2) {
+            video.currentTime = 0.001;
+          }
         }, { once: true });
-        video.load();
+
+        video.addEventListener('error', () => {
+          console.error('Video load error code:', video.error?.code, video.error?.message);
+        }, { once: true });
 
         circle.appendChild(video);
         
@@ -8783,13 +8787,18 @@
           if (video.paused) playIcon.style.opacity = '0.8';
         };
 
-        circle.onclick = (e) => {
+        circle.onclick = async (e) => {
           e.stopPropagation();
           if (video.paused) {
-            video.play().catch(err => {
-              console.error('❌ Video play error:', err);
-            });
-            playIcon.style.opacity = '0';
+            try {
+              await video.play();
+              playIcon.style.opacity = '0';
+            } catch (err) {
+              console.error('❌ Video play error:', err.name, err.message);
+              if (err.name === 'NotSupportedError') {
+                showToast('Формат видео не поддерживается в этом браузере');
+              }
+            }
           } else {
             video.pause();
             playIcon.style.opacity = '0.9';
@@ -12803,11 +12812,12 @@
         
         if (isVideoMode) {
           supportedTypes = [
+            'video/mp4;codecs=h264,aac',
+            'video/mp4',
+            'video/webm;codecs=h264,opus',
             'video/webm;codecs=vp9,opus',
             'video/webm;codecs=vp8,opus',
-            'video/webm;codecs=h264,opus',
-            'video/webm',
-            'video/mp4'
+            'video/webm'
           ];
         } else {
           supportedTypes = [
@@ -12821,10 +12831,15 @@
         for (const type of supportedTypes) {
           if (MediaRecorder.isTypeSupported(type)) {
             mimeType = type;
+            console.log('Selected MIME type:', mimeType);
             break;
           }
         }
-        
+
+        if (!mimeType) {
+          console.warn('No supported MIME type found, using default');
+        }
+
         const recorderOptions = mimeType ? { mimeType } : {};
         const recorder = new MediaRecorder(stream, recorderOptions);
         const chunks = [];

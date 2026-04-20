@@ -722,7 +722,6 @@ const VoiceCirclesModule = (() => {
     return voiceDiv;
   }
 
-  // Воспроизведение кружочка или голос сообщения - исправлено
   function playVoiceCircle(voiceData) {
     if (!voiceData.blob && !voiceData.audio) {
       console.error('❌ No audio data to play');
@@ -732,18 +731,13 @@ const VoiceCirclesModule = (() => {
     try {
       let blob = voiceData.blob;
       const isVideo = voiceData.isVideo || false;
-      
-      // Правильно определяем MIME type
+
       let mimeType = voiceData.mimeType;
       if (!mimeType) {
-        if (isVideo) {
-          mimeType = 'video/webm';
-        } else {
-          mimeType = 'audio/webm';
-        }
+        mimeType = isVideo ? 'video/webm' : 'audio/webm';
       }
+      const cleanMimeType = mimeType.split(';')[0];
 
-      // Если audio в base64, конвертировать в blob
       if (!blob && voiceData.audio) {
         try {
           const binaryString = atob(voiceData.audio);
@@ -751,7 +745,7 @@ const VoiceCirclesModule = (() => {
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
-          blob = new Blob([bytes], { type: mimeType });
+          blob = new Blob([bytes], { type: cleanMimeType });
         } catch (e) {
           console.error('❌ Failed to decode base64:', e);
           return;
@@ -768,14 +762,28 @@ const VoiceCirclesModule = (() => {
       if (isVideo) {
         const video = document.createElement('video');
         video.controls = true;
-        video.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);max-width:90vw;max-height:90vh;border-radius:8px;z-index:9999;';
+        video.playsInline = true;
+        video.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);max-width:90vw;max-height:90vh;border-radius:8px;z-index:9999;background:#000;';
         video.addEventListener('ended', () => {
-          document.body.removeChild(video);
+          if (video.parentNode) document.body.removeChild(video);
           URL.revokeObjectURL(url);
+        });
+        video.addEventListener('error', () => {
+          console.error('❌ Video load error in modal:', video.error);
+          if (video.parentNode) document.body.removeChild(video);
+          URL.revokeObjectURL(url);
+          if (typeof showToast === 'function') {
+            showToast('Формат видео не поддерживается');
+          }
         });
         document.body.appendChild(video);
         video.src = url;
-        video.play().catch(err => console.error('❌ Video play error:', err));
+        video.play().catch(err => {
+          console.error('❌ Video play error:', err.name, err.message);
+          if (err.name === 'NotSupportedError' && typeof showToast === 'function') {
+            showToast('Формат видео не поддерживается в этом браузере');
+          }
+        });
       } else {
         const audio = new Audio();
         audio.addEventListener('ended', () => {
