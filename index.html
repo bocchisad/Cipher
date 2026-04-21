@@ -13373,36 +13373,39 @@
           };
         }
         
+        // Кнопка отправки (overlay) - определяем первой для корректной ссылки
+        const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
+        if (sendBtn) {
+          sendBtn.onclick = (e) => {
+            if (!voiceSession) return;
+            // Проверяем, что клик был именно по кнопке отправки, а не всплыл от flip
+            if (e.target.closest('#voiceRecFlipCameraBtn')) {
+              return; // Игнорируем если клик пришел от flip кнопки
+            }
+            try {
+              voiceSession.recorder.stop();
+            } catch (_) {}
+          };
+        }
+        
         // Кнопка переворота камеры (для всех устройств при видеозаписи)
         const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
         if (flipBtn && isVideoMode) {
           flipBtn.style.display = 'flex';
           
-          // Флаг чтобы предотвратить отправку при переключении камеры
-          let isFlippingCamera = false;
-          
-          flipBtn.onmousedown = flipBtn.ontouchstart = (e) => {
+          // Используем pointerdown для единообразия на всех устройствах
+          flipBtn.onpointerdown = async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            flipBtn._isFlipping = true;
-            // Сброс флага через небольшую задержку
-            setTimeout(() => { flipBtn._isFlipping = false; }, 500);
-            return false;
-          };
-          
-          // Отдельный обработчик click
-          flipBtn.onclick = async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
             
             if (!voiceSession || !voiceSession.recorder || voiceSession.recorder.state === 'inactive') {
               showToast('Запись не активна');
               return;
             }
             
-            // Устанавливаем флаг на время переключения
-            flipBtn._isFlipping = true;
+            // Отключаем кнопку на время переключения
+            flipBtn.disabled = true;
+            flipBtn.style.opacity = '0.5';
             
             try {
               // Переключить facingMode
@@ -13425,21 +13428,18 @@
                 const newVideoTrack = newVideoTracks[0];
                 const oldVideoTrack = voiceSession.stream.getVideoTracks()[0];
                 
-                // Используем replaceTrack чтобы MediaRecorder не остановился
+                // Заменяем трек: останавливаем старый, добавляем новый
                 if (oldVideoTrack) {
-                  // Останавливаем старый трек
                   oldVideoTrack.stop();
-                  // Удаляем из потока
                   voiceSession.stream.removeTrack(oldVideoTrack);
                 }
-                // Добавляем новый трек
                 voiceSession.stream.addTrack(newVideoTrack);
                 
                 // Обновляем video element
                 const videoEl = document.getElementById('voiceRecordingVideo');
                 if (videoEl) {
                   videoEl.srcObject = voiceSession.stream;
-                  videoEl.play().catch(err => console.warn('Video play error:', err));
+                  // Не вызываем play() принудительно - пусть работает автоплей
                 }
                 
                 showToast('Камера переключена', { duration: 1000 });
@@ -13448,25 +13448,10 @@
               console.error('Failed to flip camera:', e);
               showToast('Не удалось переключить камеру: ' + (e.message || e.name));
             } finally {
-              // Сбрасываем флаг
-              setTimeout(() => { flipBtn._isFlipping = false; }, 300);
+              // Включаем кнопку обратно
+              flipBtn.disabled = false;
+              flipBtn.style.opacity = '';
             }
-          };
-        }
-        
-        // Кнопка отправки (overlay) - после flipBtn для правильной проверки флага
-        const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
-        if (sendBtn) {
-          sendBtn.onclick = (e) => {
-            if (!voiceSession) return;
-            // Проверяем флаг переключения камеры
-            if (flipBtn && flipBtn._isFlipping) {
-              flipBtn._isFlipping = false;
-              return;
-            }
-            try {
-              voiceSession.recorder.stop();
-            } catch (_) {}
           };
         }
         
