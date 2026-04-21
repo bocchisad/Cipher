@@ -1576,7 +1576,7 @@
             </div>
             <div class="voice-rec-overlay-timer" id="voiceRecOverlayTimer">0:00</div>
             <div class="voice-rec-overlay-controls">
-              <button type="button" class="voice-rec-overlay-btn ghost" id="voiceRecFlipCameraBtn" title="Перевернуть камеру" style="display:none"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 19H4.8A2.8 2.8 0 0 1 2 16.2V7.8A2.8 2.8 0 0 1 4.8 5h14.4A2.8 2.8 0 0 1 22 7.8V11"/><path d="M23 16v6h-6"/><path d="M20 18A7 7 0 0 1 6.6 17"/></svg></button>
+              <button type="button" class="voice-rec-overlay-btn ghost" id="voiceRecFlipCameraBtn" title="Перевернуть камеру" style="display:none"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
               <button type="button" class="voice-rec-overlay-btn ghost" id="voiceRecPauseBtnOverlay" title="Пауза">⏸</button>
               <button type="button" class="voice-rec-overlay-btn danger" id="voiceRecOverlayCancelBtn" title="Отмена">✕</button>
               <button type="button" class="voice-rec-overlay-btn primary" id="voiceRecOverlaySendBtn" title="Отправить">✓</button>
@@ -8792,16 +8792,21 @@
         
         const video = document.createElement('video');
         video.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:50%;background:#000';
-        video.preload = 'metadata';
+        video.preload = 'auto';
         video.controls = false;
         video.playsInline = true;
+        video.muted = true;
         video.src = resolvedDataUrl;
 
+        // Загружаем первый кадр как превью
         video.addEventListener('loadeddata', () => {
           if (video.readyState >= 2) {
-            video.currentTime = 0.001;
+            video.currentTime = 0.1;
           }
         }, { once: true });
+
+        // Запускаем загрузку для получения кадра
+        video.load();
 
         video.addEventListener('error', () => {
           console.error('Video load error code:', video.error?.code, video.error?.message);

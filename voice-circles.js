@@ -210,17 +210,17 @@ const VoiceCirclesModule = (() => {
     progress.id = 'circleVideoProgress';
     progress.style.cssText = `
       position: absolute;
-      top: -6px;
-      left: -6px;
-      right: -6px;
-      bottom: -6px;
+      top: -8px;
+      left: -8px;
+      right: -8px;
+      bottom: -8px;
       border-radius: 50%;
-      background: conic-gradient(var(--accent) 0deg, transparent 0deg);
+      background: conic-gradient(var(--accent) 0deg, rgba(79, 142, 247, 0.2) 0deg);
       z-index: 3;
       pointer-events: none;
       transition: background 0.1s linear;
-      -webkit-mask: radial-gradient(circle, transparent 68%, black 69%);
-      mask: radial-gradient(circle, transparent 68%, black 69%);
+      -webkit-mask: radial-gradient(circle, transparent 65%, black 66%);
+      mask: radial-gradient(circle, transparent 65%, black 66%);
     `;
 
     const bigCircle = document.getElementById('voiceBigCircle');
@@ -242,7 +242,8 @@ const VoiceCirclesModule = (() => {
     
     // Цвет меняется от синего к красному при приближении к лимиту
     const color = percent > 0.9 ? '#e74c3c' : 'var(--accent)';
-    progress.style.background = `conic-gradient(${color} ${degrees}deg, transparent ${degrees}deg)`;
+    const bgColor = 'rgba(79, 142, 247, 0.2)';
+    progress.style.background = `conic-gradient(${color} ${degrees}deg, ${bgColor} ${degrees}deg)`;
   }
 
   // Удалить круговой прогресс
