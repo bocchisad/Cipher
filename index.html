@@ -465,14 +465,15 @@
     @keyframes recordPulse{0%{transform:scale(1)};50%{transform:scale(1.08)};100%{transform:scale(1)}}
     .voice-big-circle svg{width:80px;height:80px;color:#fff;position:absolute;z-index:1}
     .voice-big-circle video{position:absolute;width:100%;height:100%;border-radius:50%;object-fit:cover;z-index:2}
-    .voice-rec-overlay-controls{display:flex;gap:12px;justify-content:center}
-    .voice-rec-overlay-btn{width:52px;height:52px;border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:600;transition:transform .1s}
+    .voice-rec-overlay-controls{display:flex;gap:12px;justify-content:center;pointer-events:auto;z-index:10001}
+    .voice-rec-overlay-btn{width:52px;height:52px;border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:600;transition:transform .1s;pointer-events:auto;position:relative;z-index:auto}
     .voice-rec-overlay-btn.primary{background:var(--accent);color:#fff}
     .voice-rec-overlay-btn.primary:active{transform:scale(.92)}
     .voice-rec-overlay-btn.ghost{background:rgba(255,255,255,.15);color:#fff}
     .voice-rec-overlay-btn.ghost:active{transform:scale(.92)}
     .voice-rec-overlay-btn.danger{background:rgba(255,100,100,.8);color:#fff}
     .voice-rec-overlay-btn.danger:active{transform:scale(.92)}
+    .voice-rec-overlay-btn:disabled{opacity:0.5;cursor:not-allowed;pointer-events:none}
     .voice-rec-overlay-video{position:absolute;width:100%;height:100%;object-fit:cover;border-radius:50%;display:none;z-index:2}
     .voice-rec-overlay-video.active{display:block}
     .voice-rec-overlay-timer{font-size:24px;color:#fff;font-variant-numeric:tabular-nums;min-width:100px;text-align:center}
@@ -13086,11 +13087,12 @@
           video: isVideoMode ? { 
             width: { ideal: 720 },
             height: { ideal: 1280 },
-            facingMode: 'user'
+            facingMode: { ideal: 'user' }  // Используем 'ideal' для лучшей поддержки на мобильных
           } : false
         };
         
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        console.log('✅ Got media stream, video tracks:', stream.getVideoTracks().length);
         
         // MIME type - выбрать видео или аудио
         let mimeType = '';
@@ -13189,19 +13191,31 @@
         };
         tick();
         
-        // ==================== ЗАЩИТА OVERLAY ОТ СЛУЧАЙНЫХ КЛИКО ====================
+        // ==================== ЗАЩИТА OVERLAY ОТ СЛУЧАЙНЫХ КЛИКОВ ====================
         // Добавляем обработчик к самому overlay для предотвращения всплытия событий
         const overlay = document.getElementById('voiceRecordingOverlay');
         if (overlay) {
-          const preventPropagation = (e) => {
-            // Если клик не на кнопках внутри overlay - останавливаем
-            if (!e.target.closest('.voice-rec-overlay-btn') && !e.target.closest('#voiceRecordingOverlay > *')) {
+          // Запрещаем любые клики за пределами элементов overlay
+          overlay.addEventListener('click', (e) => {
+            // Если клик прямо на overlay - предотвращаем
+            if (e.target === overlay) {
+              e.preventDefault();
               e.stopPropagation();
+              e.stopImmediatePropagation();
             }
-          };
-          overlay.addEventListener('click', preventPropagation, true);
-          overlay.addEventListener('touchstart', preventPropagation, { passive: true, capture: true });
-          overlay.addEventListener('touchend', preventPropagation, { capture: true });
+          }, { capture: true });
+          
+          // Более агрессивная защита - перехватываем все события
+          ['mousedown', 'mouseup', 'touchstart', 'touchend', 'pointerdown', 'pointerup'].forEach(eventType => {
+            overlay.addEventListener(eventType, (e) => {
+              // Если это клик на самом overlay а не на кнопке - блокируем
+              if (e.target === overlay || !e.target.closest('button')) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+              }
+            }, { capture: true, passive: false });
+          });
         }
         
         // Настройка UI в зависимости от режима
@@ -13400,96 +13414,178 @@
         const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
         if (flipBtn && isVideoMode) {
           flipBtn.style.display = 'flex';
+          flipBtn.style.touchAction = 'manipulation'; // Убираем 300мс delay на мобильных
+          
+          // Флаг чтобы избежать двойного клика
+          let flipInProgress = false;
           
           // Функция переключения камеры
-          const doFlipCamera = async () => {
+          const doFlipCamera = async (e) => {
+            // Дополнительная защита от двойного клика
+            if (flipInProgress) {
+              console.log('⏳ Flip already in progress, ignoring click');
+              return;
+            }
+            
             if (!voiceSession || !voiceSession.recorder || voiceSession.recorder.state === 'inactive') {
+              console.error('❌ Recording not active for flip');
               showToast('Запись не активна');
               return;
             }
             
+            flipInProgress = true;
+            
             // Устанавливаем флаг времени для блокировки sendBtn
             voiceSession._justFlipped = Date.now();
+            voiceSession._flippingInProgress = true;
             
             // Отключаем кнопку на время переключения
             flipBtn.disabled = true;
             flipBtn.style.opacity = '0.5';
+            flipBtn.style.pointerEvents = 'none';
             
             try {
+              console.log('🔄 Starting camera flip, current facingMode:', voiceSession.facingMode);
+              
               // Переключить facingMode
               const newFacingMode = voiceSession.facingMode === 'user' ? 'environment' : 'user';
-              voiceSession.facingMode = newFacingMode;
+              console.log('🔄 Requesting new camera with facingMode:', newFacingMode);
               
               // Запросить новый поток с другой камерой
-              const newStream = await navigator.mediaDevices.getUserMedia({
-                audio: false,
-                video: {
-                  width: { ideal: 720 },
-                  height: { ideal: 1280 },
-                  facingMode: newFacingMode
-                }
-              });
+              const newStream = await Promise.race([
+                navigator.mediaDevices.getUserMedia({
+                  audio: false,
+                  video: {
+                    width: { ideal: 720 },
+                    height: { ideal: 1280 },
+                    facingMode: { ideal: newFacingMode }
+                  }
+                }),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('getUserMedia timeout')), 5000)
+                )
+              ]);
+              
+              console.log('✅ Got new media stream');
               
               // Получить новый видеотрек
               const newVideoTracks = newStream.getVideoTracks();
-              if (newVideoTracks.length > 0) {
-                const newVideoTrack = newVideoTracks[0];
-                const oldVideoTrack = voiceSession.stream.getVideoTracks()[0];
-                
-                // Заменяем трек: останавливаем старый, добавляем новый
-                if (oldVideoTrack) {
-                  oldVideoTrack.stop();
-                  voiceSession.stream.removeTrack(oldVideoTrack);
-                }
-                voiceSession.stream.addTrack(newVideoTrack);
-                
-                // Обновляем video element
-                const videoEl = document.getElementById('voiceRecordingVideo');
-                if (videoEl) {
-                  videoEl.srcObject = voiceSession.stream;
-                }
-                
-                showToast('Камера переключена', { duration: 1000 });
+              if (newVideoTracks.length === 0) {
+                throw new Error('No video tracks in new stream');
               }
+              
+              const newVideoTrack = newVideoTracks[0];
+              const oldVideoTracks = voiceSession.stream.getVideoTracks();
+              
+              console.log('✅ Got video track, old tracks count:', oldVideoTracks.length);
+              
+              // Заменяем трек в существующем потоке
+              if (oldVideoTracks.length > 0) {
+                const oldVideoTrack = oldVideoTracks[0];
+                
+                // Удаляем старый, добавляем новый
+                voiceSession.stream.removeTrack(oldVideoTrack);
+                voiceSession.stream.addTrack(newVideoTrack);
+                oldVideoTrack.stop();
+                console.log('✅ Replaced video track');
+              } else {
+                voiceSession.stream.addTrack(newVideoTrack);
+                console.log('✅ Added new video track');
+              }
+              
+              // Обновляем video element
+              const videoEl = document.getElementById('voiceRecordingVideo');
+              if (videoEl) {
+                videoEl.srcObject = voiceSession.stream;
+                console.log('✅ Updated video element srcObject');
+              }
+              
+              // Обновляем facingMode в session
+              voiceSession.facingMode = newFacingMode;
+              
+              showToast(newFacingMode === 'user' ? '📱 Фронтальная камера' : '🔙 Задняя камера', { duration: 800 });
+              console.log('✅ Camera flip completed, new facingMode:', newFacingMode);
             } catch (e) {
-              console.error('Failed to flip camera:', e);
-              showToast('Не удалось переключить камеру: ' + (e.message || e.name));
+              console.error('❌ Failed to flip camera:', e.name, e.message);
+              
+              let errorMsg = 'Не удалось переключить камеру';
+              if (e.name === 'NotFoundError') {
+                errorMsg = 'На устройстве только одна камера';
+              } else if (e.name === 'NotAllowedError') {
+                errorMsg = 'Разрешите доступ к камере';
+              } else if (e.name === 'NotReadableError') {
+                errorMsg = 'Камера занята другим приложением';
+              } else if (e.message === 'getUserMedia timeout') {
+                errorMsg = 'Превышен таймаут при переключении камеры';
+              }
+              showToast(errorMsg);
             } finally {
               // Включаем кнопку обратно
               flipBtn.disabled = false;
               flipBtn.style.opacity = '';
+              flipBtn.style.pointerEvents = '';
+              voiceSession._flippingInProgress = false;
+              
+              // Продлеваем флаг еще на время (1.5 секунды)
+              voiceSession._justFlipped = Date.now();
+              
+              flipInProgress = false;
             }
           };
           
-          // Устанавливаем обработчик click с блокировкой всплытия
+          // Основной обработчик click
           flipBtn.onclick = async (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-            await doFlipCamera();
+            console.log('🖱️ Flip button clicked (mouse)');
+            await doFlipCamera(e);
             return false;
           };
           
-          // Для мобильных устройств — блокируем touch события (touchstart должна быть НЕ passive!)
+          // Обработчик touchstart - просто останавливаем событие
           flipBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-            // Сразу устанавливаем флаг при touch начале
+            console.log('👆 Flip button touchstart');
             if (voiceSession) {
               voiceSession._justFlipped = Date.now();
             }
-          }, { passive: false });
+          }, { passive: false, capture: true });
           
+          // Обработчик touchend - вызываем flip
           flipBtn.addEventListener('touchend', async (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-            await doFlipCamera();
+            console.log('👆 Flip button touchend');
+            await doFlipCamera(e);
             return false;
-          }, { passive: false });
+          }, { passive: false, capture: true });
           
-          // Также предотвращаем mousedown/mouseup на кнопке от влияния на запись
+          // Блокируем pointerdown
+          flipBtn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('☝️ Flip button pointerdown');
+            if (voiceSession) {
+              voiceSession._justFlipped = Date.now();
+            }
+          }, { passive: false, capture: true });
+          
+          // Блокируем pointerup
+          flipBtn.addEventListener('pointerup', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('☝️ Flip button pointerup');
+            await doFlipCamera(e);
+            return false;
+          }, { passive: false, capture: true });
+          
+          // Дополнительная защита - блокируем любые mousedown/mouseup
           flipBtn.addEventListener('mousedown', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -13497,27 +13593,34 @@
             if (voiceSession) {
               voiceSession._justFlipped = Date.now();
             }
-          });
+          }, { passive: false, capture: true });
           
           flipBtn.addEventListener('mouseup', (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-          });
+          }, { passive: false, capture: true });
         }
         
-        // Кнопка отправки (overlay)
+        // Кнопка отправки (overlay) - с тройной защитой
         const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
         if (sendBtn) {
+          // Главная проверка на блокировку
+          const isFlipInProgress = () => {
+            if (!voiceSession || !voiceSession._justFlipped) return false;
+            const timeSinceFlip = Date.now() - voiceSession._justFlipped;
+            return timeSinceFlip < 1500;
+          };
+          
+          // Основной обработчик click
           sendBtn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
             
-            if (!voiceSession) return;
+            if (!voiceSession) return false;
             
-            // Блокируем отправку если только что был flip (в течение 1000мс)
-            if (voiceSession._justFlipped && (Date.now() - voiceSession._justFlipped) < 1000) {
+            if (isFlipInProgress()) {
               console.log('🔒 Send blocked: camera flip in progress');
               return false;
             }
@@ -13529,10 +13632,85 @@
             return false;
           };
           
-          // Дополнительная защита от случайного клика
+          // Обработчик touchstart (НЕ passive!)
           sendBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
             e.stopPropagation();
-          }, { passive: true });
+            e.stopImmediatePropagation();
+            
+            if (isFlipInProgress()) {
+              console.log('🔒 Touchstart blocked: flip in progress');
+              return false;
+            }
+          }, { passive: false, capture: true });
+          
+          // Обработчик touchend
+          sendBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            
+            if (!voiceSession) return false;
+            
+            if (isFlipInProgress()) {
+              console.log('🔒 Touchend blocked: flip in progress');
+              return false;
+            }
+            
+            try {
+              voiceSession.recorder.stop();
+            } catch (_) {}
+            
+            return false;
+          }, { passive: false, capture: true });
+          
+          // Обработчик mousedown
+          sendBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            
+            if (isFlipInProgress()) {
+              console.log('🔒 Mousedown blocked: flip in progress');
+              return false;
+            }
+          }, { passive: false, capture: true });
+          
+          // Обработчик mouseup
+          sendBtn.addEventListener('mouseup', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            
+            if (isFlipInProgress()) {
+              console.log('🔒 Mouseup blocked: flip in progress');
+              return false;
+            }
+          }, { passive: false, capture: true });
+          
+          // Обработчик pointerdown
+          sendBtn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            
+            if (isFlipInProgress()) {
+              console.log('🔒 Pointerdown blocked: flip in progress');
+              return false;
+            }
+          }, { passive: false, capture: true });
+          
+          // Обработчик pointerup
+          sendBtn.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            
+            if (isFlipInProgress()) {
+              console.log('🔒 Pointerup blocked: flip in progress');
+              return false;
+            }
+          }, { passive: false, capture: true });
         }
         
       } catch (e) {
