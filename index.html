@@ -9448,11 +9448,16 @@
       if(type==='image') return '📷 Фото';
       if(type==='voice') {
         // Проверяем, является ли voice сообщение видео-кружком
-        try {
-          const parsed = JSON.parse(content);
-          if (parsed && parsed.isVideo) return '🎬 Видеосообщение';
-        } catch {}
-        return '🎵 Голосовое';
+        let isVideo = false;
+        if (content && typeof content === 'object' && content.isVideo) {
+          isVideo = true;
+        } else if (typeof content === 'string') {
+          try {
+            const parsed = JSON.parse(content);
+            if (parsed && parsed.isVideo) isVideo = true;
+          } catch {}
+        }
+        return isVideo ? '🎬 Видеосообщение' : '🎵 Голосовое';
       }
       if(type==='video') return '🎬 Видео';
       if (type === 'poll') return 'Опрос';
@@ -9460,7 +9465,7 @@
         try { return '📎 ' + JSON.parse(content).name; } catch { return '📎 Файл'; }
       }
       if (type === 'call-log') return String(content || '').slice(0, 40);
-      return content && content.length > 50 ? content.slice(0,50)+'...' : (content||'');
+      return content && typeof content === 'string' && content.length > 50 ? content.slice(0,50)+'...' : (content||'');
     }
 
     function updateLastMessage(chatId, content, ts, type){
@@ -13032,7 +13037,7 @@
           url = voiceMeta.data || m.content;
           duration = voiceMeta.duration;
           // Если это видео-кружок, меняем название
-          title = voiceMeta.isVideo ? '<svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style="display:inline-block;margin-right:4px;vertical-align:text-bottom;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>Видео-кружок' : 'Голосовое сообщение';
+          title = voiceMeta.isVideo ? '🎬 Видео-кружок' : '🎵 Голосовое сообщение';
         } else if (m.type === 'file') {
           try {
             const fd = JSON.parse(m.content);
@@ -13318,22 +13323,6 @@
           };
         }
         
-        // Кнопка отправки (overlay)
-        const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
-        if (sendBtn) {
-          sendBtn.onclick = () => {
-            if (!voiceSession) return;
-            // Проверяем флаг переключения камеры
-            if (flipBtn && flipBtn._isFlipping) {
-              flipBtn._isFlipping = false;
-              return;
-            }
-            try {
-              voiceSession.recorder.stop();
-            } catch (_) {}
-          };
-        }
-
         // ===== КНОПКИ ДЛЯ КОМПАКТНОГО БАРА (обычное аудио) =====
         // Кнопка паузы в компактном баре
         const compactPauseBtn = document.getElementById('voiceRecPauseBtn');
@@ -13405,6 +13394,7 @@
           flipBtn.onclick = async (e) => {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
             
             if (!voiceSession || !voiceSession.recorder || voiceSession.recorder.state === 'inactive') {
               showToast('Запись не активна');
@@ -13461,6 +13451,22 @@
               // Сбрасываем флаг
               setTimeout(() => { flipBtn._isFlipping = false; }, 300);
             }
+          };
+        }
+        
+        // Кнопка отправки (overlay) - после flipBtn для правильной проверки флага
+        const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
+        if (sendBtn) {
+          sendBtn.onclick = (e) => {
+            if (!voiceSession) return;
+            // Проверяем флаг переключения камеры
+            if (flipBtn && flipBtn._isFlipping) {
+              flipBtn._isFlipping = false;
+              return;
+            }
+            try {
+              voiceSession.recorder.stop();
+            } catch (_) {}
           };
         }
         
