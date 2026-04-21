@@ -81,11 +81,18 @@ const VoiceRecordHandler = (() => {
       holdTimer = null;
     }
 
+    // Проверяем, не был ли только что клик на flip camera (блокируем остановку записи)
+    const justFlipped = typeof voiceSession !== 'undefined' && voiceSession &&
+      voiceSession._justFlipped && (Date.now() - voiceSession._justFlipped) < 500;
+
     if (isHolding) {
       const isRecordingActive = typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder &&
         (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused');
 
-      if (isLocked && isRecordingActive) {
+      if (justFlipped) {
+        // Если только что переключили камеру - не останавливаем запись
+        console.log('Recording continues after camera flip');
+      } else if (isLocked && isRecordingActive) {
         console.log('Recording locked - continuing');
       } else if (isRecordingActive) {
         const sendBtn = document.getElementById('voiceRecOverlaySendBtn') || document.getElementById('voiceRecSendBtn');
