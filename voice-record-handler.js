@@ -11,6 +11,7 @@ const VoiceRecordHandler = (() => {
   let isLocked = false; // Блокировка записи (свайп вверх)
   let startY = 0;
   let currentY = 0;
+  let ignoreNextUp = false; // Блокировка onRecordBtnUp при клике на кнопки overlay
   
   const HOLD_THRESHOLD = 300; // минимум 300мс чтобы считать за долгое нажатие
   const SWIPE_THRESHOLD = 60; // минимальное расстояние свайпа для блокировки
@@ -36,6 +37,13 @@ const VoiceRecordHandler = (() => {
     newBtn.addEventListener('mouseup', onRecordBtnUp);
     newBtn.addEventListener('mouseleave', onRecordBtnLeave);
 
+    // CRITICAL: Добавляем pointer события для современных браузеров/устройств
+    // Это предотвращает проблемы когда pointer события вызывают mouseup
+    newBtn.addEventListener('pointerdown', onPointerDown);
+    newBtn.addEventListener('pointerup', onPointerUp);
+    newBtn.addEventListener('pointerleave', onPointerLeave);
+    newBtn.addEventListener('pointercancel', onPointerUp);
+
     // Для мобильных устройств добавить touch события
     newBtn.addEventListener('touchstart', onTouchStart, { passive: false });
     newBtn.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -43,6 +51,36 @@ const VoiceRecordHandler = (() => {
     newBtn.addEventListener('touchcancel', onTouchEnd, { passive: false });
 
     console.log('Record handler initialized (with swipe lock)');
+  }
+
+  // ==================== POINTER EVENTS ====================
+  // Отдельные обработчики для pointer событий
+  function onPointerDown(e) {
+    // Если цель события - не recordBtn (например кнопка в overlay), игнорируем
+    const recordBtn = document.getElementById('recordBtn');
+    if (e.target !== recordBtn && !recordBtn.contains(e.target)) {
+      return;
+    }
+    onRecordBtnDown(e);
+  }
+
+  function onPointerUp(e) {
+    // Если цель события - не recordBtn, игнорируем полностью
+    const recordBtn = document.getElementById('recordBtn');
+    if (e.target !== recordBtn && !recordBtn.contains(e.target)) {
+      console.log('🛡️ onPointerUp ignored: target is not recordBtn, target:', e.target.id || e.target.className);
+      return;
+    }
+    onRecordBtnUp(e);
+  }
+
+  function onPointerLeave(e) {
+    // Если цель события - не recordBtn, игнорируем
+    const recordBtn = document.getElementById('recordBtn');
+    if (e.target !== recordBtn && !recordBtn.contains(e.target)) {
+      return;
+    }
+    onRecordBtnLeave(e);
   }
 
   // ==================== MOUSE EVENTS ====================
@@ -74,6 +112,12 @@ const VoiceRecordHandler = (() => {
 
   // Обработчик mouseleave — не останавливает запись если overlay активен
   function onRecordBtnLeave(e) {
+    // Если событие не на recordBtn, игнорируем
+    const recordBtn = document.getElementById('recordBtn');
+    if (e && e.target && e.target !== recordBtn && !recordBtn.contains(e.target)) {
+      return;
+    }
+
     const isRecordingActive = typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder &&
       (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused');
     
@@ -99,6 +143,18 @@ const VoiceRecordHandler = (() => {
   }
 
   function onRecordBtnUp(e) {
+    // CRITICAL FIX: Проверяем флаг блокировки (ставится при клике на кнопки overlay)
+    if (ignoreNextUp) {
+      console.log('🛡️ onRecordBtnUp blocked by ignoreNextUp flag');
+      ignoreNextUp = false;
+      isHolding = false;
+      if (holdTimer) {
+        clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+      return;
+    }
+
     // CRITICAL FIX: Проверяем, что событие действительно произошло на кнопке записи,
     // а не всплыло/пропагировало с других элементов (например, кнопки flip camera)
     const recordBtn = document.getElementById('recordBtn');
@@ -222,9 +278,16 @@ const VoiceRecordHandler = (() => {
     return isLocked;
   }
 
+  // Функция для блокировки следующего onRecordBtnUp (используется при клике на кнопки overlay)
+  function setIgnoreNextUp(value) {
+    ignoreNextUp = value;
+    console.log('🛡️ ignoreNextUp set to:', value);
+  }
+
   return {
     init,
-    isRecordingLocked
+    isRecordingLocked,
+    setIgnoreNextUp
   };
 })();
 
