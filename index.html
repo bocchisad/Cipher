@@ -8815,6 +8815,7 @@
         circle.appendChild(video);
         
         const playIcon = document.createElement('div');
+        playIcon.className = 'video-circle-playicon';
         playIcon.style.cssText = `
           position:absolute;
           width:50px;
@@ -8861,26 +8862,12 @@
           if (video.paused) playIcon.style.opacity = '0.8';
         };
 
+        // Клик по кружку - запускаем в глобальном аудиоплеере (как голосовое)
         circle.onclick = async (e) => {
           e.stopPropagation();
-          if (video.paused) {
-            try {
-              await video.play();
-              playIcon.style.opacity = '0';
-            } catch (err) {
-              console.error('❌ Video play error:', err.name, err.message);
-              if (err.name === 'NotSupportedError') {
-                showToast('Формат видео не поддерживается в этом браузере');
-              }
-            }
-          } else {
-            video.pause();
-            playIcon.style.opacity = '0.9';
-          }
-        };
-
-        video.onended = () => {
-          playIcon.style.opacity = '0.8';
+          // FIX: Используем глобальный аудиоплеер как для обычных голосовых
+          const allMsgs = await dbGetByIndex('messages', 'chatId', activeChat);
+          playAudioFromMessage(msg, allMsgs);
         };
 
         container.appendChild(circle);
@@ -12708,6 +12695,28 @@
       const msgEl = document.querySelector(`#messagesArea .msg[data-ts="${ts}"]`);
       if (!msgEl) return;
 
+      // Проверяем, является ли это видео-кружком
+      const videoCircle = msgEl.querySelector('.video-circle');
+      if (videoCircle) {
+        // Обновляем UI видео-кружка
+        const playIcon = videoCircle.querySelector('.video-circle-playicon');
+        const videoEl = videoCircle.querySelector('video');
+        if (playIcon) {
+          playIcon.innerHTML = isPlaying ? '⏸' : '▶';
+          playIcon.style.opacity = isPlaying ? '0' : '0.8';
+        }
+        if (videoEl) {
+          if (isPlaying) {
+            videoCircle.style.boxShadow = '0 0 30px rgba(79, 142, 247, 0.6)';
+            videoCircle.style.borderColor = 'var(--accent2)';
+          } else {
+            videoCircle.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+            videoCircle.style.borderColor = 'var(--accent)';
+          }
+        }
+        return;
+      }
+
       const btn = msgEl.querySelector('.voice-play');
       const fill = msgEl.querySelector('.voice-fill');
       const dur = msgEl.querySelector('.voice-dur');
@@ -12827,11 +12836,12 @@
         let duration = null;
 
         if (m.type === 'voice') {
-          title = 'Голосовое сообщение';
-          // FIX: Parse voice content to extract data URL
+          // FIX: Parse voice content to extract data URL и проверить isVideo
           const voiceMeta = parseVoiceContent(m.content);
           url = voiceMeta.data || m.content;
           duration = voiceMeta.duration;
+          // Если это видео-кружок, меняем название
+          title = voiceMeta.isVideo ? '📹 Видео-кружок' : 'Голосовое сообщение';
         } else if (m.type === 'file') {
           try {
             const fd = JSON.parse(m.content);
@@ -12848,8 +12858,14 @@
         return { url, title, from: fromName, ts: m.ts, type: m.type, duration };
       });
 
-      // Find current index
+      // Find current index (поддержка как audio так и video типов)
       globalAudioIndex = globalAudioPlaylist.findIndex(t => t.ts === msg.ts);
+      if (globalAudioIndex === -1) {
+        // Если не нашли по ts, пробуем найти по URL
+        const voiceMeta = parseVoiceContent(msg.content);
+        const targetUrl = voiceMeta.data || msg.content;
+        globalAudioIndex = globalAudioPlaylist.findIndex(t => t.url === targetUrl);
+      }
       if (globalAudioIndex === -1) globalAudioIndex = 0;
 
       loadAndPlayGlobalAudio(globalAudioPlaylist[globalAudioIndex]);
