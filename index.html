@@ -13077,9 +13077,16 @@
       }
       try {
         // Проверить режим - аудио или видео
-        const isVideoMode = typeof VoiceCirclesModule !== 'undefined' && 
-                            typeof VoiceCirclesModule.getCircleMode === 'function' && 
-                            VoiceCirclesModule.getCircleMode();
+        const circleMode = typeof VoiceCirclesModule !== 'undefined' && 
+                           typeof VoiceCirclesModule.getCircleMode === 'function' && 
+                           VoiceCirclesModule.getCircleMode();
+        const isVideoMode = circleMode;
+        
+        console.log('🎬 toggleRecord called');
+        console.log('🎬 VoiceCirclesModule available?', typeof VoiceCirclesModule !== 'undefined');
+        console.log('🎬 getCircleMode function exists?', typeof VoiceCirclesModule?.getCircleMode === 'function');
+        console.log('🎬 circleMode value:', circleMode);
+        console.log('🎬 isVideoMode:', isVideoMode);
 
         // Запрос медиа в зависимости от режима (кружки - 720p с ограничением битрейта)
         let constraints = { 
@@ -13092,7 +13099,13 @@
         };
         
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log('✅ Got media stream, video tracks:', stream.getVideoTracks().length);
+        console.log('✅ Got media stream');
+        console.log('📹 Video tracks count:', stream.getVideoTracks().length);
+        console.log('🎤 Audio tracks count:', stream.getAudioTracks().length);
+        if (stream.getVideoTracks().length > 0) {
+          const videoTrack = stream.getVideoTracks()[0];
+          console.log('📹 Video track settings:', videoTrack.getSettings());
+        }
         
         // MIME type - выбрать видео или аудио
         let mimeType = '';
@@ -13221,11 +13234,18 @@
         // Настройка UI в зависимости от режима
         if (isVideoMode) {
           // Видеокружки - полноэкранный overlay
+          console.log('🎥 SETTING UP VIDEO MODE!');
           document.getElementById('voiceRecordingOverlay')?.classList.add('active');
+          console.log('🎥 Overlay active class added');
           if (typeof VoiceCirclesModule !== 'undefined') {
+            console.log('🎥 Calling setupVideoModeUI with stream:', stream);
             VoiceCirclesModule.setupVideoModeUI?.(stream);
+            console.log('🎥 setupVideoModeUI called');
+          } else {
+            console.error('❌ VoiceCirclesModule not available!');
           }
         } else {
+          console.log('🔊 SETTING UP AUDIO MODE');
           // Обычное аудио - компактный бар
           document.getElementById('voiceRecordBar')?.classList.add('active');
           document.getElementById('inputArea')?.classList.add('recording');
