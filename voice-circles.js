@@ -201,7 +201,7 @@ const VoiceCirclesModule = (() => {
   }
 
   // ==================== КРУГОВАЯ ШКАЛА ДЛЯ ВИДЕОКРУЖКОВ ====================
-  // Создать круговой прогресс бар вокруг видео
+  // Создать круговой прогресс бар вокруг видео (только кольцо, не закрывает центр)
   function createCircularProgress() {
     let progress = document.getElementById('circleVideoProgress');
     if (progress) progress.remove();
@@ -210,30 +210,18 @@ const VoiceCirclesModule = (() => {
     progress.id = 'circleVideoProgress';
     progress.style.cssText = `
       position: absolute;
-      top: -8px;
-      left: -8px;
-      right: -8px;
-      bottom: -8px;
+      top: -6px;
+      left: -6px;
+      right: -6px;
+      bottom: -6px;
       border-radius: 50%;
       background: conic-gradient(var(--accent) 0deg, transparent 0deg);
       z-index: 3;
       pointer-events: none;
       transition: background 0.1s linear;
+      -webkit-mask: radial-gradient(circle, transparent 68%, black 69%);
+      mask: radial-gradient(circle, transparent 68%, black 69%);
     `;
-
-    const mask = document.createElement('div');
-    mask.style.cssText = `
-      position: absolute;
-      top: 4px;
-      left: 4px;
-      right: 4px;
-      bottom: 4px;
-      border-radius: 50%;
-      background: transparent;
-      z-index: 4;
-      pointer-events: none;
-    `;
-    progress.appendChild(mask);
 
     const bigCircle = document.getElementById('voiceBigCircle');
     if (bigCircle) {
@@ -267,6 +255,19 @@ const VoiceCirclesModule = (() => {
   function setupVoiceModeUI() {
     const bigCircle = document.getElementById('voiceBigCircle');
     const video = document.getElementById('voiceRecordingVideo');
+    const overlayStatus = document.getElementById('voiceRecOverlayStatus');
+    const modeIndicator = document.getElementById('voiceModeIndicator');
+
+    // Показываем текстовые индикаторы при записи голоса
+    if (overlayStatus) {
+      overlayStatus.style.display = '';
+      overlayStatus.textContent = 'Запись голоса…';
+    }
+    if (modeIndicator) {
+      modeIndicator.style.display = '';
+      modeIndicator.textContent = '🎤 ГОЛОС';
+      modeIndicator.style.color = 'var(--accent)';
+    }
 
     if (bigCircle) {
       bigCircle.style.background = 'var(--red)';
@@ -292,6 +293,12 @@ const VoiceCirclesModule = (() => {
   async function setupVideoModeUI(stream) {
     const bigCircle = document.getElementById('voiceBigCircle');
     const video = document.getElementById('voiceRecordingVideo');
+    const overlayStatus = document.getElementById('voiceRecOverlayStatus');
+    const modeIndicator = document.getElementById('voiceModeIndicator');
+
+    // Скрываем текстовые индикаторы при записи видео
+    if (overlayStatus) overlayStatus.style.display = 'none';
+    if (modeIndicator) modeIndicator.style.display = 'none';
 
     if (bigCircle) {
       bigCircle.style.background = '#000';
