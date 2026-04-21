@@ -13448,12 +13448,10 @@
           
           // Для мобильных устройств — блокируем touch события
           flipBtn.addEventListener('touchstart', (e) => {
-            console.log('DEBUG: flipBtn touchstart');
             e.stopPropagation();
           }, { passive: true });
           
           flipBtn.addEventListener('touchend', async (e) => {
-            console.log('DEBUG: flipBtn touchend, target:', e.target?.id || e.target?.tagName);
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
