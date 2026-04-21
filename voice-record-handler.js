@@ -12,7 +12,7 @@ const VoiceRecordHandler = (() => {
   let startY = 0;
   let currentY = 0;
   
-  const HOLD_THRESHOLD = 200; // минимум 200мс чтобы считать за долгое нажатие
+  const HOLD_THRESHOLD = 300; // минимум 300мс чтобы считать за долгое нажатие
   const SWIPE_THRESHOLD = 60; // минимальное расстояние свайпа для блокировки
 
   function init() {
@@ -110,11 +110,22 @@ const VoiceRecordHandler = (() => {
     // Проверяем, не был ли только что клик на flip camera (блокируем остановку записи)
     const justFlipped = typeof voiceSession !== 'undefined' && voiceSession &&
       voiceSession._justFlipped && (Date.now() - voiceSession._justFlipped) < 500;
+    
+    // Если overlay активен и запись идет - не останавливаем запись (пользователь кликает на кнопки overlay)
+    const overlayActive = document.getElementById('voiceRecordingOverlay')?.classList.contains('active');
+    const isRecordingActive = typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder &&
+      (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused');
+    
+    if (overlayActive && isRecordingActive && !isLocked) {
+      isHolding = false;
+      // Удаляем UI свайпа
+      if (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.removeSwipeLockUI) {
+        VoiceCirclesModule.removeSwipeLockUI();
+      }
+      return;
+    }
 
     if (isHolding) {
-      const isRecordingActive = typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder &&
-        (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused');
-
       if (justFlipped) {
         // Если только что переключили камеру - не останавливаем запись
         console.log('Recording continues after camera flip');
@@ -161,17 +172,7 @@ const VoiceRecordHandler = (() => {
   function onTouchMove(e) {
     if (!isHolding) return;
     
-    // Проверяем, не движется ли палец над кнопкой flip camera
-    const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
     const touch = e.touches[0];
-    if (flipBtn) {
-      const rect = flipBtn.getBoundingClientRect();
-      if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
-          touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
-        return; // Не обрабатываем свайп если палец над flip camera
-      }
-    }
-    
     currentY = touch.clientY;
     
     const deltaY = startY - currentY; // Положительное = свайп вверх
@@ -190,30 +191,12 @@ const VoiceRecordHandler = (() => {
         navigator.vibrate(50);
       }
       
-      console.log('Recording locked via swipe up');
     }
     
     e.preventDefault();
   }
 
   function onTouchEnd(e) {
-    // Проверяем, не был ли клик на кнопке flip camera (по позиции пальца)
-    const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
-    const touch = e.changedTouches[0];
-    if (flipBtn && touch) {
-      const rect = flipBtn.getBoundingClientRect();
-      if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
-          touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
-        console.log('DEBUG: Touch ended on flipBtn area, skipping onRecordBtnUp');
-        // Если палец поднят над кнопкой flip camera — не обрабатываем как отпускание recordBtn
-        isHolding = false;
-        startY = 0;
-        currentY = 0;
-        return;
-      }
-    }
-    
-    console.log('DEBUG: onTouchEnd calling onRecordBtnUp, isHolding:', isHolding);
     onRecordBtnUp(e);
     startY = 0;
     currentY = 0;
