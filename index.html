@@ -13378,12 +13378,8 @@
         if (flipBtn && isVideoMode) {
           flipBtn.style.display = 'flex';
           
-          // Устанавливаем обработчик click с блокировкой всплытия
-          flipBtn.onclick = async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            
+          // Функция переключения камеры
+          const doFlipCamera = async () => {
             if (!voiceSession || !voiceSession.recorder || voiceSession.recorder.state === 'inactive') {
               showToast('Запись не активна');
               return;
@@ -13441,6 +13437,28 @@
               flipBtn.style.opacity = '';
             }
           };
+          
+          // Устанавливаем обработчик click с блокировкой всплытия
+          flipBtn.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            await doFlipCamera();
+          };
+          
+          // Для мобильных устройств — блокируем touch события
+          flipBtn.addEventListener('touchstart', (e) => {
+            console.log('DEBUG: flipBtn touchstart');
+            e.stopPropagation();
+          }, { passive: true });
+          
+          flipBtn.addEventListener('touchend', async (e) => {
+            console.log('DEBUG: flipBtn touchend, target:', e.target?.id || e.target?.tagName);
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            await doFlipCamera();
+          }, { passive: false });
         }
         
         // Кнопка отправки (overlay)
