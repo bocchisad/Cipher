@@ -6713,7 +6713,14 @@
         }
       }
       
-      const localMsg = { ...serverMsg, chatId: targetId, read: true, reactions: {} };
+      // FIX: Preserve original content for local storage (needed for voice/video rendering)
+      const localMsg = { 
+        ...serverMsg, 
+        chatId: targetId, 
+        read: true, 
+        reactions: {},
+        content: msg.content  // Ensure content is preserved for rendering
+      };
       await dbPut('messages', localMsg);
       updateLastMessage(targetId, msg.content, ts, msg.type);
       
