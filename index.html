@@ -13189,6 +13189,21 @@
         };
         tick();
         
+        // ==================== ЗАЩИТА OVERLAY ОТ СЛУЧАЙНЫХ КЛИКО ====================
+        // Добавляем обработчик к самому overlay для предотвращения всплытия событий
+        const overlay = document.getElementById('voiceRecordingOverlay');
+        if (overlay) {
+          const preventPropagation = (e) => {
+            // Если клик не на кнопках внутри overlay - останавливаем
+            if (!e.target.closest('.voice-rec-overlay-btn') && !e.target.closest('#voiceRecordingOverlay > *')) {
+              e.stopPropagation();
+            }
+          };
+          overlay.addEventListener('click', preventPropagation, true);
+          overlay.addEventListener('touchstart', preventPropagation, { passive: true, capture: true });
+          overlay.addEventListener('touchend', preventPropagation, { capture: true });
+        }
+        
         // Настройка UI в зависимости от режима
         if (isVideoMode) {
           // Видеокружки - полноэкранный overlay
@@ -13287,12 +13302,16 @@
         // Кнопка отмены
         const cancelBtn = document.getElementById('voiceRecOverlayCancelBtn');
         if (cancelBtn) {
-          cancelBtn.onclick = () => {
+          cancelBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
             if (!voiceSession) return;
             voiceSession.cancelled = true;
             try {
               voiceSession.recorder.stop();
             } catch (_) {}
+            return false;
           };
         }
         
@@ -13300,12 +13319,15 @@
         const pauseBtn = document.getElementById('voiceRecPauseBtnOverlay');
         if (pauseBtn) {
           pauseBtn.innerHTML = '<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-          pauseBtn.onclick = () => {
+          pauseBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
             if (!voiceSession?.recorder) return;
             if (voiceSession.recorder.state === 'recording') {
               if (typeof voiceSession.recorder.pause !== 'function') {
                 showToast('Пауза не поддерживается в этом браузере');
-                return;
+                return false;
               }
               voiceSession.recorder.pause();
               voiceSession.pauseStarted = Date.now();
@@ -13320,6 +13342,7 @@
               voiceSession.paused = false;
               pauseBtn.innerHTML = '<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
             }
+            return false;
           };
         }
         
@@ -13444,34 +13467,72 @@
             e.stopPropagation();
             e.stopImmediatePropagation();
             await doFlipCamera();
+            return false;
           };
           
-          // Для мобильных устройств — блокируем touch события
+          // Для мобильных устройств — блокируем touch события (touchstart должна быть НЕ passive!)
           flipBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
             e.stopPropagation();
-          }, { passive: true });
+            e.stopImmediatePropagation();
+            // Сразу устанавливаем флаг при touch начале
+            if (voiceSession) {
+              voiceSession._justFlipped = Date.now();
+            }
+          }, { passive: false });
           
           flipBtn.addEventListener('touchend', async (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
             await doFlipCamera();
+            return false;
           }, { passive: false });
+          
+          // Также предотвращаем mousedown/mouseup на кнопке от влияния на запись
+          flipBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            if (voiceSession) {
+              voiceSession._justFlipped = Date.now();
+            }
+          });
+          
+          flipBtn.addEventListener('mouseup', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+          });
         }
         
         // Кнопка отправки (overlay)
         const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
         if (sendBtn) {
           sendBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            
             if (!voiceSession) return;
-            // Блокируем отправку если только что был flip (в течение 500мс)
-            if (voiceSession._justFlipped && (Date.now() - voiceSession._justFlipped) < 500) {
-              return;
+            
+            // Блокируем отправку если только что был flip (в течение 1000мс)
+            if (voiceSession._justFlipped && (Date.now() - voiceSession._justFlipped) < 1000) {
+              console.log('🔒 Send blocked: camera flip in progress');
+              return false;
             }
+            
             try {
               voiceSession.recorder.stop();
             } catch (_) {}
+            
+            return false;
           };
+          
+          // Дополнительная защита от случайного клика
+          sendBtn.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+          }, { passive: true });
         }
         
       } catch (e) {
