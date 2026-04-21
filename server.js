@@ -384,7 +384,7 @@ const app = http.createServer((req, res) => {
 const wss = new WebSocket.Server({
   server: app,
   perMessageDeflate: false,
-  maxPayload: 25 * 1024 * 1024
+  maxPayload: 1024 * 1024 * 1024 // 1 GB
 });
 
 wss.on('connection', (ws, req) => {
@@ -398,9 +398,9 @@ wss.on('connection', (ws, req) => {
   ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', async (data) => {
-    if (data.length > 20 * 1024 * 1024) {
-      safeWsSend(ws, { type: 'error', error: 'Message too large (max 20MB)' });
-      console.warn('⚠️ Oversized message rejected');
+    if (data.length > 1024 * 1024 * 1024) {
+      safeWsSend(ws, { type: 'error', error: 'Message too large (max 1GB)' });
+      console.warn('⚠️ Oversized message rejected (>1GB)');
       return;
     }
     try {
