@@ -5385,7 +5385,13 @@
 
     async function handleIncomingMessage(msg) {
       let {from, to, type, content, ts, roomId, payload, iv, signature} = msg;
-      console.log('📨 Raw msg.forwardFrom:', msg.forwardFrom);
+      console.log('📨 Incoming message:', {
+        from: from?.slice(0, 8),
+        type,
+        hasPayload: !!payload,
+        contentType: typeof content,
+        ts
+      });
       if (normUid(from) === normUid(myProfile.uuid)) return;
 
       // E2EE decryption for direct messages
@@ -5503,6 +5509,15 @@
                   } else {
                     content = outerData.content;
                     type = outerData.type;
+                    if (type === 'voice') {
+                      console.log('🔊 Voice after decryption:', {
+                        contentType: typeof content,
+                        isObject: content && typeof content === 'object',
+                        hasData: content?.data ? true : false,
+                        isVideo: content?.isVideo,
+                        duration: content?.duration
+                      });
+                    }
                     // Extract ALL metadata from encrypted payload
                     console.log('📦 outerData keys:', Object.keys(outerData));
                     console.log('📦 outerData.forwardFrom:', outerData.forwardFrom);
@@ -5539,7 +5554,14 @@
         }
       }
       // If no payload/iv/signature, it's an old plaintext message - use content and type as-is (backward compat)
-      
+      if (type === 'voice' && !payload) {
+        console.log('🔊 Plaintext voice (no E2EE):', {
+          contentType: typeof content,
+          isObject: content && typeof content === 'object',
+          hasData: content?.data ? true : false
+        });
+      }
+
       // Extract caption from content for non-E2EE media messages
       if ((type === 'image' || type === 'video' || type === 'file') && !msg.caption) {
         try {
@@ -5576,6 +5598,18 @@
         forwardFrom: msg.forwardFrom,
         caption: msg.caption
       };
+
+      if (type === 'voice') {
+        console.log('📥 Saving voice message:', {
+          chatId,
+          from: from?.slice(0, 8),
+          contentType: typeof content,
+          hasData: content?.data ? true : content && typeof content === 'string' ? content.length > 0 : false,
+          isVideo: content?.isVideo,
+          duration: content?.duration
+        });
+      }
+
       await dbPut('messages', localMsg);
       if (type === 'text' && msg.replyTo) {
         noteIncomingChannelComment(localMsg);
@@ -6139,6 +6173,13 @@
 
       const isSaved = c && c.kind === 'saved';
       if(!isSaved && ws && ws.readyState === WebSocket.OPEN) {
+        if (type === 'voice') {
+          console.log('📤 Sending voice to server:', {
+            hasPayload: !!message.payload,
+            hasContent: !!message.content,
+            contentType: message.content ? typeof message.content : 'none'
+          });
+        }
         sendToServer('message', message, 2); // FIX #5: don't send Favorites to server + version=2 (max privacy)
       }
 
@@ -7041,6 +7082,13 @@
       renderedMsgIds = new Set();
       const msgs=await dbGetByIndex('messages','chatId',activeChat);
       if (!msgs || !Array.isArray(msgs)) return;
+      const voiceMsgs = msgs.filter(m => m.type === 'voice');
+      if (voiceMsgs.length > 0) {
+        console.log('🔊 Loaded voice messages from DB:', voiceMsgs.length, {
+          firstContentType: typeof voiceMsgs[0].content,
+          firstHasData: voiceMsgs[0].content?.data ? true : false
+        });
+      }
       localMessageRefs = new Set(msgs.map((m) => makeMessageRefKey(m.from, m.ts)));
       msgs.sort((a,b)=>a.ts-b.ts);
       let lastDate='';
@@ -8369,6 +8417,12 @@
           bubble.appendChild(captionEl);
         }
       } else if(msg.type==='voice'){
+        console.log('🔊 Rendering voice in appendMessage:', {
+          contentType: typeof msg.content,
+          isObject: msg.content && typeof msg.content === 'object',
+          hasData: msg.content?.data ? true : false,
+          contentKeys: msg.content && typeof msg.content === 'object' ? Object.keys(msg.content) : null
+        });
         bubble.appendChild(makeVoicePlayer(msg.content, msg));
       } else if(msg.type==='video'){
         let videoSrc = msg.content;
@@ -8685,7 +8739,22 @@
     }
 
     function makeVoicePlayer(dataUrl, msg){
+      console.log('🔊 makeVoicePlayer called:', {
+        dataUrlType: typeof dataUrl,
+        isObject: dataUrl && typeof dataUrl === 'object',
+        hasData: dataUrl?.data ? true : false,
+        hasIsVideo: dataUrl?.isVideo,
+        msgType: msg?.type
+      });
+
       const voiceMeta = parseVoiceContent(dataUrl);
+      console.log('🔊 parseVoiceContent result:', {
+        isVideo: voiceMeta.isVideo,
+        hasData: !!voiceMeta.data,
+        duration: voiceMeta.duration,
+        mimeType: voiceMeta.mimeType
+      });
+
       let resolvedDataUrl = voiceMeta.data;
       const isVideo = voiceMeta.isVideo;
       
@@ -12951,9 +13020,18 @@
           if (!vs || vs.cancelled) return;
           
           const blob = new Blob(vs.chunks, { type: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm') });
+          const blobSizeMB = (blob.size / (1024 * 1024)).toFixed(2);
           const b64 = await fileToBase64(blob);
           const recDuration = Math.max(1, Math.floor((Date.now() - started - (vs.pausedMs || 0)) / 1000));
-          await sendMessage('voice', { data: b64, duration: recDuration, isVideo: isVideoMode, mimeType: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm') });
+          const voiceContent = { data: b64, duration: recDuration, isVideo: isVideoMode, mimeType: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm') };
+          console.log('📤 Sending voice message:', {
+            isVideo: isVideoMode,
+            duration: recDuration,
+            blobSize: blobSizeMB + ' MB',
+            dataLength: b64?.length,
+            mimeType: voiceContent.mimeType
+          });
+          await sendMessage('voice', voiceContent);
         };
         
         recorder.start(400);
