@@ -8862,12 +8862,53 @@
           if (video.paused) playIcon.style.opacity = '0.8';
         };
 
-        // Клик по кружку - запускаем в глобальном аудиоплеере (как голосовое)
+        // Клик по кружку - воспроизводим видео + добавляем в глобальный плеер
         circle.onclick = async (e) => {
           e.stopPropagation();
-          // FIX: Используем глобальный аудиоплеер как для обычных голосовых
-          const allMsgs = await dbGetByIndex('messages', 'chatId', activeChat);
-          playAudioFromMessage(msg, allMsgs);
+          if (video.paused) {
+            try {
+              // Запускаем видео
+              await video.play();
+              playIcon.style.opacity = '0';
+              // Добавляем в глобальный плеер для навигации и отображения
+              const allMsgs = await dbGetByIndex('messages', 'chatId', activeChat);
+              playAudioFromMessage(msg, allMsgs);
+              // Обновляем UI кружка через глобальный таймер
+              if (globalAudioCurrentTs !== msg.ts) {
+                globalAudioCurrentTs = msg.ts;
+              }
+            } catch (err) {
+              console.error('❌ Video play error:', err.name, err.message);
+              if (err.name === 'NotSupportedError') {
+                showToast('Формат видео не поддерживается в этом браузере');
+              }
+            }
+          } else {
+            video.pause();
+            playIcon.style.opacity = '0.8';
+            if (globalAudio && !globalAudio.paused) {
+              globalAudio.pause();
+            }
+          }
+        };
+
+        // Синхронизация с глобальным плеером
+        video.onplay = () => {
+          playIcon.style.opacity = '0';
+          circle.style.boxShadow = '0 0 30px rgba(79, 142, 247, 0.6)';
+          circle.style.borderColor = 'var(--accent2)';
+        };
+
+        video.onpause = () => {
+          playIcon.style.opacity = '0.8';
+          circle.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+          circle.style.borderColor = 'var(--accent)';
+        };
+
+        video.onended = () => {
+          playIcon.style.opacity = '0.8';
+          circle.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
+          circle.style.borderColor = 'var(--accent)';
         };
 
         container.appendChild(circle);
