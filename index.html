@@ -13559,6 +13559,10 @@
             e.stopPropagation();
             e.stopImmediatePropagation();
             console.log('🖱️ Flip button clicked (mouse)');
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
             await doFlipCamera(e);
             return false;
           };
@@ -13569,6 +13573,10 @@
             e.stopPropagation();
             e.stopImmediatePropagation();
             console.log('👆 Flip button touchstart');
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
             if (voiceSession) {
               voiceSession._justFlipped = Date.now();
             }
@@ -13580,6 +13588,10 @@
             e.stopPropagation();
             e.stopImmediatePropagation();
             console.log('👆 Flip button touchend');
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
             await doFlipCamera(e);
             return false;
           }, { passive: false, capture: true });
@@ -13590,6 +13602,10 @@
             e.stopPropagation();
             e.stopImmediatePropagation();
             console.log('☝️ Flip button pointerdown');
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
             if (voiceSession) {
               voiceSession._justFlipped = Date.now();
             }
@@ -13601,6 +13617,10 @@
             e.stopPropagation();
             e.stopImmediatePropagation();
             console.log('☝️ Flip button pointerup');
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
             await doFlipCamera(e);
             return false;
           }, { passive: false, capture: true });
@@ -13610,6 +13630,10 @@
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
             if (voiceSession) {
               voiceSession._justFlipped = Date.now();
             }
@@ -13619,6 +13643,10 @@
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
           }, { passive: false, capture: true });
         }
         
