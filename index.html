@@ -8867,6 +8867,12 @@
           e.stopPropagation();
           if (video.paused) {
             try {
+              // FIX: Если аудио уже играет этот же трек, синхронизируем время
+              if (globalAudioCurrentTs === msg.ts && globalAudio) {
+                video.currentTime = globalAudio.currentTime;
+              } else {
+                video.currentTime = 0;
+              }
               // Запускаем видео
               await video.play();
               playIcon.style.opacity = '0';
@@ -12340,7 +12346,16 @@
 
         // Apply the seek only on release
         if (pendingPct !== null && globalAudio && globalAudio.duration) {
-          globalAudio.currentTime = pendingPct * globalAudio.duration;
+          const newTime = pendingPct * globalAudio.duration;
+          globalAudio.currentTime = newTime;
+          
+          // FIX: Sync video circle time on seek
+          if (globalAudioCurrentTs) {
+            const video = getVideoCircleVideo(globalAudioCurrentTs);
+            if (video) {
+              video.currentTime = newTime;
+            }
+          }
 
           // Resume playback if it was playing before drag started
           if (wasPlayingBeforeDrag) {
@@ -12389,7 +12404,17 @@
       bar.addEventListener('click', (e) => {
         if (!globalAudio || !globalAudio.duration || isDragging) return;
         const pct = getPercentage(e);
-        globalAudio.currentTime = pct * globalAudio.duration;
+        const newTime = pct * globalAudio.duration;
+        globalAudio.currentTime = newTime;
+        
+        // FIX: Sync video circle time on seek
+        if (globalAudioCurrentTs) {
+          const video = getVideoCircleVideo(globalAudioCurrentTs);
+          if (video) {
+            video.currentTime = newTime;
+          }
+        }
+        
         updateGlobalAudioUI();
       });
 
@@ -12419,6 +12444,14 @@
     }
 
     function closeGlobalAudioPlayer() {
+      // FIX: Останавливаем видео-кружок перед закрытием
+      if (globalAudioCurrentTs) {
+        const video = getVideoCircleVideo(globalAudioCurrentTs);
+        if (video) {
+          video.pause();
+        }
+      }
+      
       if (globalAudio) {
         globalAudio.pause();
         globalAudio = null;
@@ -12505,6 +12538,10 @@
         const playPromise = globalAudio.play();
         if (playPromise !== undefined) {
           playPromise.then(() => {
+            // FIX: Sync video circle play
+            if (globalAudioCurrentTs) {
+              syncVideoCircleWithAudio(globalAudioCurrentTs, globalAudio.currentTime, true);
+            }
             updateGlobalAudioUI();
             updateChatAudioButtons();
           }).catch((e) => {
@@ -12514,11 +12551,19 @@
           });
         } else {
           // Fallback for browsers not returning promise
+          // FIX: Sync video circle play
+          if (globalAudioCurrentTs) {
+            syncVideoCircleWithAudio(globalAudioCurrentTs, globalAudio.currentTime, true);
+          }
           updateGlobalAudioUI();
           updateChatAudioButtons();
         }
       } else {
         globalAudio.pause();
+        // FIX: Sync video circle pause
+        if (globalAudioCurrentTs) {
+          syncVideoCircleWithAudio(globalAudioCurrentTs, globalAudio.currentTime, false);
+        }
         updateGlobalAudioUI();
         updateChatAudioButtons();
       }
@@ -12623,6 +12668,14 @@
       if (globalAudio && globalAudio.currentTime >= 3) {
         globalAudio.currentTime = 0;
         globalAudio.play().catch(() => {});
+        // FIX: Sync video circle restart
+        if (globalAudioCurrentTs) {
+          const video = getVideoCircleVideo(globalAudioCurrentTs);
+          if (video) {
+            video.currentTime = 0;
+            video.play().catch(() => {});
+          }
+        }
         updateGlobalAudioUI();
         return;
       }
@@ -12663,6 +12716,12 @@
 
       // FIX: Update previous message element UI before switching
       if (globalAudioCurrentTs && globalAudioCurrentTs !== track.ts) {
+        // Останавливаем предыдущее видео-кружок если есть
+        const prevVideo = getVideoCircleVideo(globalAudioCurrentTs);
+        if (prevVideo) {
+          prevVideo.pause();
+          prevVideo.currentTime = 0;
+        }
         updateChatAudioButtonForTs(globalAudioCurrentTs, false, 0, 0);
         updateCommentAudioButtonForTs(globalAudioCurrentTs, false, 0, 0);
       }
@@ -12673,6 +12732,13 @@
       }
 
       globalAudioCurrentTs = track.ts;
+
+      // FIX: Запускаем видео-кружок если это видео
+      const currentVideo = getVideoCircleVideo(track.ts);
+      if (currentVideo) {
+        currentVideo.currentTime = 0;
+        currentVideo.play().catch(() => {});
+      }
 
       globalAudio = new Audio(track.url);
       globalAudio.preload = 'metadata';
@@ -12700,10 +12766,26 @@
         updateChatAudioButtons();
       };
       globalAudio.onended = () => {
+        // FIX: Reset video circle when track ends
+        if (globalAudioCurrentTs) {
+          const video = getVideoCircleVideo(globalAudioCurrentTs);
+          if (video) {
+            video.pause();
+            video.currentTime = 0;
+          }
+        }
         if (globalAudioLoop === 'one') {
           // Loop current track
           globalAudio.currentTime = 0;
           globalAudio.play().catch(() => {});
+          // FIX: Restart video circle when looping
+          if (globalAudioCurrentTs) {
+            const video = getVideoCircleVideo(globalAudioCurrentTs);
+            if (video) {
+              video.currentTime = 0;
+              video.play().catch(() => {});
+            }
+          }
         } else if (globalAudioIndex < globalAudioPlaylist.length - 1 || globalAudioLoop === 'all') {
           playNextGlobalAudio();
         } else {
@@ -12731,6 +12813,33 @@
       updateCommentAudioButtonForTs(globalAudioCurrentTs, isPlaying, currentTime, duration);
     }
 
+    // FIX: Get video element from video circle by timestamp
+    function getVideoCircleVideo(ts) {
+      const msgEl = document.querySelector(`#messagesArea .msg[data-ts="${ts}"]`);
+      if (!msgEl) return null;
+      const videoCircle = msgEl.querySelector('.video-circle');
+      if (!videoCircle) return null;
+      return videoCircle.querySelector('video');
+    }
+
+    // FIX: Sync video circle time with global audio
+    function syncVideoCircleWithAudio(ts, currentTime, isPlaying) {
+      const video = getVideoCircleVideo(ts);
+      if (!video) return;
+      
+      // Sync time (with small threshold to avoid excessive updates)
+      if (Math.abs(video.currentTime - currentTime) > 0.2) {
+        video.currentTime = currentTime;
+      }
+      
+      // Sync play state
+      if (isPlaying && video.paused) {
+        video.play().catch(() => {});
+      } else if (!isPlaying && !video.paused) {
+        video.pause();
+      }
+    }
+
     // FIX: Update a specific audio button in chat by timestamp
     function updateChatAudioButtonForTs(ts, isPlaying, currentTime, duration) {
       const msgEl = document.querySelector(`#messagesArea .msg[data-ts="${ts}"]`);
@@ -12753,6 +12862,10 @@
           } else {
             videoCircle.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
             videoCircle.style.borderColor = 'var(--accent)';
+          }
+          // Синхронизируем время видео с аудио
+          if (Math.abs(videoEl.currentTime - currentTime) > 0.3) {
+            videoEl.currentTime = currentTime;
           }
         }
         return;
@@ -12839,7 +12952,7 @@
       }
     }
 
-    // FIX: Update timer to also sync chat UI
+    // FIX: Update timer to also sync chat UI and video circles
     function startGlobalAudioTimer() {
       clearInterval(globalAudioTimer);
       globalAudioTimer = setInterval(() => {
@@ -12851,6 +12964,8 @@
           updateChatAudioButtonForTs(globalAudioCurrentTs, isPlaying, currentTime, duration);
           // Also update comment voice buttons
           updateCommentAudioButtonForTs(globalAudioCurrentTs, isPlaying, currentTime, duration);
+          // FIX: Sync video circle time with audio
+          syncVideoCircleWithAudio(globalAudioCurrentTs, currentTime, isPlaying);
         }
       }, 100);
     }
