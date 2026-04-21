@@ -1569,7 +1569,7 @@
           <!-- Voice Recording Overlay -->
           <div id="voiceRecordingOverlay">
             <div class="voice-rec-overlay-status" id="voiceRecOverlayStatus">Запись…</div>
-            <div class="voice-rec-mode-indicator" id="voiceModeIndicator">🎤 ГОЛОС</div>
+            <div class="voice-rec-mode-indicator" id="voiceModeIndicator"><svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="display:inline-block;margin-right:6px;vertical-align:middle;"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10a7 7 0 01-14 0M12 19v3M8 22h8"/></svg>ГОЛОС</div>
             <div class="voice-big-circle" id="voiceBigCircle">
               <svg fill="currentColor" viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 16.91c-1.48 1.46-3.51 2.36-5.76 2.36s-4.29-.9-5.77-2.36l-1.1 1.1c1.74 1.71 4.15 2.76 6.87 2.76s5.13-1.05 6.87-2.76l-1.11-1.1zM19 12h2c0-2.76-1.23-5.26-3.16-7v2c1.86 1.41 3.02 3.55 3.16 5.74z"/></svg>
               <video id="voiceRecordingVideo" class="voice-rec-overlay-video" playsinline autoplay muted></video>
@@ -1577,7 +1577,7 @@
             <div class="voice-rec-overlay-timer" id="voiceRecOverlayTimer">0:00</div>
             <div class="voice-rec-overlay-controls">
               <button type="button" class="voice-rec-overlay-btn ghost" id="voiceRecFlipCameraBtn" title="Перевернуть камеру" style="display:none"><svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button>
-              <button type="button" class="voice-rec-overlay-btn ghost" id="voiceRecPauseBtnOverlay" title="Пауза">⏸</button>
+              <button type="button" class="voice-rec-overlay-btn ghost" id="voiceRecPauseBtnOverlay" title="Пауза"><svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
               <button type="button" class="voice-rec-overlay-btn danger" id="voiceRecOverlayCancelBtn" title="Отмена">✕</button>
               <button type="button" class="voice-rec-overlay-btn primary" id="voiceRecOverlaySendBtn" title="Отправить">✓</button>
             </div>
@@ -13266,7 +13266,7 @@
         // Кнопка паузы в оверлее
         const pauseBtn = document.getElementById('voiceRecPauseBtnOverlay');
         if (pauseBtn) {
-          pauseBtn.textContent = '⏸';
+          pauseBtn.innerHTML = '<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
           pauseBtn.onclick = () => {
             if (!voiceSession?.recorder) return;
             if (voiceSession.recorder.state === 'recording') {
@@ -13277,7 +13277,7 @@
               voiceSession.recorder.pause();
               voiceSession.pauseStarted = Date.now();
               voiceSession.paused = true;
-              pauseBtn.textContent = '▶';
+              pauseBtn.innerHTML = '<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
             } else if (voiceSession.recorder.state === 'paused') {
               voiceSession.recorder.resume();
               if (voiceSession.pauseStarted) {
@@ -13285,7 +13285,7 @@
               }
               voiceSession.pauseStarted = 0;
               voiceSession.paused = false;
-              pauseBtn.textContent = '⏸';
+              pauseBtn.innerHTML = '<svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
             }
           };
         }
@@ -13351,15 +13351,23 @@
           };
         }
         
-        // Кнопка переворота камеры (только на мобильных)
+        // Кнопка переворота камеры (для всех устройств при видеозаписи)
         const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
-        if (flipBtn && /mobile|android|iphone|ipad/i.test(navigator.userAgent)) {
-          flipBtn.style.display = 'block';
-          flipBtn.onclick = async () => {
-            if (!voiceSession) return;
+        if (flipBtn && isVideoMode) {
+          flipBtn.style.display = 'flex';
+          flipBtn.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (!voiceSession || !voiceSession.recorder || voiceSession.recorder.state === 'inactive') {
+              showToast('Запись не активна');
+              return;
+            }
+            
             try {
-              // Остановить текущий поток
-              voiceSession.stream.getTracks().forEach(t => t.stop());
+              // Отключить все видеотреки (оставляем аудио)
+              const videoTracks = voiceSession.stream.getVideoTracks();
+              videoTracks.forEach(track => track.stop());
               
               // Переключить facingMode
               const newFacingMode = voiceSession.facingMode === 'user' ? 'environment' : 'user';
@@ -13367,28 +13375,41 @@
               
               // Запросить новый поток с другой камерой
               const newStream = await navigator.mediaDevices.getUserMedia({
-                audio: true,
+                audio: false, // Не берём новое аудио, используем старое
                 video: {
-                  width: { ideal: 1080 },
-                  height: { ideal: 1920 },
+                  width: { ideal: 720 },
+                  height: { ideal: 1280 },
                   facingMode: newFacingMode
                 }
               });
               
-              // Заменить видеопоток
-              const videoEl = document.getElementById('voiceRecordingVideo');
-              if (videoEl) {
-                videoEl.srcObject = newStream;
-              }
-              
-              // Заменить аудио трек в recorder
-              const audioTracks = newStream.getAudioTracks();
-              if (audioTracks.length > 0) {
-                voiceSession.stream = newStream;
+              // Получить новый видеотрек
+              const newVideoTracks = newStream.getVideoTracks();
+              if (newVideoTracks.length > 0) {
+                // Заменить видеопоток в основном потоке
+                const videoTrack = newVideoTracks[0];
+                
+                // Обновляем stream в voiceSession (для отображения в video элементе)
+                const oldVideoTrack = voiceSession.stream.getVideoTracks()[0];
+                if (oldVideoTrack) {
+                  // Заменяем видеотрек в потоке
+                  voiceSession.stream.removeTrack(oldVideoTrack);
+                  voiceSession.stream.addTrack(videoTrack);
+                }
+                
+                // Обновляем video element
+                const videoEl = document.getElementById('voiceRecordingVideo');
+                if (videoEl) {
+                  videoEl.srcObject = null; // Сброс
+                  videoEl.srcObject = voiceSession.stream; // Переподключение
+                  videoEl.play().catch(err => console.warn('Video play error:', err));
+                }
+                
+                showToast('Камера переключена', { duration: 1000 });
               }
             } catch (e) {
               console.error('Failed to flip camera:', e);
-              showToast('Не удалось переключить камеру');
+              showToast('Не удалось переключить камеру: ' + (e.message || e.name));
             }
           };
         }
