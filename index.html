@@ -418,11 +418,14 @@
     #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r);padding:10px 20px;font-size:13px;z-index:900;opacity:0;transition:all .3s;pointer-events:none;}
     #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-    /* CONTEXT MENU */
-    #ctxMenu{position:fixed;z-index:800;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:6px;min-width:180px;box-shadow:0 8px 32px rgba(0,0,0,.5);display:none;}
-    .ctx-item{padding:8px 12px;border-radius:6px;font-size:13px;cursor:pointer;transition:background .1s;display:flex;align-items:center;gap:8px;}
-    .ctx-item:hover{background:var(--bg4)}
+    /* CONTEXT MENU - macOS style with animation */
+    #ctxMenu{position:fixed;z-index:800;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:6px;min-width:180px;box-shadow:0 8px 32px rgba(0,0,0,.5);display:none;opacity:0;transform:scale(0.95);transform-origin:top left;transition:opacity .15s ease,transform .15s cubic-bezier(0.16,1,0.3,1);pointer-events:none;}
+    #ctxMenu.active{display:block;opacity:1;transform:scale(1);pointer-events:auto;}
+    .ctx-item{padding:8px 12px;border-radius:6px;font-size:13px;cursor:pointer;transition:background .1s,color .1s;display:flex;align-items:center;gap:8px;color:var(--text);}
+    .ctx-item:hover{background:var(--accent);color:#fff}
     .ctx-item.danger{color:var(--red)}
+    .ctx-item.danger:hover{background:var(--red);color:#fff}
+    .ctx-icon{width:16px;height:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
     .ctx-react-bar{display:flex;flex-wrap:wrap;gap:6px;padding:8px 6px;border-bottom:1px solid var(--border);margin-bottom:4px;max-width:min(92vw,280px)}
     .ctx-emoji-btn{font-size:20px;line-height:1;padding:6px 8px;border-radius:8px;border:none;background:var(--bg4);cursor:pointer;transition:background .12s}
     .ctx-emoji-btn:hover{background:var(--bg3)}
@@ -6392,15 +6395,16 @@
       const menu=document.getElementById('ctxMenu');
       menu.dataset.mode='chat';
       const isPinned = getPinnedSet().has(chatId);
+      const pinIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2l.01 4-.01 4a2 2 0 002 2l4-.01 4 .01"/><path d="M21 12l-4-.01-4 .01a2 2 0 01-2-2l.01-4-.01-4"/><path d="M12 22l-.01-4 .01-4a2 2 0 00-2-2l-4 .01-4-.01"/><path d="M3 12l4 .01 4-.01a2 2 0 012 2l-.01 4 .01 4"/><line x1="4" y1="4" x2="20" y2="20"/></svg>';
+      const unpinIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2v8"/><path d="M12 18v4"/><path d="M22 12h-8"/><path d="M6 12H2"/><path d="M4.9 4.9l14.2 14.2"/></svg>';
+      const editIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+      const deleteIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>';
       menu.innerHTML=`
-        <div class="ctx-item" data-action="toggle-pin">📌 ${isPinned ? 'Открепить' : 'Закрепить'}</div>
-        <div class="ctx-item" data-action="rename-chat">✏️ Изменить имя</div>
-        <div class="ctx-item danger" data-action="delete-local">
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-          Удалить
-        </div>
+        <div class="ctx-item" data-action="toggle-pin">${isPinned ? unpinIcon : pinIcon} ${isPinned ? 'Открепить' : 'Закрепить'}</div>
+        <div class="ctx-item" data-action="rename-chat">${editIcon} Изменить имя</div>
+        <div class="ctx-item danger" data-action="delete-local">${deleteIcon} Удалить</div>
       `;
-      menu.style.display='block';
+      menu.classList.add('active');
       document.body.classList.add('ctx-open');
       positionContextMenu(menu, e.clientX, e.clientY);
       menu.dataset.chatId=chatId;
@@ -6425,7 +6429,8 @@
 
     function positionContextMenu(menu, clientX, clientY) {
       if (!menu) return;
-      menu.style.visibility = 'hidden';
+      // Показываем для измерения, но не видимо
+      menu.style.opacity = '0';
       menu.style.display = 'block';
       const rect = menu.getBoundingClientRect();
       let left = clientX;
@@ -6438,7 +6443,7 @@
       }
       menu.style.left = left + 'px';
       menu.style.top = top + 'px';
-      menu.style.visibility = '';
+      menu.style.opacity = '';
     }
 
     document.addEventListener('click',e=>{
@@ -6504,11 +6509,15 @@
           if(action.dataset.action==='toggle-pin' && chatId) togglePinChat(chatId);
           if(action.dataset.action==='rename-chat' && chatId) renameContactPrompt(chatId);
         }
-        menu.style.display='none';
+        menu.classList.remove('active');
+        setTimeout(() => {
+          menu.style.display='none';
+          menu.dataset.mode='';
+        }, 150);
         document.body.classList.remove('ctx-open');
-        menu.dataset.mode='';
       } else {
-        menu.style.display='none';
+        menu.classList.remove('active');
+        setTimeout(() => { menu.style.display='none'; }, 150);
         document.body.classList.remove('ctx-open');
       }
     });
@@ -6934,18 +6943,28 @@
       const reactBar = REACTION_PICK_EMOJIS.map((em) =>
         `<button type="button" class="ctx-emoji-btn" data-action="msg-react" data-emoji="${em}" title="${em}">${em}</button>`
       ).join('');
+      
+      // SVG иконки для меню
+      const replyIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 014 4v2"/></svg>';
+      const forwardIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 14l4-4-4-4"/><path d="M19 10H8a4 4 0 00-4 4v2"/></svg>';
+      const editIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>';
+      const copyIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><rect x="3" y="3" width="13" height="13" rx="2"/></svg>';
+      const musicIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+      const deleteIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>';
+      const deleteAllIcon = '<svg class="ctx-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M5 6l1-3h12l1 3"/></svg>';
+      
       let html = `<div class="ctx-react-bar">${reactBar}</div>`;
-      html += `<div class="ctx-item" data-action="msg-reply">↩ Ответить</div>`;
-      html += `<div class="ctx-item" data-action="msg-forward">↪ Переслать</div>`;
+      html += `<div class="ctx-item" data-action="msg-reply">${replyIcon} Ответить</div>`;
+      html += `<div class="ctx-item" data-action="msg-forward">${forwardIcon} Переслать</div>`;
       
       // Add edit option for text messages from me
       if (isMine && msg.type === 'text') {
-        html += `<div class="ctx-item" data-action="msg-edit">✏️ Изменить</div>`;
+        html += `<div class="ctx-item" data-action="msg-edit">${editIcon} Изменить</div>`;
       }
       
       // Add copy option for text messages
       if (msg.type === 'text' && msg.content) {
-        html += `<div class="ctx-item" data-action="msg-copy">📋 Копировать</div>`;
+        html += `<div class="ctx-item" data-action="msg-copy">${copyIcon} Копировать</div>`;
       }
       
       // Add option to add audio file to profile
@@ -6953,18 +6972,18 @@
         try {
           const fd = JSON.parse(msg.content);
           if (fd.name && fd.data && (fd.name.endsWith('.mp3') || fd.name.endsWith('.ogg') || fd.name.endsWith('.wav') || fd.name.endsWith('.m4a') || fd.name.endsWith('.webm'))) {
-            html += `<div class="ctx-item" data-action="add-track-to-profile">🎵 Добавить в профиль</div>`;
+            html += `<div class="ctx-item" data-action="add-track-to-profile">${musicIcon} Добавить в профиль</div>`;
           }
         } catch {}
       }
       
-      html += `<div class="ctx-item" data-action="msg-del-me">🗑 Удалить у меня</div>`;
-      if (isMine) html += `<div class="ctx-item danger" data-action="msg-del-both">Удалить у всех</div>`;
+      html += `<div class="ctx-item" data-action="msg-del-me">${deleteIcon} Удалить у меня</div>`;
+      if (isMine) html += `<div class="ctx-item danger" data-action="msg-del-both">${deleteAllIcon} Удалить у всех</div>`;
       menu.innerHTML = html;
       menu.dataset.mode = 'msg';
       menu.dataset.msgTs = String(msg.ts);
       menu.dataset.msgContent = msg.type === 'text' ? String(msg.content || '') : '';
-      menu.style.display = 'block';
+      menu.classList.add('active');
       document.body.classList.add('ctx-open');
       positionContextMenu(menu, e.clientX, e.clientY);
     }
@@ -9427,7 +9446,14 @@
 
     function buildLastPreview(type, content){
       if(type==='image') return '📷 Фото';
-      if(type==='voice') return '🎵 Голосовое';
+      if(type==='voice') {
+        // Проверяем, является ли voice сообщение видео-кружком
+        try {
+          const parsed = JSON.parse(content);
+          if (parsed && parsed.isVideo) return '🎬 Видеосообщение';
+        } catch {}
+        return '🎵 Голосовое';
+      }
       if(type==='video') return '🎬 Видео';
       if (type === 'poll') return 'Опрос';
       if(type==='file'){
@@ -13389,17 +13415,13 @@
             flipBtn._isFlipping = true;
             
             try {
-              // Отключить все видеотреки (оставляем аудио)
-              const videoTracks = voiceSession.stream.getVideoTracks();
-              videoTracks.forEach(track => track.stop());
-              
               // Переключить facingMode
               const newFacingMode = voiceSession.facingMode === 'user' ? 'environment' : 'user';
               voiceSession.facingMode = newFacingMode;
               
               // Запросить новый поток с другой камерой
               const newStream = await navigator.mediaDevices.getUserMedia({
-                audio: false, // Не берём новое аудио, используем старое
+                audio: false,
                 video: {
                   width: { ideal: 720 },
                   height: { ideal: 1280 },
@@ -13410,22 +13432,23 @@
               // Получить новый видеотрек
               const newVideoTracks = newStream.getVideoTracks();
               if (newVideoTracks.length > 0) {
-                // Заменить видеопоток в основном потоке
-                const videoTrack = newVideoTracks[0];
-                
-                // Обновляем stream в voiceSession (для отображения в video элементе)
+                const newVideoTrack = newVideoTracks[0];
                 const oldVideoTrack = voiceSession.stream.getVideoTracks()[0];
+                
+                // Используем replaceTrack чтобы MediaRecorder не остановился
                 if (oldVideoTrack) {
-                  // Заменяем видеотрек в потоке
+                  // Останавливаем старый трек
+                  oldVideoTrack.stop();
+                  // Удаляем из потока
                   voiceSession.stream.removeTrack(oldVideoTrack);
-                  voiceSession.stream.addTrack(videoTrack);
                 }
+                // Добавляем новый трек
+                voiceSession.stream.addTrack(newVideoTrack);
                 
                 // Обновляем video element
                 const videoEl = document.getElementById('voiceRecordingVideo');
                 if (videoEl) {
-                  videoEl.srcObject = null; // Сброс
-                  videoEl.srcObject = voiceSession.stream; // Переподключение
+                  videoEl.srcObject = voiceSession.stream;
                   videoEl.play().catch(err => console.warn('Video play error:', err));
                 }
                 
@@ -13434,6 +13457,9 @@
             } catch (e) {
               console.error('Failed to flip camera:', e);
               showToast('Не удалось переключить камеру: ' + (e.message || e.name));
+            } finally {
+              // Сбрасываем флаг
+              setTimeout(() => { flipBtn._isFlipping = false; }, 300);
             }
           };
         }
