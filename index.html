@@ -12955,6 +12955,12 @@
           if (voiceRecTime && !isVideoMode) {
             voiceRecTime.textContent = el.textContent;
           }
+          
+          // Автоматическая остановка при достижении 60 секунд (только для видеокружков)
+          if (isVideoMode && sec >= 60 && voiceSession.recorder && voiceSession.recorder.state !== 'inactive') {
+            voiceSession.recorder.stop();
+            showToast('⏱ Достигнут лимит 60 секунд', { duration: 2000 });
+          }
         };
         
         voiceSession = {
