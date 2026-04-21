@@ -12868,12 +12868,12 @@
                             typeof VoiceCirclesModule.getCircleMode === 'function' && 
                             VoiceCirclesModule.getCircleMode();
 
-        // Запрос медиа в зависимости от режима
+        // Запрос медиа в зависимости от режима (кружки - 720p с ограничением битрейта)
         let constraints = { 
           audio: true,
           video: isVideoMode ? { 
-            width: { ideal: 1080 },
-            height: { ideal: 1920 },
+            width: { ideal: 720 },
+            height: { ideal: 1280 },
             facingMode: 'user'
           } : false
         };
@@ -12914,7 +12914,11 @@
           console.warn('No supported MIME type found, using default');
         }
 
-        const recorderOptions = mimeType ? { mimeType } : {};
+        const recorderOptions = mimeType ? { 
+          mimeType,
+          videoBitsPerSecond: isVideoMode ? 2500000 : undefined, // 2.5 Мбит/с для кружков
+          audioBitsPerSecond: 128000 // 128 кбит/с для аудио
+        } : {};
         const recorder = new MediaRecorder(stream, recorderOptions);
         const chunks = [];
 
@@ -13031,6 +13035,15 @@
           
           const blob = new Blob(vs.chunks, { type: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm') });
           const blobSizeMB = (blob.size / (1024 * 1024)).toFixed(2);
+          
+          // Проверка размера для кружков (макс 100 МБ)
+          const MAX_CIRCLE_SIZE = 100 * 1024 * 1024; // 100 MB
+          if (blob.size > MAX_CIRCLE_SIZE) {
+            showToast(`Видео слишком большое (${blobSizeMB} МБ). Максимум: 100 МБ`, { duration: 4000 });
+            voiceSession = null;
+            return;
+          }
+          
           const b64 = await fileToBase64(blob);
           const recDuration = Math.max(1, Math.floor((Date.now() - started - (vs.pausedMs || 0)) / 1000));
           const voiceContent = { data: b64, duration: recDuration, isVideo: isVideoMode, mimeType: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm') };
