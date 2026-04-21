@@ -34,7 +34,7 @@ const VoiceRecordHandler = (() => {
     // Добавить новые обработчики мыши
     newBtn.addEventListener('mousedown', onRecordBtnDown);
     newBtn.addEventListener('mouseup', onRecordBtnUp);
-    newBtn.addEventListener('mouseleave', onRecordBtnUp);
+    newBtn.addEventListener('mouseleave', onRecordBtnLeave);
 
     // Для мобильных устройств добавить touch события
     newBtn.addEventListener('touchstart', onTouchStart, { passive: false });
@@ -70,6 +70,32 @@ const VoiceRecordHandler = (() => {
 
     e.preventDefault();
     e.stopPropagation();
+  }
+
+  // Обработчик mouseleave — не останавливает запись если overlay активен
+  function onRecordBtnLeave(e) {
+    const isRecordingActive = typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder &&
+      (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused');
+    
+    // Если запись активна и overlay виден — не останавливаем (пользователь кликает на кнопки в overlay)
+    const overlayActive = document.getElementById('voiceRecordingOverlay')?.classList.contains('active');
+    if (isRecordingActive && overlayActive) {
+      console.log('Mouse left recordBtn but recording continues (overlay active)');
+      // Сбрасываем состояние но не останавливаем запись
+      isHolding = false;
+      if (holdTimer) {
+        clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+      // Удаляем UI свайпа
+      if (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.removeSwipeLockUI) {
+        VoiceCirclesModule.removeSwipeLockUI();
+      }
+      return;
+    }
+    
+    // Иначе обрабатываем как обычный mouseup
+    onRecordBtnUp(e);
   }
 
   function onRecordBtnUp(e) {
