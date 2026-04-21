@@ -99,6 +99,14 @@ const VoiceRecordHandler = (() => {
   }
 
   function onRecordBtnUp(e) {
+    // CRITICAL FIX: Проверяем, что событие действительно произошло на кнопке записи,
+    // а не всплыло/пропагировало с других элементов (например, кнопки flip camera)
+    const recordBtn = document.getElementById('recordBtn');
+    if (e && e.target && recordBtn && e.target !== recordBtn && !recordBtn.contains(e.target)) {
+      console.log('🛡️ onRecordBtnUp ignored: event target is not recordBtn');
+      return;
+    }
+
     const holdDuration = Date.now() - holdStartTime;
 
     // Очистить таймер
@@ -108,8 +116,9 @@ const VoiceRecordHandler = (() => {
     }
 
     // Проверяем, не был ли только что клик на flip camera (блокируем остановку записи)
+    // Таймаут увеличен до 2000мс для надёжности на мобильных устройствах
     const justFlipped = typeof voiceSession !== 'undefined' && voiceSession &&
-      voiceSession._justFlipped && (Date.now() - voiceSession._justFlipped) < 500;
+      voiceSession._justFlipped && (Date.now() - voiceSession._justFlipped) < 2000;
     
     // Если overlay активен и запись идет - не останавливаем запись (пользователь кликает на кнопки overlay)
     const overlayActive = document.getElementById('voiceRecordingOverlay')?.classList.contains('active');
@@ -141,8 +150,14 @@ const VoiceRecordHandler = (() => {
           } catch (_) {}
         }
       } else if (holdDuration < HOLD_THRESHOLD) {
+        console.log('🔄 Toggle mode triggered. holdDuration:', holdDuration, 'THRESHOLD:', HOLD_THRESHOLD);
+        console.log('🔄 VoiceCirclesModule exists?', typeof VoiceCirclesModule !== 'undefined');
+        console.log('🔄 toggleCircleMode exists?', typeof VoiceCirclesModule?.toggleCircleMode === 'function');
         if (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.toggleCircleMode) {
+          console.log('🔄 Calling toggleCircleMode()');
           VoiceCirclesModule.toggleCircleMode();
+        } else {
+          console.error('❌ toggleCircleMode not available!');
         }
       }
     }
