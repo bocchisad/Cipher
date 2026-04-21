@@ -8838,7 +8838,7 @@
           pointer-events:none;
           opacity:0.8;
         `;
-        playIcon.innerHTML = '▶';
+        playIcon.innerHTML = '<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
         circle.appendChild(playIcon);
 
         const durationEl = document.createElement('div');
@@ -12859,7 +12859,9 @@
         const playIcon = videoCircle.querySelector('.video-circle-playicon');
         const videoEl = videoCircle.querySelector('video');
         if (playIcon) {
-          playIcon.innerHTML = isPlaying ? '⏸' : '▶';
+          playIcon.innerHTML = isPlaying 
+            ? '<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>'
+            : '<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
           playIcon.style.opacity = isPlaying ? '0' : '0.8';
         }
         if (videoEl) {
@@ -13004,7 +13006,7 @@
           url = voiceMeta.data || m.content;
           duration = voiceMeta.duration;
           // Если это видео-кружок, меняем название
-          title = voiceMeta.isVideo ? '📹 Видео-кружок' : 'Голосовое сообщение';
+          title = voiceMeta.isVideo ? '<svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24" style="display:inline-block;margin-right:4px;vertical-align:text-bottom;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>Видео-кружок' : 'Голосовое сообщение';
         } else if (m.type === 'file') {
           try {
             const fd = JSON.parse(m.content);
@@ -13295,6 +13297,11 @@
         if (sendBtn) {
           sendBtn.onclick = () => {
             if (!voiceSession) return;
+            // Проверяем флаг переключения камеры
+            if (flipBtn && flipBtn._isFlipping) {
+              flipBtn._isFlipping = false;
+              return;
+            }
             try {
               voiceSession.recorder.stop();
             } catch (_) {}
@@ -13355,6 +13362,20 @@
         const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
         if (flipBtn && isVideoMode) {
           flipBtn.style.display = 'flex';
+          
+          // Флаг чтобы предотвратить отправку при переключении камеры
+          let isFlippingCamera = false;
+          
+          flipBtn.onmousedown = flipBtn.ontouchstart = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            flipBtn._isFlipping = true;
+            // Сброс флага через небольшую задержку
+            setTimeout(() => { flipBtn._isFlipping = false; }, 500);
+            return false;
+          };
+          
+          // Отдельный обработчик click
           flipBtn.onclick = async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -13363,6 +13384,9 @@
               showToast('Запись не активна');
               return;
             }
+            
+            // Устанавливаем флаг на время переключения
+            flipBtn._isFlipping = true;
             
             try {
               // Отключить все видеотреки (оставляем аудио)
