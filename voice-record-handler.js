@@ -161,7 +161,17 @@ const VoiceRecordHandler = (() => {
   function onTouchMove(e) {
     if (!isHolding) return;
     
+    // Проверяем, не движется ли палец над кнопкой flip camera
+    const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
     const touch = e.touches[0];
+    if (flipBtn) {
+      const rect = flipBtn.getBoundingClientRect();
+      if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+          touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        return; // Не обрабатываем свайп если палец над flip camera
+      }
+    }
+    
     currentY = touch.clientY;
     
     const deltaY = startY - currentY; // Положительное = свайп вверх
@@ -187,6 +197,23 @@ const VoiceRecordHandler = (() => {
   }
 
   function onTouchEnd(e) {
+    // Проверяем, не был ли клик на кнопке flip camera (по позиции пальца)
+    const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
+    const touch = e.changedTouches[0];
+    if (flipBtn && touch) {
+      const rect = flipBtn.getBoundingClientRect();
+      if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+          touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        console.log('DEBUG: Touch ended on flipBtn area, skipping onRecordBtnUp');
+        // Если палец поднят над кнопкой flip camera — не обрабатываем как отпускание recordBtn
+        isHolding = false;
+        startY = 0;
+        currentY = 0;
+        return;
+      }
+    }
+    
+    console.log('DEBUG: onTouchEnd calling onRecordBtnUp, isHolding:', isHolding);
     onRecordBtnUp(e);
     startY = 0;
     currentY = 0;
