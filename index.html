@@ -13373,35 +13373,24 @@
           };
         }
         
-        // Кнопка отправки (overlay) - определяем первой для корректной ссылки
-        const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
-        if (sendBtn) {
-          sendBtn.onclick = (e) => {
-            if (!voiceSession) return;
-            // Проверяем, что клик был именно по кнопке отправки, а не всплыл от flip
-            if (e.target.closest('#voiceRecFlipCameraBtn')) {
-              return; // Игнорируем если клик пришел от flip кнопки
-            }
-            try {
-              voiceSession.recorder.stop();
-            } catch (_) {}
-          };
-        }
-        
         // Кнопка переворота камеры (для всех устройств при видеозаписи)
         const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
         if (flipBtn && isVideoMode) {
           flipBtn.style.display = 'flex';
           
-          // Используем pointerdown для единообразия на всех устройствах
-          flipBtn.onpointerdown = async (e) => {
+          // Устанавливаем обработчик click с блокировкой всплытия
+          flipBtn.onclick = async (e) => {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
             
             if (!voiceSession || !voiceSession.recorder || voiceSession.recorder.state === 'inactive') {
               showToast('Запись не активна');
               return;
             }
+            
+            // Устанавливаем флаг времени для блокировки sendBtn
+            voiceSession._justFlipped = Date.now();
             
             // Отключаем кнопку на время переключения
             flipBtn.disabled = true;
@@ -13439,7 +13428,6 @@
                 const videoEl = document.getElementById('voiceRecordingVideo');
                 if (videoEl) {
                   videoEl.srcObject = voiceSession.stream;
-                  // Не вызываем play() принудительно - пусть работает автоплей
                 }
                 
                 showToast('Камера переключена', { duration: 1000 });
@@ -13452,6 +13440,21 @@
               flipBtn.disabled = false;
               flipBtn.style.opacity = '';
             }
+          };
+        }
+        
+        // Кнопка отправки (overlay)
+        const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
+        if (sendBtn) {
+          sendBtn.onclick = (e) => {
+            if (!voiceSession) return;
+            // Блокируем отправку если только что был flip (в течение 500мс)
+            if (voiceSession._justFlipped && (Date.now() - voiceSession._justFlipped) < 500) {
+              return;
+            }
+            try {
+              voiceSession.recorder.stop();
+            } catch (_) {}
           };
         }
         
