@@ -146,9 +146,7 @@ const VoiceRecordHandler = (() => {
     // CRITICAL FIX: Проверяем флаг блокировки (ставится при клике на кнопки overlay)
     if (ignoreNextUp) {
       console.log('🛡️ onRecordBtnUp blocked by ignoreNextUp flag');
-      // НЕ сбрасываем флаг здесь - пусть он сбросится через таймаут
-      // или при следующем нажатии на recordBtn
-      setTimeout(() => { ignoreNextUp = false; }, 500);
+      ignoreNextUp = false;
       isHolding = false;
       if (holdTimer) {
         clearTimeout(holdTimer);
@@ -165,24 +163,6 @@ const VoiceRecordHandler = (() => {
       return;
     }
 
-    // EXTRA FIX: Проверяем флаг _justFlipped из voiceSession
-    const justFlipped = typeof voiceSession !== 'undefined' && voiceSession &&
-      voiceSession._justFlipped && (Date.now() < voiceSession._justFlipped);
-    
-    if (justFlipped) {
-      console.log('🛡️ onRecordBtnUp blocked: just flipped camera');
-      isHolding = false;
-      if (holdTimer) {
-        clearTimeout(holdTimer);
-        holdTimer = null;
-      }
-      // Удаляем UI свайпа
-      if (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.removeSwipeLockUI) {
-        VoiceCirclesModule.removeSwipeLockUI();
-      }
-      return;
-    }
-
     const holdDuration = Date.now() - holdStartTime;
 
     // Очистить таймер
@@ -191,17 +171,18 @@ const VoiceRecordHandler = (() => {
       holdTimer = null;
     }
 
+    // Проверяем, не был ли только что клик на flip camera (блокируем остановку записи)
+    // 🔥 FIX: Увеличили таймаут до 6000мс чтобы совпадать с send button блокировкой (getUserMedia может взять 1-5 сек)
+    const justFlipped = typeof voiceSession !== 'undefined' && voiceSession &&
+      voiceSession._justFlipped && (Date.now() - voiceSession._justFlipped) < 6000;
+    
     // Если overlay активен и запись идет - не останавливаем запись (пользователь кликает на кнопки overlay)
     const overlayActive = document.getElementById('voiceRecordingOverlay')?.classList.contains('active');
     const isRecordingActive = typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder &&
       (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused');
     
-    // CRITICAL: Если overlay активен и запись идет - ВСЕГДА блокируем остановку записи
-    // Это предотвращает отправку кружка при клике на кнопки overlay (flip camera, pause, etc.)
-    if (overlayActive && isRecordingActive) {
-      console.log('🛡️ onRecordBtnUp blocked: overlay is active with recording');
+    if (overlayActive && isRecordingActive && !isLocked) {
       isHolding = false;
-      isLocked = false; // Сбрасываем блокировку для следующей записи
       // Удаляем UI свайпа
       if (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.removeSwipeLockUI) {
         VoiceCirclesModule.removeSwipeLockUI();
@@ -210,7 +191,10 @@ const VoiceRecordHandler = (() => {
     }
 
     if (isHolding) {
-      if (isLocked && isRecordingActive) {
+      if (justFlipped) {
+        // Если только что переключили камеру - не останавливаем запись
+        console.log('Recording continues after camera flip');
+      } else if (isLocked && isRecordingActive) {
         console.log('Recording locked - continuing');
       } else if (isRecordingActive) {
         const sendBtn = document.getElementById('voiceRecOverlaySendBtn') || document.getElementById('voiceRecSendBtn');
