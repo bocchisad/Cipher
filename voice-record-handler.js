@@ -196,8 +196,12 @@ const VoiceRecordHandler = (() => {
     const isRecordingActive = typeof voiceSession !== 'undefined' && voiceSession && voiceSession.recorder &&
       (voiceSession.recorder.state === 'recording' || voiceSession.recorder.state === 'paused');
     
-    if (overlayActive && isRecordingActive && !isLocked) {
+    // CRITICAL: Если overlay активен и запись идет - ВСЕГДА блокируем остановку записи
+    // Это предотвращает отправку кружка при клике на кнопки overlay (flip camera, pause, etc.)
+    if (overlayActive && isRecordingActive) {
+      console.log('🛡️ onRecordBtnUp blocked: overlay is active with recording');
       isHolding = false;
+      isLocked = false; // Сбрасываем блокировку для следующей записи
       // Удаляем UI свайпа
       if (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.removeSwipeLockUI) {
         VoiceCirclesModule.removeSwipeLockUI();

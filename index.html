@@ -13503,102 +13503,58 @@
             }
           };
           
-          // Основной обработчик click
+          // Флаг для предотвращения дублирования вызовов
+          let flipInProgress = false;
+          
+          // Основной обработчик click - ЕДИНСТВЕННОЕ место вызова doFlipCamera
           flipBtn.onclick = async (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-            console.log('🖱️ Flip button clicked (mouse)');
+            console.log('🖱️ Flip button clicked');
+            
+            // Предотвращаем дублирование вызовов
+            if (flipInProgress) {
+              console.log('⚠️ Flip already in progress, ignoring click');
+              return false;
+            }
+            
             // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
             if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
               VoiceRecordHandler.setIgnoreNextUp(true);
             }
-            // Всегда вызываем flip (проверка e.target не нужна т.к. onclick сработает только на кнопке)
-            await doFlipCamera(e);
+            if (voiceSession) {
+              voiceSession._justFlipped = Date.now() + 2000;
+            }
+            
+            flipInProgress = true;
+            try {
+              await doFlipCamera(e);
+            } finally {
+              // Сбрасываем флаг через небольшую задержку
+              setTimeout(() => { flipInProgress = false; }, 500);
+            }
             return false;
           };
           
-          // Обработчик touchstart - просто останавливаем событие
-          flipBtn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            console.log('👆 Flip button touchstart');
-            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
-            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
-              VoiceRecordHandler.setIgnoreNextUp(true);
-            }
-            if (voiceSession) {
-              voiceSession._justFlipped = Date.now() + 2000; // 2 секунды защиты
-            }
-          }, { passive: false, capture: true });
+          // Все остальные обработчики только БЛОКИРУЮТ события, но НЕ вызывают doFlipCamera
+          // Это предотвращает дублирование и всплытие событий
           
-          // Обработчик touchend - вызываем flip
-          flipBtn.addEventListener('touchend', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            console.log('👆 Flip button touchend');
-            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
-            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
-              VoiceRecordHandler.setIgnoreNextUp(true);
-            }
-            await doFlipCamera(e);
-            return false;
-          }, { passive: false, capture: true });
-          
-          // Блокируем pointerdown
-          flipBtn.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            console.log('☝️ Flip button pointerdown');
-            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
-            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
-              VoiceRecordHandler.setIgnoreNextUp(true);
-            }
-            if (voiceSession) {
-              voiceSession._justFlipped = Date.now() + 2000; // 2 секунды защиты
-            }
-          }, { passive: false, capture: true });
-          
-          // Блокируем pointerup
-          flipBtn.addEventListener('pointerup', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            console.log('☝️ Flip button pointerup');
-            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
-            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
-              VoiceRecordHandler.setIgnoreNextUp(true);
-            }
-            await doFlipCamera(e);
-            return false;
-          }, { passive: false, capture: true });
-          
-          // Дополнительная защита - блокируем любые mousedown/mouseup
-          flipBtn.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
-            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
-              VoiceRecordHandler.setIgnoreNextUp(true);
-            }
-            if (voiceSession) {
-              voiceSession._justFlipped = Date.now() + 2000; // 2 секунды защиты
-            }
-          }, { passive: false, capture: true });
-          
-          flipBtn.addEventListener('mouseup', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
-            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
-              VoiceRecordHandler.setIgnoreNextUp(true);
-            }
-          }, { passive: false, capture: true });
+          ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'mousedown', 'mouseup'].forEach(eventType => {
+            flipBtn.addEventListener(eventType, (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.stopImmediatePropagation();
+              console.log(`🛡️ Flip button ${eventType} blocked`);
+              // БЛОКИРУЕМ следующий onRecordBtnUp
+              if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+                VoiceRecordHandler.setIgnoreNextUp(true);
+              }
+              if (voiceSession) {
+                voiceSession._justFlipped = Date.now() + 2000;
+              }
+            }, { passive: false, capture: true });
+          });
         }
         
         // Кнопка отправки (overlay) - с тройной защитой
