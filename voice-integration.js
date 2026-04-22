@@ -122,7 +122,9 @@ const VoiceIntegrationModule = (() => {
             blob: message.content?.blob,
             audio: message.content?.data,
             duration: duration,
-            isCircle: true
+            isCircle: true,
+            isVideo: message.content?.isVideo || false,
+            facingMode: message.content?.facingMode || 'user'
           });
         }
       } else {
@@ -132,7 +134,9 @@ const VoiceIntegrationModule = (() => {
             blob: message.content?.blob,
             audio: message.content?.data,
             duration: duration,
-            isCircle: false
+            isCircle: false,
+            isVideo: message.content?.isVideo || false,
+            facingMode: message.content?.facingMode || 'user'
           });
         }
       }

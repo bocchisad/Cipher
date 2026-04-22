@@ -953,7 +953,10 @@ const VoiceCirclesModule = (() => {
         const video = document.createElement('video');
         video.controls = true;
         video.playsInline = true;
-        video.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);max-width:90vw;max-height:90vh;border-radius:8px;z-index:9999;background:#000;';
+        // Для фронтальной камеры применяем scaleX(-1) чтобы отзеркалить видео
+        const facingMode = voiceData.facingMode || 'user';
+        const mirrorTransform = facingMode === 'user' ? 'scaleX(-1)' : '';
+        video.style.cssText = `position:fixed;top:50%;left:50%;transform:translate(-50%,-50%)${mirrorTransform};max-width:90vw;max-height:90vh;border-radius:8px;z-index:9999;background:#000;`;
         video.addEventListener('ended', () => {
           if (video.parentNode) document.body.removeChild(video);
           URL.revokeObjectURL(url);

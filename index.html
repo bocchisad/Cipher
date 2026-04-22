@@ -13327,13 +13327,20 @@
           
           const b64 = await fileToBase64(blob);
           const recDuration = Math.max(1, Math.floor((Date.now() - started - (vs.pausedMs || 0)) / 1000));
-          const voiceContent = { data: b64, duration: recDuration, isVideo: isVideoMode, mimeType: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm') };
+          const voiceContent = { 
+            data: b64, 
+            duration: recDuration, 
+            isVideo: isVideoMode, 
+            mimeType: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm'),
+            facingMode: vs.facingMode || 'user' // Сохраняем какая камера использовалась
+          };
           console.log('📤 Sending voice message:', {
             isVideo: isVideoMode,
             duration: recDuration,
             blobSize: blobSizeMB + ' MB',
             dataLength: b64?.length,
-            mimeType: voiceContent.mimeType
+            mimeType: voiceContent.mimeType,
+            facingMode: voiceContent.facingMode
           });
           await sendMessage('voice', voiceContent);
         };
@@ -13506,10 +13513,8 @@
             if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
               VoiceRecordHandler.setIgnoreNextUp(true);
             }
-            // Останавливаем всплытие на всех уровнях
-            if (e.target === flipBtn) {
-              await doFlipCamera(e);
-            }
+            // Всегда вызываем flip (проверка e.target не нужна т.к. onclick сработает только на кнопке)
+            await doFlipCamera(e);
             return false;
           };
           
