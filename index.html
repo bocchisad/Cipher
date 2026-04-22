@@ -13226,6 +13226,15 @@
           // Более агрессивная защита - перехватываем все события
           ['mousedown', 'mouseup', 'touchstart', 'touchend', 'pointerdown', 'pointerup'].forEach(eventType => {
             overlay.addEventListener(eventType, (e) => {
+              const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
+              // Всегда блокируем события от кнопки flip camera (чтобы они не дошли до recordBtn)
+              if (flipBtn && (e.target === flipBtn || flipBtn.contains(e.target))) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.log('🛡️ Overlay blocked', eventType, 'from flipBtn');
+                return;
+              }
               // Если это клик на самом overlay а не на кнопке - блокируем
               if (e.target === overlay || !e.target.closest('button')) {
                 e.preventDefault();
@@ -13515,7 +13524,7 @@
               VoiceRecordHandler.setIgnoreNextUp(true);
             }
             if (voiceSession) {
-              voiceSession._justFlipped = Date.now();
+              voiceSession._justFlipped = Date.now() + 2000; // 2 секунды защиты
             }
           }, { passive: false, capture: true });
           
@@ -13544,7 +13553,7 @@
               VoiceRecordHandler.setIgnoreNextUp(true);
             }
             if (voiceSession) {
-              voiceSession._justFlipped = Date.now();
+              voiceSession._justFlipped = Date.now() + 2000; // 2 секунды защиты
             }
           }, { passive: false, capture: true });
           
@@ -13572,7 +13581,7 @@
               VoiceRecordHandler.setIgnoreNextUp(true);
             }
             if (voiceSession) {
-              voiceSession._justFlipped = Date.now();
+              voiceSession._justFlipped = Date.now() + 2000; // 2 секунды защиты
             }
           }, { passive: false, capture: true });
           
