@@ -370,15 +370,8 @@ const VoiceCirclesModule = (() => {
     console.log('🔄 Switching camera from', currentFacingMode, 'to', newFacingMode);
 
     try {
-      // Останавливаем все текущие видеотреки
-      videoStream.getTracks().forEach(t => {
-        if (t.kind === 'video') {
-          t.stop();
-          console.log('⏹️ Stopped video track:', t.label);
-        }
-      });
-
-      // Запрашиваем новый видеопоток с новым facingMode
+      // Сначала запрашиваем новый поток (еще не останавливая старый!)
+      // Это важно чтобы MediaRecorder не остановился из-за отсутствия видеодорожек
       const newStream = await Promise.race([
         navigator.mediaDevices.getUserMedia({
           audio: false,
@@ -401,14 +394,16 @@ const VoiceCirclesModule = (() => {
       const newVideoTrack = newVideoTracks[0];
       const oldVideoTracks = videoStream.getVideoTracks();
 
-      // Заменяем трек в существующем потоке
+      // Добавляем новый трек ПЕРЕД удалением старого чтобы поток не был пустым
+      videoStream.addTrack(newVideoTrack);
+      console.log('✅ Added new video track:', newVideoTrack.label);
+
+      // Теперь удаляем и останавливаем старый трек
       if (oldVideoTracks.length > 0) {
         const oldVideoTrack = oldVideoTracks[0];
         videoStream.removeTrack(oldVideoTrack);
-        videoStream.addTrack(newVideoTrack);
         oldVideoTrack.stop();
-      } else {
-        videoStream.addTrack(newVideoTrack);
+        console.log('⏹️ Stopped old video track:', oldVideoTrack.label);
       }
 
       // Обновляем video element
