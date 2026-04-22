@@ -13190,11 +13190,6 @@
           }
         };
         
-        // Синхронизируем facingMode с VoiceCirclesModule
-        const initialFacingMode = (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.getCurrentFacingMode) 
-          ? VoiceCirclesModule.getCurrentFacingMode() 
-          : 'user';
-        
         voiceSession = {
           stream,
           recorder,
@@ -13204,7 +13199,7 @@
           pauseStarted: 0,
           pausedMs: 0,
           tickTimer: setInterval(tick, 400),
-          facingMode: initialFacingMode,  // Синхронизируем с VoiceCirclesModule
+          facingMode: 'user',  // Отслеживать текущий режим камеры
           isVideo: isVideoMode
         };
         tick();
@@ -13226,15 +13221,6 @@
           // Более агрессивная защита - перехватываем все события
           ['mousedown', 'mouseup', 'touchstart', 'touchend', 'pointerdown', 'pointerup'].forEach(eventType => {
             overlay.addEventListener(eventType, (e) => {
-              const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
-              // Всегда блокируем события от кнопки flip camera (чтобы они не дошли до recordBtn)
-              if (flipBtn && (e.target === flipBtn || flipBtn.contains(e.target))) {
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-                console.log('🛡️ Overlay blocked', eventType, 'from flipBtn');
-                return;
-              }
               // Если это клик на самом overlay а не на кнопке - блокируем
               if (e.target === overlay || !e.target.closest('button')) {
                 e.preventDefault();
@@ -13327,20 +13313,13 @@
           
           const b64 = await fileToBase64(blob);
           const recDuration = Math.max(1, Math.floor((Date.now() - started - (vs.pausedMs || 0)) / 1000));
-          const voiceContent = { 
-            data: b64, 
-            duration: recDuration, 
-            isVideo: isVideoMode, 
-            mimeType: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm'),
-            facingMode: vs.facingMode || 'user' // Сохраняем какая камера использовалась
-          };
+          const voiceContent = { data: b64, duration: recDuration, isVideo: isVideoMode, mimeType: mimeType || (isVideoMode ? 'video/webm' : 'audio/webm') };
           console.log('📤 Sending voice message:', {
             isVideo: isVideoMode,
             duration: recDuration,
             blobSize: blobSizeMB + ' MB',
             dataLength: b64?.length,
-            mimeType: voiceContent.mimeType,
-            facingMode: voiceContent.facingMode
+            mimeType: voiceContent.mimeType
           });
           await sendMessage('voice', voiceContent);
         };
@@ -13456,20 +13435,29 @@
         if (flipBtn && isVideoMode) {
           flipBtn.style.display = 'flex';
           flipBtn.style.touchAction = 'manipulation'; // Убираем 300мс delay на мобильных
-          flipBtn.style.isolation = 'isolate'; // CSS isolation
-          flipBtn.style.position = 'relative'; // Для правильной работы isolation
-          flipBtn.style.zIndex = '10002'; // Выше других элементов
           
-          // Функция переключения камеры через VoiceCirclesModule
+          // Флаг чтобы избежать двойного клика
+          let flipInProgress = false;
+          
+          // Функция переключения камеры
           const doFlipCamera = async (e) => {
+            // Дополнительная защита от двойного клика
+            if (flipInProgress) {
+              console.log('⏳ Flip already in progress, ignoring click');
+              return;
+            }
+            
             if (!voiceSession || !voiceSession.recorder || voiceSession.recorder.state === 'inactive') {
               console.error('❌ Recording not active for flip');
               showToast('Запись не активна');
               return;
             }
             
-            // Устанавливаем флаг времени для блокировки sendBtn (3 секунды)
-            voiceSession._justFlipped = Date.now() + 2000; // +2с запас
+            flipInProgress = true;
+            
+            // 🔥 FIX: Устанавливаем флаг времени для блокировки sendBtn НА ВЕСЬ ПРОЦЕСС
+            // getUserMedia может занять 1-5 секунд, поэтому расширяем окно блокировки до 6 секунд
+            voiceSession._justFlipped = Date.now();
             voiceSession._flippingInProgress = true;
             
             // Отключаем кнопку на время переключения
@@ -13478,19 +13466,80 @@
             flipBtn.style.pointerEvents = 'none';
             
             try {
-              console.log('🔄 Starting camera flip via VoiceCirclesModule');
+              console.log('🔄 Starting camera flip, current facingMode:', voiceSession.facingMode);
               
-              // Вызываем переключение камеры через VoiceCirclesModule
-              if (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.switchCamera) {
-                await VoiceCirclesModule.switchCamera();
-                // Синхронизируем facingMode с voiceSession
-                voiceSession.facingMode = VoiceCirclesModule.getCurrentFacingMode();
-              } else {
-                console.error('❌ VoiceCirclesModule.switchCamera not available');
-                showToast('Ошибка: модуль переключения камеры недоступен');
+              // Переключить facingMode
+              const newFacingMode = voiceSession.facingMode === 'user' ? 'environment' : 'user';
+              console.log('🔄 Requesting new camera with facingMode:', newFacingMode);
+              
+              // Запросить новый поток с другой камерой
+              const newStream = await Promise.race([
+                navigator.mediaDevices.getUserMedia({
+                  audio: false,
+                  video: {
+                    width: { ideal: 720 },
+                    height: { ideal: 1280 },
+                    facingMode: { ideal: newFacingMode }
+                  }
+                }),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('getUserMedia timeout')), 5000)
+                )
+              ]);
+              
+              console.log('✅ Got new media stream');
+              
+              // Получить новый видеотрек
+              const newVideoTracks = newStream.getVideoTracks();
+              if (newVideoTracks.length === 0) {
+                throw new Error('No video tracks in new stream');
               }
+              
+              const newVideoTrack = newVideoTracks[0];
+              const oldVideoTracks = voiceSession.stream.getVideoTracks();
+              
+              console.log('✅ Got video track, old tracks count:', oldVideoTracks.length);
+              
+              // Заменяем трек в существующем потоке
+              if (oldVideoTracks.length > 0) {
+                const oldVideoTrack = oldVideoTracks[0];
+                
+                // Удаляем старый, добавляем новый
+                voiceSession.stream.removeTrack(oldVideoTrack);
+                voiceSession.stream.addTrack(newVideoTrack);
+                oldVideoTrack.stop();
+                console.log('✅ Replaced video track');
+              } else {
+                voiceSession.stream.addTrack(newVideoTrack);
+                console.log('✅ Added new video track');
+              }
+              
+              // Обновляем video element
+              const videoEl = document.getElementById('voiceRecordingVideo');
+              if (videoEl) {
+                videoEl.srcObject = voiceSession.stream;
+                console.log('✅ Updated video element srcObject');
+              }
+              
+              // Обновляем facingMode в session
+              voiceSession.facingMode = newFacingMode;
+              
+              showToast(newFacingMode === 'user' ? '📱 Фронтальная камера' : '🔙 Задняя камера', { duration: 800 });
+              console.log('✅ Camera flip completed, new facingMode:', newFacingMode);
             } catch (e) {
               console.error('❌ Failed to flip camera:', e.name, e.message);
+              
+              let errorMsg = 'Не удалось переключить камеру';
+              if (e.name === 'NotFoundError') {
+                errorMsg = 'На устройстве только одна камера';
+              } else if (e.name === 'NotAllowedError') {
+                errorMsg = 'Разрешите доступ к камере';
+              } else if (e.name === 'NotReadableError') {
+                errorMsg = 'Камера занята другим приложением';
+              } else if (e.message === 'getUserMedia timeout') {
+                errorMsg = 'Превышен таймаут при переключении камеры';
+              }
+              showToast(errorMsg);
             } finally {
               // Включаем кнопку обратно
               flipBtn.disabled = false;
@@ -13498,73 +13547,120 @@
               flipBtn.style.pointerEvents = '';
               voiceSession._flippingInProgress = false;
               
-              // Продлеваем флаг еще на время (2 секунды защиты после завершения)
-              voiceSession._justFlipped = Date.now() + 2000;
+              // 🔥 FIX: Продлеваем флаг еще на 500мс ПОСЛЕ завершения для безопасности
+              voiceSession._justFlipped = Date.now();
+              
+              flipInProgress = false;
             }
           };
           
-          // Флаг для предотвращения дублирования вызовов
-          let flipInProgress = false;
-          
-          // Основной обработчик click - ЕДИНСТВЕННОЕ место вызова doFlipCamera
+          // Основной обработчик click
           flipBtn.onclick = async (e) => {
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-            console.log('🖱️ Flip button clicked');
-            
-            // Предотвращаем дублирование вызовов
-            if (flipInProgress) {
-              console.log('⚠️ Flip already in progress, ignoring click');
-              return false;
+            console.log('🖱️ Flip button clicked (mouse)');
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
             }
-            
+            await doFlipCamera(e);
+            return false;
+          };
+          
+          // Обработчик touchstart - просто останавливаем событие
+          flipBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('👆 Flip button touchstart');
             // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
             if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
               VoiceRecordHandler.setIgnoreNextUp(true);
             }
             if (voiceSession) {
-              voiceSession._justFlipped = Date.now() + 2000;
+              voiceSession._justFlipped = Date.now();
             }
-            
-            flipInProgress = true;
-            try {
-              await doFlipCamera(e);
-            } finally {
-              // Сбрасываем флаг через небольшую задержку
-              setTimeout(() => { flipInProgress = false; }, 500);
+          }, { passive: false, capture: true });
+          
+          // Обработчик touchend - вызываем flip
+          flipBtn.addEventListener('touchend', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('👆 Flip button touchend');
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
             }
+            await doFlipCamera(e);
             return false;
-          };
+          }, { passive: false, capture: true });
           
-          // Все остальные обработчики только БЛОКИРУЮТ события, но НЕ вызывают doFlipCamera
-          // Это предотвращает дублирование и всплытие событий
+          // Блокируем pointerdown
+          flipBtn.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('☝️ Flip button pointerdown');
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
+            if (voiceSession) {
+              voiceSession._justFlipped = Date.now();
+            }
+          }, { passive: false, capture: true });
           
-          ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'mousedown', 'mouseup'].forEach(eventType => {
-            flipBtn.addEventListener(eventType, (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              e.stopImmediatePropagation();
-              console.log(`🛡️ Flip button ${eventType} blocked`);
-              // БЛОКИРУЕМ следующий onRecordBtnUp
-              if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
-                VoiceRecordHandler.setIgnoreNextUp(true);
-              }
-              if (voiceSession) {
-                voiceSession._justFlipped = Date.now() + 2000;
-              }
-            }, { passive: false, capture: true });
-          });
+          // Блокируем pointerup
+          flipBtn.addEventListener('pointerup', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            console.log('☝️ Flip button pointerup');
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
+            await doFlipCamera(e);
+            return false;
+          }, { passive: false, capture: true });
+          
+          // Дополнительная защита - блокируем любые mousedown/mouseup
+          flipBtn.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
+            if (voiceSession) {
+              voiceSession._justFlipped = Date.now();
+            }
+          }, { passive: false, capture: true });
+          
+          flipBtn.addEventListener('mouseup', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            // БЛОКИРУЕМ следующий onRecordBtnUp чтобы не отправилось сообщение
+            if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
+              VoiceRecordHandler.setIgnoreNextUp(true);
+            }
+          }, { passive: false, capture: true });
         }
         
         // Кнопка отправки (overlay) - с тройной защитой
         const sendBtn = document.getElementById('voiceRecOverlaySendBtn');
         if (sendBtn) {
-          // Главная проверка на блокировку
+          // 🔥 FIX: Главная проверка на блокировку - расширяем окно до 6 секунд (вместо 1.5)
+          // Это покрывает максимальное время getUserMedia (5 сек) + буфер (1 сек)
           const isFlipInProgress = () => {
             if (!voiceSession || !voiceSession._justFlipped) return false;
             const timeSinceFlip = Date.now() - voiceSession._justFlipped;
-            return timeSinceFlip < 1500;
+            // 🔥 CRITICAL FIX: getUserMedia может взять до 5 секунд, расширяем окно до 6 сек
+            return timeSinceFlip < 6000;
           };
           
           // Основной обработчик click
@@ -13641,6 +13737,12 @@
               console.log('🔒 Mouseup blocked: flip in progress');
               return false;
             }
+            // 🔥 FIX: Убедитесь, что всегда вызываем stop для консистентности
+            try {
+              if (!voiceSession) return false;
+              voiceSession.recorder.stop();
+            } catch (_) {}
+            return false;
           }, { passive: false, capture: true });
           
           // Обработчик pointerdown
@@ -13665,6 +13767,12 @@
               console.log('🔒 Pointerup blocked: flip in progress');
               return false;
             }
+            // 🔥 FIX: Убедитесь, что всегда вызываем stop для консистентности
+            try {
+              if (!voiceSession) return false;
+              voiceSession.recorder.stop();
+            } catch (_) {}
+            return false;
           }, { passive: false, capture: true });
         }
         
