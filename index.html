@@ -13436,24 +13436,13 @@
           flipBtn.style.display = 'flex';
           flipBtn.style.touchAction = 'manipulation'; // Убираем 300мс delay на мобильных
           
-          // Флаг чтобы избежать двойного клика
-          let flipInProgress = false;
-          
-          // Функция переключения камеры
+          // Функция переключения камеры через VoiceCirclesModule
           const doFlipCamera = async (e) => {
-            // Дополнительная защита от двойного клика
-            if (flipInProgress) {
-              console.log('⏳ Flip already in progress, ignoring click');
-              return;
-            }
-            
             if (!voiceSession || !voiceSession.recorder || voiceSession.recorder.state === 'inactive') {
               console.error('❌ Recording not active for flip');
               showToast('Запись не активна');
               return;
             }
-            
-            flipInProgress = true;
             
             // Устанавливаем флаг времени для блокировки sendBtn
             voiceSession._justFlipped = Date.now();
@@ -13465,80 +13454,19 @@
             flipBtn.style.pointerEvents = 'none';
             
             try {
-              console.log('🔄 Starting camera flip, current facingMode:', voiceSession.facingMode);
+              console.log('🔄 Starting camera flip via VoiceCirclesModule');
               
-              // Переключить facingMode
-              const newFacingMode = voiceSession.facingMode === 'user' ? 'environment' : 'user';
-              console.log('🔄 Requesting new camera with facingMode:', newFacingMode);
-              
-              // Запросить новый поток с другой камерой
-              const newStream = await Promise.race([
-                navigator.mediaDevices.getUserMedia({
-                  audio: false,
-                  video: {
-                    width: { ideal: 720 },
-                    height: { ideal: 1280 },
-                    facingMode: { ideal: newFacingMode }
-                  }
-                }),
-                new Promise((_, reject) => 
-                  setTimeout(() => reject(new Error('getUserMedia timeout')), 5000)
-                )
-              ]);
-              
-              console.log('✅ Got new media stream');
-              
-              // Получить новый видеотрек
-              const newVideoTracks = newStream.getVideoTracks();
-              if (newVideoTracks.length === 0) {
-                throw new Error('No video tracks in new stream');
-              }
-              
-              const newVideoTrack = newVideoTracks[0];
-              const oldVideoTracks = voiceSession.stream.getVideoTracks();
-              
-              console.log('✅ Got video track, old tracks count:', oldVideoTracks.length);
-              
-              // Заменяем трек в существующем потоке
-              if (oldVideoTracks.length > 0) {
-                const oldVideoTrack = oldVideoTracks[0];
-                
-                // Удаляем старый, добавляем новый
-                voiceSession.stream.removeTrack(oldVideoTrack);
-                voiceSession.stream.addTrack(newVideoTrack);
-                oldVideoTrack.stop();
-                console.log('✅ Replaced video track');
+              // Вызываем переключение камеры через VoiceCirclesModule
+              if (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.switchCamera) {
+                await VoiceCirclesModule.switchCamera();
+                // Синхронизируем facingMode с voiceSession
+                voiceSession.facingMode = VoiceCirclesModule.getCurrentFacingMode();
               } else {
-                voiceSession.stream.addTrack(newVideoTrack);
-                console.log('✅ Added new video track');
+                console.error('❌ VoiceCirclesModule.switchCamera not available');
+                showToast('Ошибка: модуль переключения камеры недоступен');
               }
-              
-              // Обновляем video element
-              const videoEl = document.getElementById('voiceRecordingVideo');
-              if (videoEl) {
-                videoEl.srcObject = voiceSession.stream;
-                console.log('✅ Updated video element srcObject');
-              }
-              
-              // Обновляем facingMode в session
-              voiceSession.facingMode = newFacingMode;
-              
-              showToast(newFacingMode === 'user' ? '📱 Фронтальная камера' : '🔙 Задняя камера', { duration: 800 });
-              console.log('✅ Camera flip completed, new facingMode:', newFacingMode);
             } catch (e) {
               console.error('❌ Failed to flip camera:', e.name, e.message);
-              
-              let errorMsg = 'Не удалось переключить камеру';
-              if (e.name === 'NotFoundError') {
-                errorMsg = 'На устройстве только одна камера';
-              } else if (e.name === 'NotAllowedError') {
-                errorMsg = 'Разрешите доступ к камере';
-              } else if (e.name === 'NotReadableError') {
-                errorMsg = 'Камера занята другим приложением';
-              } else if (e.message === 'getUserMedia timeout') {
-                errorMsg = 'Превышен таймаут при переключении камеры';
-              }
-              showToast(errorMsg);
             } finally {
               // Включаем кнопку обратно
               flipBtn.disabled = false;
@@ -13548,8 +13476,6 @@
               
               // Продлеваем флаг еще на время (1.5 секунды)
               voiceSession._justFlipped = Date.now();
-              
-              flipInProgress = false;
             }
           };
           

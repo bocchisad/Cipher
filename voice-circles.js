@@ -9,10 +9,15 @@ const VoiceCirclesModule = (() => {
   let mediaRecorder = null;
   let audioContext = null;
   let analyser = null;
+  let currentFacingMode = 'user'; // 'user' = фронтальная, 'environment' = задняя
+  let videoStream = null; // текущий видеопоток для переключения камеры
 
   const MIC_ICON = `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M19 10a7 7 0 01-14 0M12 19v3M8 22h8"/></svg>`;
   const CAMERA_ICON = `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
   
+  // Иконка переключения камеры
+  const FLIP_CAMERA_ICON_SVG = `<svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 19H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5l2-3h6l2 3h5a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-7"/><path d="M20 16v-4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v4"/><path d="M16 16l-4-4"/><path d="M16 16l4-4"/></svg>`;
+
   // SVG иконки для замены эмодзи
   const LOCK_ICON_SVG = `<svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
   const UNLOCK_ICON_SVG = `<svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.2 1"/></svg>`;
@@ -303,6 +308,9 @@ const VoiceCirclesModule = (() => {
     const overlayStatus = document.getElementById('voiceRecOverlayStatus');
     const modeIndicator = document.getElementById('voiceModeIndicator');
 
+    // Сохраняем ссылку на поток для переключения камеры
+    videoStream = stream;
+
     // Скрываем текстовые индикаторы при записи видео
     if (overlayStatus) overlayStatus.style.display = 'none';
     if (modeIndicator) modeIndicator.style.display = 'none';
@@ -321,7 +329,8 @@ const VoiceCirclesModule = (() => {
       video.muted = true;
       video.playsInline = true;
       video.autoplay = true;
-      video.style.transform = 'scaleX(-1)';
+      // CSS: зеркалим для фронтальной (user), не зеркалим для задней (environment)
+      video.style.transform = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
       video.style.background = '#000';
       try {
         await video.play();
@@ -335,7 +344,158 @@ const VoiceCirclesModule = (() => {
       svg.style.display = 'none';
     }
 
+    // Проверяем доступность задней камеры
+    checkRearCameraAvailability();
+
     createCircularProgress();
+  }
+
+  // ==================== ПЕРЕКЛЮЧЕНИЕ КАМЕРЫ ====================
+  // Переключение между фронтальной и задней камерой
+  async function switchCamera() {
+    if (!videoStream) {
+      console.warn('⚠️ No video stream available for camera switch');
+      showToast('Видеопоток не активен');
+      return false;
+    }
+
+    // Проверяем, что запись активна
+    if (typeof voiceSession === 'undefined' || !voiceSession || !voiceSession.recorder) {
+      console.warn('⚠️ Recording not active');
+      showToast('Запись не активна');
+      return false;
+    }
+
+    const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+    console.log('🔄 Switching camera from', currentFacingMode, 'to', newFacingMode);
+
+    try {
+      // Останавливаем все текущие видеотреки
+      videoStream.getTracks().forEach(t => {
+        if (t.kind === 'video') {
+          t.stop();
+          console.log('⏹️ Stopped video track:', t.label);
+        }
+      });
+
+      // Запрашиваем новый видеопоток с новым facingMode
+      const newStream = await Promise.race([
+        navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            width: { ideal: 720 },
+            height: { ideal: 1280 },
+            facingMode: { ideal: newFacingMode }
+          }
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('getUserMedia timeout')), 5000)
+        )
+      ]);
+
+      const newVideoTracks = newStream.getVideoTracks();
+      if (newVideoTracks.length === 0) {
+        throw new Error('No video tracks in new stream');
+      }
+
+      const newVideoTrack = newVideoTracks[0];
+      const oldVideoTracks = videoStream.getVideoTracks();
+
+      // Заменяем трек в существующем потоке
+      if (oldVideoTracks.length > 0) {
+        const oldVideoTrack = oldVideoTracks[0];
+        videoStream.removeTrack(oldVideoTrack);
+        videoStream.addTrack(newVideoTrack);
+        oldVideoTrack.stop();
+      } else {
+        videoStream.addTrack(newVideoTrack);
+      }
+
+      // Обновляем video element
+      const video = document.getElementById('voiceRecordingVideo');
+      if (video) {
+        video.srcObject = videoStream;
+        // CSS: зеркалим для фронтальной камеры, не зеркалим для задней
+        video.style.transform = newFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+      }
+
+      // Обновляем состояние
+      currentFacingMode = newFacingMode;
+
+      // Обновляем voiceSession если он существует
+      if (voiceSession) {
+        voiceSession.facingMode = newFacingMode;
+      }
+
+      showToast(newFacingMode === 'user' ? '📱 Фронтальная камера' : '🔙 Задняя камера', { duration: 800 });
+      console.log('✅ Camera switched to:', newFacingMode);
+      return true;
+
+    } catch (err) {
+      console.error('❌ Failed to switch camera:', err.name, err.message);
+
+      let errorMsg = 'Не удалось переключить камеру';
+      if (err.name === 'NotFoundError') {
+        errorMsg = 'Камера не найдена';
+        // Скрываем кнопку переключения если задней камеры нет
+        const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
+        if (flipBtn && newFacingMode === 'environment') {
+          flipBtn.style.display = 'none';
+        }
+      } else if (err.name === 'NotAllowedError') {
+        errorMsg = 'Разрешите доступ к камере';
+      } else if (err.name === 'NotReadableError') {
+        errorMsg = 'Камера занята другим приложением';
+      } else if (err.message === 'getUserMedia timeout') {
+        errorMsg = 'Превышен таймаут при переключении камеры';
+      }
+
+      showToast(errorMsg);
+      return false;
+    }
+  }
+
+  // Получить текущий facingMode
+  function getCurrentFacingMode() {
+    return currentFacingMode;
+  }
+
+  // Установить видеопоток (вызывается при начале записи)
+  function setVideoStream(stream) {
+    videoStream = stream;
+    // Сбрасываем facingMode в 'user' по умолчанию
+    currentFacingMode = 'user';
+    // Проверяем наличие задней камеры
+    checkRearCameraAvailability();
+  }
+
+  // Очистить видеопоток (вызывается при остановке записи)
+  function clearVideoStream() {
+    if (videoStream) {
+      videoStream.getTracks().forEach(t => t.stop());
+      videoStream = null;
+    }
+    currentFacingMode = 'user';
+  }
+
+  // Проверить доступность задней камеры
+  async function checkRearCameraAvailability() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      const hasRearCamera = videoDevices.length > 1;
+
+      const flipBtn = document.getElementById('voiceRecFlipCameraBtn');
+      if (flipBtn) {
+        flipBtn.style.display = hasRearCamera ? 'flex' : 'none';
+      }
+
+      console.log('📹 Camera check:', videoDevices.length, 'video devices found');
+      return hasRearCamera;
+    } catch (err) {
+      console.warn('⚠️ Failed to enumerate cameras:', err);
+      return false;
+    }
   }
 
   // ==================== SWIPE UP LOCK ====================
@@ -893,7 +1053,13 @@ const VoiceCirclesModule = (() => {
     createSwipeUpLockUI,
     removeSwipeLockUI,
     activateLock,
-    updateButtonIcon
+    updateButtonIcon,
+    // Функции для переключения камеры
+    switchCamera,
+    getCurrentFacingMode,
+    setVideoStream,
+    clearVideoStream,
+    checkRearCameraAvailability
   };
 })();
 
