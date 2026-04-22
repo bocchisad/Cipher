@@ -13190,6 +13190,11 @@
           }
         };
         
+        // Синхронизируем facingMode с VoiceCirclesModule
+        const initialFacingMode = (typeof VoiceCirclesModule !== 'undefined' && VoiceCirclesModule.getCurrentFacingMode) 
+          ? VoiceCirclesModule.getCurrentFacingMode() 
+          : 'user';
+        
         voiceSession = {
           stream,
           recorder,
@@ -13199,7 +13204,7 @@
           pauseStarted: 0,
           pausedMs: 0,
           tickTimer: setInterval(tick, 400),
-          facingMode: 'user',  // Отслеживать текущий режим камеры
+          facingMode: initialFacingMode,  // Синхронизируем с VoiceCirclesModule
           isVideo: isVideoMode
         };
         tick();
@@ -13435,6 +13440,9 @@
         if (flipBtn && isVideoMode) {
           flipBtn.style.display = 'flex';
           flipBtn.style.touchAction = 'manipulation'; // Убираем 300мс delay на мобильных
+          flipBtn.style.isolation = 'isolate'; // CSS isolation
+          flipBtn.style.position = 'relative'; // Для правильной работы isolation
+          flipBtn.style.zIndex = '10002'; // Выше других элементов
           
           // Функция переключения камеры через VoiceCirclesModule
           const doFlipCamera = async (e) => {
@@ -13444,8 +13452,8 @@
               return;
             }
             
-            // Устанавливаем флаг времени для блокировки sendBtn
-            voiceSession._justFlipped = Date.now();
+            // Устанавливаем флаг времени для блокировки sendBtn (3 секунды)
+            voiceSession._justFlipped = Date.now() + 2000; // +2с запас
             voiceSession._flippingInProgress = true;
             
             // Отключаем кнопку на время переключения
@@ -13474,8 +13482,8 @@
               flipBtn.style.pointerEvents = '';
               voiceSession._flippingInProgress = false;
               
-              // Продлеваем флаг еще на время (1.5 секунды)
-              voiceSession._justFlipped = Date.now();
+              // Продлеваем флаг еще на время (2 секунды защиты после завершения)
+              voiceSession._justFlipped = Date.now() + 2000;
             }
           };
           
@@ -13489,7 +13497,10 @@
             if (typeof VoiceRecordHandler !== 'undefined' && VoiceRecordHandler.setIgnoreNextUp) {
               VoiceRecordHandler.setIgnoreNextUp(true);
             }
-            await doFlipCamera(e);
+            // Останавливаем всплытие на всех уровнях
+            if (e.target === flipBtn) {
+              await doFlipCamera(e);
+            }
             return false;
           };
           

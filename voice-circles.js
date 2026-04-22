@@ -310,6 +310,10 @@ const VoiceCirclesModule = (() => {
 
     // Сохраняем ссылку на поток для переключения камеры
     videoStream = stream;
+    
+    // Сбрасываем facingMode при начале новой записи (всегда начинаем с фронтальной камеры)
+    currentFacingMode = 'user';
+    console.log('🎥 Video mode UI setup, facingMode reset to:', currentFacingMode);
 
     // Скрываем текстовые индикаторы при записи видео
     if (overlayStatus) overlayStatus.style.display = 'none';
@@ -330,8 +334,12 @@ const VoiceCirclesModule = (() => {
       video.playsInline = true;
       video.autoplay = true;
       // CSS: зеркалим для фронтальной (user), не зеркалим для задней (environment)
+      // Принудительно сбрасываем transform перед установкой нового значения
+      video.style.transform = '';
+      video.offsetHeight; // Force reflow
       video.style.transform = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
       video.style.background = '#000';
+      console.log('🎥 Video transform set to:', video.style.transform, 'facingMode:', currentFacingMode);
       try {
         await video.play();
       } catch (e) {
@@ -411,7 +419,12 @@ const VoiceCirclesModule = (() => {
       if (video) {
         video.srcObject = videoStream;
         // CSS: зеркалим для фронтальной камеры, не зеркалим для задней
-        video.style.transform = newFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+        // Принудительно сбрасываем и переустанавливаем transform для гарантии применения
+        video.style.transform = '';
+        video.offsetHeight; // Force reflow
+        const newTransform = newFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+        video.style.transform = newTransform;
+        console.log('🎥 Camera switched, transform:', newTransform, 'facingMode:', newFacingMode);
       }
 
       // Обновляем состояние
