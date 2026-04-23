@@ -14007,24 +14007,29 @@
     }
 
     // ==================== WEBRTC CALLS ====================
+    // TURN SERVER CONFIGURATION
+    // Для настройки собственного TURN сервера см. TURN_SERVER_GUIDE.md
+    const TURN_SERVER_IP = 'YOUR_SERVER_IP';        // Замените на IP вашего VPS
+    const TURN_USERNAME  = 'YOUR_USERNAME';         // Замените на username из setup-turn-server.sh
+    const TURN_PASSWORD  = 'YOUR_PASSWORD';         // Замените на password из setup-turn-server.sh
+
     const RTC_CFG = {
       iceServers: [
-        { urls: 'stun:stun.relay.metered.ca:80' },
+        // Собственный TURN сервер (UDP)
         {
-          urls: 'turn:turn.relay.metered.ca:80',
-          username: '0b93c5365ea98b60ac7211c5',
-          credential: 'YH+mP8Jn9m6guYa6'
+          urls: `turn:${TURN_SERVER_IP}:3478`,
+          username: TURN_USERNAME,
+          credential: TURN_PASSWORD
         },
+        // Собственный TURN сервер (TCP - для restrictive firewall)
         {
-          urls: 'turn:turn.relay.metered.ca:80?transport=tcp',
-          username: '0b93c5365ea98b60ac7211c5',
-          credential: 'YH+mP8Jn9m6guYa6'
+          urls: `turn:${TURN_SERVER_IP}:3478?transport=tcp`,
+          username: TURN_USERNAME,
+          credential: TURN_PASSWORD
         },
-        {
-          urls: 'turn:turn.relay.metered.ca:443',
-          username: '0b93c5365ea98b60ac7211c5',
-          credential: 'YH+mP8Jn9m6guYa6'
-        }
+        // Public STUN fallback
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
       ],
       iceCandidatePoolSize: 10,
       bundlePolicy: 'max-bundle',
@@ -14259,9 +14264,7 @@
         
         // Create peer connection
         console.log('🔗 Creating peer connection...');
-        rtcPc = new RTCPeerConnection({
-          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-        });
+        rtcPc = new RTCPeerConnection(RTC_CFG);
         rtcRemoteUuid = peer;
         rtcLocal = stream;
         
